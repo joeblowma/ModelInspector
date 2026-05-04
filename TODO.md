@@ -48,11 +48,11 @@ Actionable integration plan for repository organization, additional model format
 
 ## 6. Add JSON `.modelinfo` Dumps
 
-- Add a CLI option such as `--write-modelinfo-json`.
-- Reuse the existing `.modelinfo` naming schema and append `.json`, for example `model.safetensors.modelinfo.json`.
-- Serialize existing inspection output with the standard `json` module unless a stronger need appears.
-- Add matching GUI setting/action for JSON dump generation.
-- Verify output is stable, pretty-printed, and contains parsed metadata, tensor summaries, architecture details, and warnings.
+- [x] Add a CLI option such as `--write-modelinfo-json`.
+- [x] Reuse the existing `.modelinfo` naming schema and append `.json`, for example `model.safetensors.modelinfo.json`.
+- [x] Serialize existing inspection output with the standard `json` module unless a stronger need appears.
+- [x] Add matching GUI setting/action for JSON dump generation.
+- [x] Verify output is stable, pretty-printed, and contains parsed metadata, tensor summaries, architecture details, and warnings.
 
 ## 7. Add GGUF Support
 

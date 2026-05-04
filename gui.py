@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from inspect_model import (
-    inspect_file, generate_modelinfo_dump,
+    inspect_file, generate_modelinfo_dump, write_modelinfo_dump, write_modelinfo_json,
 )
 
 
@@ -301,6 +301,7 @@ class SettingsDialog(QDialog):
         allow_filename_alias_detection=False,
         auto_fold_on_analyze=False,
         auto_analyze_on_add=True,
+        dump_json_modelinfo=False,
         add_mode="replace",
         default_tab="simple",
         card_fields=None,
@@ -358,6 +359,13 @@ class SettingsDialog(QDialog):
             "Immediately start analysis after dropping or browsing files."
         )
 
+        self.dump_json_checkbox = QCheckBox("Also dump JSON .modelinfo")
+        self.dump_json_checkbox.setChecked(dump_json_modelinfo)
+        dump_json_cell = make_general_cell(
+            self.dump_json_checkbox,
+            "When dumping modelinfo, also write a pretty-printed .modelinfo.json file."
+        )
+
         mode_wrap = QWidget()
         mode_row = QHBoxLayout(mode_wrap)
         mode_row.setContentsMargins(0, 0, 0, 0)
@@ -401,6 +409,7 @@ class SettingsDialog(QDialog):
         g_layout.addWidget(analyze_cell, 0, 2)
         g_layout.addWidget(mode_cell, 1, 0)
         g_layout.addWidget(tab_cell, 1, 1)
+        g_layout.addWidget(dump_json_cell, 1, 2)
         root.addWidget(general_group)
 
         cards_row = QHBoxLayout()
@@ -861,6 +870,7 @@ class MainWindow(QMainWindow):
         self._top_folded = False
         self._auto_fold_on_analyze = False
         self._auto_analyze_on_add = True
+        self._dump_json_modelinfo = False
         self._add_mode = "replace"  # replace | additive
         self._default_tab = "simple"  # simple | detailed | data | raw
         self._card_field_visibility = {
@@ -1238,6 +1248,7 @@ class MainWindow(QMainWindow):
         self._allow_filename_alias_detection = str(s.value("allow_filename_alias_detection", "false")).lower() == "true"
         self._auto_fold_on_analyze = str(s.value("auto_fold_on_analyze", "false")).lower() == "true"
         self._auto_analyze_on_add = str(s.value("auto_analyze_on_add", "true")).lower() == "true"
+        self._dump_json_modelinfo = str(s.value("dump_json_modelinfo", "false")).lower() == "true"
         self._add_mode = str(s.value("add_mode", "replace")).lower()
         self._default_tab = str(s.value("default_tab", "simple")).lower()
         if self._add_mode not in ("replace", "additive"):
@@ -1274,6 +1285,7 @@ class MainWindow(QMainWindow):
         s.setValue("allow_filename_alias_detection", str(self._allow_filename_alias_detection).lower())
         s.setValue("auto_fold_on_analyze", str(self._auto_fold_on_analyze).lower())
         s.setValue("auto_analyze_on_add", str(self._auto_analyze_on_add).lower())
+        s.setValue("dump_json_modelinfo", str(self._dump_json_modelinfo).lower())
         s.setValue("add_mode", self._add_mode)
         s.setValue("default_tab", self._default_tab)
         s.setValue("detailed_card_fields", json.dumps(self._card_field_visibility))
@@ -1354,6 +1366,7 @@ class MainWindow(QMainWindow):
             allow_filename_alias_detection=self._allow_filename_alias_detection,
             auto_fold_on_analyze=self._auto_fold_on_analyze,
             auto_analyze_on_add=self._auto_analyze_on_add,
+            dump_json_modelinfo=self._dump_json_modelinfo,
             add_mode=self._add_mode,
             default_tab=self._default_tab,
             card_fields=self._card_field_visibility,
@@ -1364,6 +1377,7 @@ class MainWindow(QMainWindow):
             self._allow_filename_alias_detection = dlg.alias_checkbox.isChecked()
             self._auto_fold_on_analyze = dlg.auto_fold_checkbox.isChecked()
             self._auto_analyze_on_add = dlg.auto_analyze_checkbox.isChecked()
+            self._dump_json_modelinfo = dlg.dump_json_checkbox.isChecked()
             self._add_mode = dlg.add_mode_combo.currentData()
             self._default_tab = str(dlg.default_tab_combo.currentData() or "simple")
             for key, cb in dlg.card_field_checks.items():
@@ -1496,10 +1510,14 @@ class MainWindow(QMainWindow):
             if not filepath:
                 continue
             try:
-                dump = generate_modelinfo_dump(filepath)
-                out_path = filepath + ".modelinfo"
-                with open(out_path, "w", encoding="utf-8") as f:
-                    f.write(dump)
+                write_modelinfo_dump(filepath)
+                if self._dump_json_modelinfo:
+                    write_modelinfo_json(
+                        filepath,
+                        options={
+                            "allow_filename_alias_detection": self._allow_filename_alias_detection
+                        },
+                    )
                 count += 1
             except Exception:
                 pass

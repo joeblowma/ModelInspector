@@ -1486,56 +1486,30 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
 
 def generate_modelinfo_dump(filepath: str) -> str:
     """Generate detailed .modelinfo text dump for a single safetensors file."""
-    metadata, tensor_info, file_size = read_safetensors_header(filepath)
-    keys = sorted(tensor_info.keys())
-    _, total_params, shapes = analyze_tensors(tensor_info)
+    from modelinfo import generate_modelinfo_dump as _generate_modelinfo_dump
 
-    lines = []
-    sep = "=" * 70
-    lines.append(sep)
-    lines.append(f"  FILE: {Path(filepath).name}")
-    lines.append(f"  Path: {filepath}")
-    lines.append(f"  Keys: {len(keys)}    Params: {total_params:,}    Size: {file_size:,} bytes")
-    lines.append(sep)
+    return _generate_modelinfo_dump(filepath)
 
-    if metadata:
-        lines.append("\n  __metadata__:")
-        for mk in sorted(metadata.keys()):
-            val = str(metadata[mk])
-            if len(val) > 200:
-                val = val[:197] + "..."
-            lines.append(f"    {mk}: {val}")
 
-    lines.append("\n  Fingerprint substring scan:")
-    blob = "\n".join(keys)
-    for fp in FINGERPRINTS:
-        if fp in blob:
-            count = sum(1 for k in keys if fp in k)
-            lines.append(f"    [HIT]  {fp:<40} ({count} keys)")
+def generate_modelinfo_json(filepath: str, options: dict | None = None) -> str:
+    """Generate pretty-printed .modelinfo JSON for a single safetensors file."""
+    from modelinfo import generate_modelinfo_json as _generate_modelinfo_json
 
-    up_dims = _collect_lora_up_dims(keys, shapes)
-    if up_dims:
-        lines.append(f"\n  LoRA up dims (target layer sizes): {sorted(up_dims)}")
+    return _generate_modelinfo_json(filepath, options=options)
 
-    lines.append("\n  Top key prefixes (depth 2):")
-    prefixes = Counter()
-    for k in keys:
-        parts = k.split(".")
-        p = parts[0]
-        if len(parts) > 1:
-            p += "." + parts[1]
-        prefixes[p] += 1
-    for p, c in prefixes.most_common(25):
-        lines.append(f"    {p:<55} {c:>5}")
 
-    lines.append(f"\n  All tensor keys ({len(keys)}):")
-    for k in keys:
-        s = shapes.get(k, [])
-        d = tensor_info[k].get("dtype", "?")
-        lines.append(f"    {k}  {s}  [{d}]")
+def write_modelinfo_dump(filepath: str) -> str:
+    """Write a text .modelinfo file next to the inspected model."""
+    from modelinfo import write_modelinfo_dump as _write_modelinfo_dump
 
-    lines.append("")
-    return "\n".join(lines)
+    return _write_modelinfo_dump(filepath)
+
+
+def write_modelinfo_json(filepath: str, options: dict | None = None) -> str:
+    """Write a JSON .modelinfo file next to the inspected model."""
+    from modelinfo import write_modelinfo_json as _write_modelinfo_json
+
+    return _write_modelinfo_json(filepath, options=options)
 
 
 # ---------------------------------------------------------------------------
@@ -1601,6 +1575,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Write .modelinfo files next to each inspected model",
     )
+    parser.add_argument(
+        "--write-modelinfo-json",
+        action="store_true",
+        help="Write .modelinfo.json files next to each inspected model",
+    )
     return parser
 
 
@@ -1632,9 +1611,14 @@ def main(argv=None):
             )
             results.append(info)
             if args.write_modelinfo:
-                out_path = fp + ".modelinfo"
-                with open(out_path, "w", encoding="utf-8") as f:
-                    f.write(generate_modelinfo_dump(fp))
+                write_modelinfo_dump(fp)
+            if args.write_modelinfo_json:
+                write_modelinfo_json(
+                    fp,
+                    options={
+                        "allow_filename_alias_detection": args.allow_filename_alias_detection
+                    },
+                )
         except Exception as e:
             print(f"[ERROR] {fp}: {e}", file=sys.stderr)
 

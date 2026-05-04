@@ -73,6 +73,12 @@ py inspect_model.py path\to\folder --recursive --json
 py inspect_model.py path\to\folder --recursive --write-modelinfo
 ```
 
+### Write JSON `.modelinfo` files
+
+```bat
+py inspect_model.py path\to\folder --recursive --write-modelinfo-json
+```
+
 ### Dump key/debug report text to console
 
 ```bat
@@ -154,6 +160,7 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 - `Filename Alias Detection`: optional filename-token fallback for special labels
 - `Auto-minimize top section on Analyze`
 - `Auto-analyze when files are added`
+- `Also dump JSON .modelinfo`: writes `.modelinfo.json` files with the dump action
 - `File add behavior`:
   - `Replace current input list`
   - `Append to current input list`

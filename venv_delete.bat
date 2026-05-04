@@ -41,7 +41,7 @@ if exist %VENV_NAME% (
     del /s /q %VENV_NAME%
     rd /s /q %VENV_NAME%
 ) else (
-    echo .\%VENV_NAME% directory not found
+    echo .\%VENV_NAME% directory not found, moving on
 )
 
 :: get rid of the build folder
@@ -50,7 +50,16 @@ if exist build (
     del /s /q build
     rd /s /q build
 ) else (
-    echo .\build directory not found
+    echo .\build directory not found, moving on
+)
+
+:: get rid of the __pycache__ folder
+if exist __pycache__ (
+    echo deleting __pycache__
+    del /s /q __pycache__
+    rd /s /q __pycache__
+) else (
+    echo .\__pycache__ directory not found, moving on
 )
 
 :: get rid of venvars.bat

@@ -959,7 +959,7 @@ class MainWindow(QMainWindow):
         browse_folder_btn.setFixedWidth(150)
         btn_row_1.addWidget(browse_folder_btn)
 
-        self.fold_toggle_btn = QPushButton("â–² Minimize")
+        self.fold_toggle_btn = QPushButton("▲ Minimize")
         self.fold_toggle_btn.setFixedWidth(150)
         self.fold_toggle_btn.clicked.connect(self._toggle_top_fold)
         btn_row_1.addWidget(self.fold_toggle_btn)
@@ -993,7 +993,7 @@ class MainWindow(QMainWindow):
         fold_only_layout = QHBoxLayout(self.fold_only_bar)
         fold_only_layout.setContentsMargins(0, 0, 0, 0)
         fold_only_layout.setSpacing(0)
-        self.fold_only_btn = QPushButton("â–¼ Restore")
+        self.fold_only_btn = QPushButton("▼ Restore")
         self.fold_only_btn.clicked.connect(self._toggle_top_fold)
         self.fold_only_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         fold_only_layout.addWidget(self.fold_only_btn)
@@ -1205,14 +1205,14 @@ class MainWindow(QMainWindow):
             self.top_row.setVisible(False)
             self.controls_container.setVisible(False)
             self.fold_only_bar.setVisible(True)
-            self.fold_toggle_btn.setText("â–¼ Restore")
-            self.fold_only_btn.setText("â–¼ Restore")
+            self.fold_toggle_btn.setText("▼ Restore")
+            self.fold_only_btn.setText("▼ Restore")
         else:
             self.top_row.setVisible(True)
             self.controls_container.setVisible(True)
             self.fold_only_bar.setVisible(False)
-            self.fold_toggle_btn.setText("â–² Minimize")
-            self.fold_only_btn.setText("â–² Minimize")
+            self.fold_toggle_btn.setText("▲ Minimize")
+            self.fold_only_btn.setText("▲ Minimize")
 
     def _on_copy_shortcut(self):
         tab = self.tabs.currentIndex()

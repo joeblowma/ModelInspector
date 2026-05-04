@@ -1,6 +1,6 @@
 # Safetensors Model Inspector
 
-Inspect `.safetensors` models from a desktop GUI and CLI.
+Inspect `.safetensors` models from a desktop GUI and `.safetensors`/`.gguf` models from the CLI.
 
 <img width="2537" height="1283" alt="image" src="https://github.com/user-attachments/assets/27ce9f06-4c5f-4b32-aee9-bda85ff576b0" />
 
@@ -11,6 +11,7 @@ Inspect `.safetensors` models from a desktop GUI and CLI.
 - Extracts training metadata when present (steps, epochs, images, resolution, software, and related fields)
 - Supports file or folder workflows (including recursive folder scanning)
 - Supports `.modelinfo` key dumps for debugging and sharing
+- Supports read-only `.gguf` metadata/tensor inspection from the CLI
 
 ## Repository Layout
 
@@ -52,6 +53,7 @@ py inspect_model.py --help
 
 ```bat
 py inspect_model.py path\to\model1.safetensors path\to\model2.safetensors
+py inspect_model.py path\to\model.gguf
 ```
 
 ### Inspect folders

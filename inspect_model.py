@@ -7,39 +7,18 @@ Identifies architecture, components, and properties of .safetensors model files.
 import json
 import argparse
 import re
-import struct
-import os
 import sys
 from collections import Counter
 from pathlib import Path
 from typing import Iterable
 
-
-# ---------------------------------------------------------------------------
-# Safetensors header reader
-# ---------------------------------------------------------------------------
-
-def read_safetensors_header(filepath: str):
-    """Read safetensors header without loading tensor data."""
-    file_size = os.path.getsize(filepath)
-
-    with open(filepath, "rb") as f:
-        raw = f.read(8)
-        if len(raw) < 8:
-            raise ValueError("File too small to be a valid safetensors file")
-        header_size = struct.unpack("<Q", raw)[0]
-        if header_size > 200_000_000:
-            raise ValueError(f"Header size ({header_size}) seems unreasonably large")
-        header = json.loads(f.read(header_size))
-
-    metadata = header.pop("__metadata__", {})
-    tensor_info = header  # remaining entries are tensor definitions
-    return metadata, tensor_info, file_size
-
-
-# ---------------------------------------------------------------------------
-# Tensor analysis helpers
-# ---------------------------------------------------------------------------
+from model_readers import (
+    analyze_tensors,
+    iter_model_paths,
+    read_model_header,
+    read_safetensors_header,
+    SUPPORTED_MODEL_EXTENSIONS,
+)
 
 DTYPE_BITS = {
     "F64": 64, "F32": 32, "F16": 16, "BF16": 16,
@@ -66,25 +45,6 @@ FINGERPRINTS = [
     "embed_tokens", "guidance_in", "attn2", "noise_refiner",
     "transformer_blocks",
 ]
-
-
-def analyze_tensors(tensor_info: dict):
-    """Return dtype counts, total parameter count, and per-tensor shapes."""
-    dtypes = Counter()
-    total_params = 0
-    shapes = {}
-
-    for name, info in tensor_info.items():
-        dtype = info.get("dtype", "unknown")
-        tensor_shape = info.get("shape", [])
-        dtypes[dtype] += 1
-        shapes[name] = tensor_shape
-        params = 1
-        for dim in tensor_shape:
-            params *= dim
-        total_params += params
-
-    return dtypes, total_params, shapes
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +308,9 @@ def detect_architecture(keys: list[str], shapes: dict, total_params: int,
     spec_arch = metadata.get("modelspec.architecture", "")
     if spec_arch:
         details["metadata_architecture"] = spec_arch
+    gguf_arch = metadata.get("general.architecture", "")
+    if gguf_arch:
+        details["metadata_architecture"] = gguf_arch
     ss_base = metadata.get("ss_base_model_version", "")
     if ss_base:
         details["training_base_model"] = ss_base
@@ -378,6 +341,8 @@ def detect_architecture(keys: list[str], shapes: dict, total_params: int,
 def _build_metadata_blob(metadata: dict):
     """Build normalized metadata text plus key fields for variant detection."""
     spec = metadata.get("modelspec.architecture", "").lower()
+    gguf_arch = metadata.get("general.architecture", "").lower()
+    gguf_name = metadata.get("general.name", "").lower()
     ss = metadata.get("ss_base_model_version", "").lower()
     title = metadata.get("modelspec.title", "").lower()
     desc = metadata.get("modelspec.description", "").lower()
@@ -385,7 +350,7 @@ def _build_metadata_blob(metadata: dict):
     sd_model = metadata.get("ss_sd_model_name", "").lower()
 
     # Also scan all short metadata values for clues.
-    all_meta = f"{spec} {ss} {title} {desc} {output_name} {sd_model}"
+    all_meta = f"{spec} {gguf_arch} {gguf_name} {ss} {title} {desc} {output_name} {sd_model}"
     for _, mv in metadata.items():
         v = str(mv).lower()
         if len(v) < 200:  # skip huge JSON blobs
@@ -444,6 +409,7 @@ def _build_metadata_blob(metadata: dict):
         "all_meta": all_meta,
         "sshs_meta": sshs_meta,
         "spec": spec,
+        "gguf_arch": gguf_arch,
         "ss": ss,
         "output_name": output_name,
         "sd_model": sd_model,
@@ -455,6 +421,7 @@ def _detect_from_metadata(metadata: dict):
     meta = _build_metadata_blob(metadata)
     all_meta = meta["all_meta"]
     sshs_meta = meta["sshs_meta"]
+    gguf_arch = meta["gguf_arch"]
     ss = meta["ss"]
     output_name = meta["output_name"]
     sd_model = meta["sd_model"]
@@ -497,6 +464,9 @@ def _detect_from_metadata(metadata: dict):
     # HiDream
     if "hidream" in all_meta:
         return "HiDream"
+
+    if gguf_arch:
+        return f"GGUF {gguf_arch}"
 
     # SD3 variants (check 3.5 before 3)
     if ("sd3.5" in all_meta or "sd35" in all_meta or
@@ -1287,7 +1257,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     options = options or {}
     allow_filename_alias_detection = bool(options.get("allow_filename_alias_detection", False))
 
-    metadata, tensor_info, file_size = read_safetensors_header(filepath)
+    metadata, tensor_info, file_size = read_model_header(filepath)
     keys = sorted(tensor_info.keys())
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
@@ -1392,7 +1362,7 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
 
     sep = "=" * 60
     print(f"\n{sep}")
-    print(f"  SAFETENSORS MODEL INSPECTOR")
+    print(f"  MODEL INSPECTOR")
     print(sep)
 
     # File info
@@ -1516,33 +1486,14 @@ def write_modelinfo_json(filepath: str, options: dict | None = None) -> str:
 # Entry point
 # ---------------------------------------------------------------------------
 
-def _iter_safetensors_paths(targets: Iterable[str], recursive: bool) -> list[str]:
-    found = []
-    seen = set()
-    for raw in targets:
-        p = Path(raw)
-        if p.is_file():
-            if p.suffix.lower() == ".safetensors":
-                s = str(p.resolve())
-                if s not in seen:
-                    seen.add(s)
-                    found.append(s)
-            continue
-        if p.is_dir():
-            it = p.rglob("*.safetensors") if recursive else p.glob("*.safetensors")
-            for fp in it:
-                s = str(fp.resolve())
-                if s not in seen:
-                    seen.add(s)
-                    found.append(s)
-            continue
-    return found
+def _iter_model_paths(targets: Iterable[str], recursive: bool) -> list[str]:
+    return iter_model_paths(targets, recursive, extensions=SUPPORTED_MODEL_EXTENSIONS)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="inspect_model.py",
-        description="Inspect .safetensors model files from file and folder targets.",
+        description="Inspect model files from file and folder targets.",
     )
     parser.add_argument(
         "targets",
@@ -1587,9 +1538,10 @@ def main(argv=None):
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
 
-    paths = _iter_safetensors_paths(args.targets, args.recursive)
+    paths = _iter_model_paths(args.targets, args.recursive)
     if not paths:
-        print("No .safetensors files found in provided targets.", file=sys.stderr)
+        formats = ", ".join(SUPPORTED_MODEL_EXTENSIONS)
+        print(f"No supported model files found ({formats}) in provided targets.", file=sys.stderr)
         return 1
 
     if args.dump_keys:
@@ -1634,7 +1586,7 @@ def main(argv=None):
 
     for fp in paths:
         try:
-            metadata, tensor_info, file_size = read_safetensors_header(fp)
+            metadata, tensor_info, file_size = read_model_header(fp)
             print_report(fp, metadata, tensor_info, file_size)
         except Exception as e:
             print(f"[ERROR] {fp}: {e}", file=sys.stderr)

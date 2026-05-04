@@ -56,11 +56,11 @@ Actionable integration plan for repository organization, additional model format
 
 ## 7. Add GGUF Support
 
-- Add a reader abstraction that can dispatch by extension: `.safetensors` first, then `.gguf`.
-- Use the installed `gguf` package from `.venv\Lib\site-packages\gguf`.
-- Review `.venv\Lib\site-packages\gguf\scripts\gguf_editor_gui.py` for PySide/PyQt patterns, metadata parsing, and tensor listing behavior.
-- Implement GGUF metadata extraction, tensor summaries, dtype counts, architecture hints, and model size reporting.
-- Keep GGUF support read-only for now; do not expose editing behavior.
+- [x] Add a reader abstraction that can dispatch by extension: `.safetensors` first, then `.gguf`.
+- [x] Use the installed `gguf` package from `.venv\Lib\site-packages\gguf`.
+- [x] Review `.venv\Lib\site-packages\gguf\scripts\gguf_editor_gui.py` for PySide/PyQt patterns, metadata parsing, and tensor listing behavior.
+- [x] Implement GGUF metadata extraction, tensor summaries, dtype counts, architecture hints, and model size reporting.
+- [x] Keep GGUF support read-only for now; do not expose editing behavior.
 - Add CLI and GUI smoke checks with at least one representative `.gguf` file.
 
 ## 8. Research Safetensors Library Integration

@@ -5,13 +5,8 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from inspect_model import (
-    FINGERPRINTS,
-    analyze_tensors,
-    inspect_file,
-    read_safetensors_header,
-    _collect_lora_up_dims,
-)
+from inspect_model import FINGERPRINTS, inspect_file, _collect_lora_up_dims
+from model_readers import analyze_tensors, read_model_header
 
 
 def modelinfo_text_path(filepath: str) -> str:
@@ -24,7 +19,7 @@ def modelinfo_json_path(filepath: str) -> str:
 
 def generate_modelinfo_dump(filepath: str) -> str:
     """Generate detailed .modelinfo text dump for a single safetensors file."""
-    metadata, tensor_info, file_size = read_safetensors_header(filepath)
+    metadata, tensor_info, file_size = read_model_header(filepath)
     keys = sorted(tensor_info.keys())
     _, total_params, shapes = analyze_tensors(tensor_info)
 
@@ -77,8 +72,8 @@ def generate_modelinfo_dump(filepath: str) -> str:
 
 
 def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dict:
-    """Build the structured .modelinfo JSON payload for a safetensors file."""
-    metadata, tensor_info, file_size = read_safetensors_header(filepath)
+    """Build the structured .modelinfo JSON payload for a model file."""
+    metadata, tensor_info, file_size = read_model_header(filepath)
     dtype_counts, total_params, shapes = analyze_tensors(tensor_info)
     summary = inspect_file(filepath, options=options)
 
@@ -96,7 +91,7 @@ def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dic
         })
 
     return {
-        "format": "safetensors-modelinfo-json",
+        "format": f"{Path(filepath).suffix.lower().lstrip('.')}-modelinfo-json",
         "format_version": 1,
         "filepath": filepath,
         "filename": Path(filepath).name,

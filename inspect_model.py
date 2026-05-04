@@ -1258,6 +1258,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     allow_filename_alias_detection = bool(options.get("allow_filename_alias_detection", False))
 
     metadata, tensor_info, file_size = read_model_header(filepath)
+    resolved_filepath = str(Path(filepath).resolve())
     keys = sorted(tensor_info.keys())
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
@@ -1329,6 +1330,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
 
     return {
         "filepath": filepath,
+        "resolved_filepath": resolved_filepath,
         "filename": Path(filepath).name,
         "file_size": file_size,
         "file_size_friendly": format_size(file_size),
@@ -1368,6 +1370,9 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
     # File info
     print(f"\n  File:           {Path(filepath).name}")
     print(f"  Path:           {filepath}")
+    resolved_filepath = str(Path(filepath).resolve())
+    if resolved_filepath != filepath:
+        print(f"  Resolved path:  {resolved_filepath}")
     print(f"  File size:      {format_size(file_size)}")
     print(f"  Tensor count:   {len(tensor_info)}")
     print(f"  Parameters:     {format_params(total_params)} ({total_params:,})")
@@ -1486,6 +1491,12 @@ def write_modelinfo_json(filepath: str, options: dict | None = None) -> str:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _configure_stdio_encoding():
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def _iter_model_paths(targets: Iterable[str], recursive: bool) -> list[str]:
     return iter_model_paths(targets, recursive, extensions=SUPPORTED_MODEL_EXTENSIONS)
 
@@ -1535,6 +1546,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None):
+    _configure_stdio_encoding()
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
 

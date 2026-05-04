@@ -28,6 +28,9 @@ def generate_modelinfo_dump(filepath: str) -> str:
     lines.append(sep)
     lines.append(f"  FILE: {Path(filepath).name}")
     lines.append(f"  Path: {filepath}")
+    resolved_filepath = str(Path(filepath).resolve())
+    if resolved_filepath != filepath:
+        lines.append(f"  Resolved path: {resolved_filepath}")
     lines.append(f"  Keys: {len(keys)}    Params: {total_params:,}    Size: {file_size:,} bytes")
     lines.append(sep)
 
@@ -94,6 +97,7 @@ def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dic
         "format": f"{Path(filepath).suffix.lower().lstrip('.')}-modelinfo-json",
         "format_version": 1,
         "filepath": filepath,
+        "resolved_filepath": str(Path(filepath).resolve()),
         "filename": Path(filepath).name,
         "file_size": file_size,
         "inspection": summary,

@@ -24,9 +24,10 @@ Actionable integration plan for repository organization, additional model format
 
 ## 3. Resolve Real Paths for Dump Targets
 
-- Investigate how Windows symlinks, junctions, hardlinks, and shortcuts behave with `Path.resolve()` and file IDs.
-- Decide whether `.modelinfo` should be written beside the user-provided path or the resolved target path.
+- [x] Investigate how Windows symlinks behave with `Path.resolve()` and file IDs.
+- [x] Decide whether `.modelinfo` should be written beside the user-provided path or the resolved target path.
 - Add an option if both behaviors are useful, for example `--resolve-output-path`.
+- [x] Preserve the user-provided path for default `.modelinfo` output and expose `resolved_filepath` separately.
 - Handle failures conservatively and show the chosen output path in CLI/GUI results.
 
 ## 4. Library Linking & Path Resolution
@@ -61,7 +62,7 @@ Actionable integration plan for repository organization, additional model format
 - [x] Review `.venv\Lib\site-packages\gguf\scripts\gguf_editor_gui.py` for PySide/PyQt patterns, metadata parsing, and tensor listing behavior.
 - [x] Implement GGUF metadata extraction, tensor summaries, dtype counts, architecture hints, and model size reporting.
 - [x] Keep GGUF support read-only for now; do not expose editing behavior.
-- Add CLI and GUI smoke checks with at least one representative `.gguf` file.
+- [x] Add CLI and GUI smoke checks with at least one representative `.gguf` file.
 
 ## 8. Research Safetensors Library Integration
 

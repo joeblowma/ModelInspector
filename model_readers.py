@@ -10,6 +10,7 @@ from typing import Iterable
 
 
 SUPPORTED_MODEL_EXTENSIONS = (".safetensors", ".gguf")
+MAX_METADATA_ARRAY_ITEMS = 50
 
 
 def is_supported_model_path(path: str | Path) -> bool:
@@ -49,8 +50,14 @@ def _to_jsonable(value):
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     if isinstance(value, tuple):
-        return [_to_jsonable(v) for v in value]
+        value = list(value)
     if isinstance(value, list):
+        if len(value) > MAX_METADATA_ARRAY_ITEMS:
+            return {
+                "count": len(value),
+                "preview": [_to_jsonable(v) for v in value[:MAX_METADATA_ARRAY_ITEMS]],
+                "truncated": True,
+            }
         return [_to_jsonable(v) for v in value]
     return value
 
@@ -113,10 +120,10 @@ def iter_model_paths(
         p = Path(raw)
         if p.is_file():
             if p.suffix.lower() in normalized_extensions:
-                s = str(p.resolve())
-                if s not in seen:
-                    seen.add(s)
-                    found.append(s)
+                resolved = str(p.resolve())
+                if resolved not in seen:
+                    seen.add(resolved)
+                    found.append(str(p))
             continue
 
         if p.is_dir():
@@ -124,9 +131,9 @@ def iter_model_paths(
             for fp in iterator:
                 if not fp.is_file() or fp.suffix.lower() not in normalized_extensions:
                     continue
-                s = str(fp.resolve())
-                if s not in seen:
-                    seen.add(s)
-                    found.append(s)
+                resolved = str(fp.resolve())
+                if resolved not in seen:
+                    seen.add(resolved)
+                    found.append(str(fp))
 
     return found

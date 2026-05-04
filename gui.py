@@ -27,6 +27,13 @@ from PyQt6.QtWidgets import (
 from inspect_model import (
     inspect_file, generate_modelinfo_dump, write_modelinfo_dump, write_modelinfo_json,
 )
+from model_readers import SUPPORTED_MODEL_EXTENSIONS, is_supported_model_path, iter_model_paths
+
+
+def _model_file_filter() -> str:
+    patterns = " ".join(f"*{ext}" for ext in SUPPORTED_MODEL_EXTENSIONS)
+    label = ", ".join(SUPPORTED_MODEL_EXTENSIONS)
+    return f"Model Files ({patterns});;All Files (*)"
 
 
 def _asset(name: str) -> str:
@@ -222,7 +229,7 @@ class DropZone(QFrame):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        icon_label = QLabel("Drop .safetensors files here")
+        icon_label = QLabel("Drop model files here")
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_label.setStyleSheet("color: #6c7086; font-size: 15px; font-weight: bold; border: none; background: transparent;")
         layout.addWidget(icon_label)
@@ -275,9 +282,8 @@ class DropZone(QFrame):
                 continue
             p = Path(fp)
             if p.is_dir():
-                for sub in p.rglob("*.safetensors"):
-                    paths.append(str(sub))
-            elif fp.lower().endswith(".safetensors"):
+                paths.extend(iter_model_paths([fp], recursive=True))
+            elif is_supported_model_path(fp):
                 paths.append(fp)
         if paths:
             # Deduplicate while preserving order
@@ -1339,8 +1345,8 @@ class MainWindow(QMainWindow):
 
     def _browse_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select safetensors files", "",
-            "Safetensors Files (*.safetensors);;All Files (*)"
+            self, "Select model files", "",
+            _model_file_filter()
         )
         if paths:
             self._add_files(paths)
@@ -1349,9 +1355,7 @@ class MainWindow(QMainWindow):
         folder = QFileDialog.getExistingDirectory(self, "Select folder to scan recursively")
         if not folder:
             return
-        found = []
-        for p in Path(folder).rglob("*.safetensors"):
-            found.append(str(p))
+        found = iter_model_paths([folder], recursive=True)
         if found:
             self._add_files(found)
 

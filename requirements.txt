@@ -1,2 +1,4 @@
 PyQt6
 pyinstaller>=6.0.0
+pillow
+gguf

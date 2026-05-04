@@ -1,12 +1,24 @@
 @echo off
-setlocal enabledelayedexpansion
 
 echo ------------------------------------------------------------------------------
 echo Safetensors Model Inspector - Compilation Script (PyInstaller)
 echo ------------------------------------------------------------------------------
+echo.
+
+:: Check for virtual environment var file created by install script
+if not exist venvars.bat (
+    echo.
+    echo.
+    echo ERROR: venvars.bat not found
+    echo Run venv_create.bat to get started.
+    pause
+    exit 1
+)
+call venvars.bat
+
+setlocal enabledelayedexpansion
 
 :: Check for virtual environment
-set VENV_NAME=venv
 if not exist "%VENV_NAME%\Scripts\activate.bat" (
     echo [ERROR] Virtual environment '%VENV_NAME%' not found.
     echo Please run 'venv_create.bat' first to set up the environment.
@@ -53,6 +65,7 @@ pyinstaller --noconfirm --onefile --windowed ^
 
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Compilation failed.
+    echo error %ERRORLEVEL%
     pause
     exit /b 1
 )

@@ -28,12 +28,19 @@ from inspect_model import (
     inspect_file, generate_modelinfo_dump, write_modelinfo_dump, write_modelinfo_json,
 )
 from model_readers import SUPPORTED_MODEL_EXTENSIONS, is_supported_model_path, iter_model_paths
+from app_paths import settings_path
 
 
 def _model_file_filter() -> str:
     patterns = " ".join(f"*{ext}" for ext in SUPPORTED_MODEL_EXTENSIONS)
     label = ", ".join(SUPPORTED_MODEL_EXTENSIONS)
     return f"Model Files ({patterns});;All Files (*)"
+
+
+def _settings() -> QSettings:
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return QSettings(str(path), QSettings.Format.IniFormat)
 
 
 def _asset(name: str) -> str:
@@ -862,6 +869,7 @@ class MainWindow(QMainWindow):
         self._queued_files: list[str] = []
         self._results: list[dict] = []
         self._worker: AnalysisWorker | None = None
+        self._raw_loaded_filepath: str | None = None
         self._cards: list[ModelCard] = []
         self._path_to_card: dict[str, ModelCard] = {}
         self._path_to_simple_card: dict[str, ModelCard] = {}
@@ -1150,6 +1158,9 @@ class MainWindow(QMainWindow):
         self.raw_combo.setMinimumWidth(300)
         self.raw_combo.currentIndexChanged.connect(self._on_raw_selection_changed)
         raw_top.addWidget(self.raw_combo, stretch=1)
+        self.raw_load_btn = QPushButton("Load Full Dump")
+        self.raw_load_btn.clicked.connect(self._load_selected_raw_dump)
+        raw_top.addWidget(self.raw_load_btn)
         raw_layout.addLayout(raw_top)
 
         self.raw_text = QTextEdit()
@@ -1250,7 +1261,7 @@ class MainWindow(QMainWindow):
             self._refresh_raw_combo_filtered()
 
     def _load_ui_settings(self):
-        s = QSettings("ModelInspector", "ModelInspectorUI")
+        s = _settings()
         self._allow_filename_alias_detection = str(s.value("allow_filename_alias_detection", "false")).lower() == "true"
         self._auto_fold_on_analyze = str(s.value("auto_fold_on_analyze", "false")).lower() == "true"
         self._auto_analyze_on_add = str(s.value("auto_analyze_on_add", "true")).lower() == "true"
@@ -1287,7 +1298,7 @@ class MainWindow(QMainWindow):
                 pass
 
     def _save_ui_settings(self):
-        s = QSettings("ModelInspector", "ModelInspectorUI")
+        s = _settings()
         s.setValue("allow_filename_alias_detection", str(self._allow_filename_alias_detection).lower())
         s.setValue("auto_fold_on_analyze", str(self._auto_fold_on_analyze).lower())
         s.setValue("auto_analyze_on_add", str(self._auto_analyze_on_add).lower())
@@ -1421,6 +1432,7 @@ class MainWindow(QMainWindow):
         self.table.setRowCount(0)
         self.raw_combo.clear()
         self.raw_text.clear()
+        self._raw_loaded_filepath = None
         self._update_selection_ui_state()
 
     # -- Analysis ----------------------------------------------------------
@@ -1451,6 +1463,7 @@ class MainWindow(QMainWindow):
         self.table.setRowCount(0)
         self.raw_combo.clear()
         self.raw_text.clear()
+        self._raw_loaded_filepath = None
         self._update_selection_ui_state()
 
         self._worker = AnalysisWorker(
@@ -1729,9 +1742,10 @@ class MainWindow(QMainWindow):
             self.raw_text.clear()
         elif self.raw_combo.currentIndex() < 0:
             self.raw_combo.setCurrentIndex(0)
-            self._on_raw_selection_changed(0)
         else:
-            self._on_raw_selection_changed(self.raw_combo.currentIndex())
+            current_fp = self.raw_combo.currentData()
+            if current_fp != self._raw_loaded_filepath:
+                self._show_raw_summary(current_fp)
 
     def _show_raw_for_filepath(self, filepath: str):
         if not filepath:
@@ -1740,13 +1754,8 @@ class MainWindow(QMainWindow):
         idx = self.raw_combo.findData(filepath)
         if idx >= 0:
             self.raw_combo.setCurrentIndex(idx)
-        # Force-populate raw text even if combo index didn't emit change.
-        try:
-            dump = generate_modelinfo_dump(filepath)
-            self.raw_text.setPlainText(dump)
-        except Exception as e:
-            self.raw_text.setPlainText(f"Error reading file:\n{e}")
         self.tabs.setCurrentIndex(3)
+        self._load_selected_raw_dump()
 
     def _on_cards_select_all_changed(self, state):
         if self._syncing_selection:
@@ -2133,15 +2142,63 @@ class MainWindow(QMainWindow):
     def _on_raw_selection_changed(self, index):
         if index < 0:
             self.raw_text.clear()
+            self._raw_loaded_filepath = None
             return
         filepath = self.raw_combo.itemData(index)
         if not filepath:
             return
+        self._show_raw_summary(filepath)
+
+    def _result_for_filepath(self, filepath: str) -> dict | None:
+        for data in self._results:
+            if data.get("filepath") == filepath:
+                return data
+        return None
+
+    def _show_raw_summary(self, filepath: str):
+        data = self._result_for_filepath(filepath)
+        if not data:
+            self.raw_text.setPlainText("No inspection summary is available for this model.")
+            self._raw_loaded_filepath = None
+            return
+        lines = [
+            f"File: {data.get('filename', Path(filepath).name)}",
+            f"Path: {filepath}",
+        ]
+        resolved = data.get("resolved_filepath")
+        if resolved and resolved != filepath:
+            lines.append(f"Resolved path: {resolved}")
+        lines.extend([
+            f"Architecture: {data.get('architecture', 'Unknown')}",
+            f"Model type: {data.get('model_type', 'Unknown')}",
+            f"Size: {data.get('file_size_friendly', '-')}",
+            f"Parameters: {data.get('total_params_friendly', '-')}",
+            f"Tensors: {data.get('tensor_count', 0)}",
+            f"Precision: {data.get('precision_display') or data.get('precision_summary', '-')}",
+            "",
+            "Full tensor key dump is not loaded automatically for large files.",
+            "Click Load Full Dump to generate it.",
+        ])
+        self.raw_text.setPlainText("\n".join(lines))
+        self._raw_loaded_filepath = None
+
+    def _load_selected_raw_dump(self):
+        filepath = self.raw_combo.currentData()
+        if not filepath:
+            return
         try:
+            self.raw_load_btn.setEnabled(False)
+            self.raw_load_btn.setText("Loading...")
+            QApplication.processEvents()
             dump = generate_modelinfo_dump(filepath)
             self.raw_text.setPlainText(dump)
+            self._raw_loaded_filepath = filepath
         except Exception as e:
             self.raw_text.setPlainText(f"Error reading file:\n{e}")
+            self._raw_loaded_filepath = None
+        finally:
+            self.raw_load_btn.setEnabled(True)
+            self.raw_load_btn.setText("Load Full Dump")
 
 
 # ---------------------------------------------------------------------------

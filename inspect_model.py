@@ -19,6 +19,7 @@ from model_readers import (
     read_safetensors_header,
     SUPPORTED_MODEL_EXTENSIONS,
 )
+from model_cache import get_cached_inspection, store_cached_inspection
 
 DTYPE_BITS = {
     "F64": 64, "F32": 32, "F16": 16, "BF16": 16,
@@ -1255,6 +1256,14 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         precision_summary, metadata
     """
     options = options or {}
+    cached = get_cached_inspection(filepath, options)
+    if cached is not None:
+        cached = dict(cached)
+        cached["filepath"] = filepath
+        cached["resolved_filepath"] = str(Path(filepath).resolve())
+        cached["filename"] = Path(filepath).name
+        return cached
+
     allow_filename_alias_detection = bool(options.get("allow_filename_alias_detection", False))
 
     metadata, tensor_info, file_size = read_model_header(filepath)
@@ -1328,7 +1337,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         if mk not in extra:
             extra[mk] = mv
 
-    return {
+    result = {
         "filepath": filepath,
         "resolved_filepath": resolved_filepath,
         "filename": Path(filepath).name,
@@ -1353,6 +1362,8 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         "metadata": metadata,
         "extra": extra,
     }
+    store_cached_inspection(filepath, result, options)
+    return result
 
 
 def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: int):

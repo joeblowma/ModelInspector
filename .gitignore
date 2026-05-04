@@ -211,3 +211,4 @@ venvars.bat
 .claude
 .codex
 graphify-out/
+.model-inspector/

@@ -74,8 +74,11 @@ Actionable integration plan for repository organization, additional model format
 
 ## 9. Caching & Default Libraries
 
-- Add a cache for scanned directories and parsed model summaries to speed up repeated launches.
-- Store enough identity data to detect moved, deleted, or changed files, such as canonical path, size, modified time, and format.
+- [x] Add a cache for parsed model summaries to speed up repeated launches.
+- [x] Store enough identity data to detect moved, deleted, or changed files, such as canonical path, size, modified time, and format.
+- [x] Default settings/cache to a portable app-local data directory with relocation overrides.
+- [x] Use a cache index with per-entry files instead of one monolithic cache blob.
+- Add a cache for scanned directories to speed up repeated launches.
 - Add a `load default libraries on startup` setting backed by the cached directory list.
 - Add optional startup pruning for missing files, with a warning before removing stale entries.
 - Add a settings action to clear the cache entirely.

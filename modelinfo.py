@@ -93,6 +93,7 @@ def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dic
             "parameters": params,
         })
 
+    warnings = list(summary.get("warnings") or [])
     return {
         "format": f"{Path(filepath).suffix.lower().lstrip('.')}-modelinfo-json",
         "format_version": 1,
@@ -108,7 +109,7 @@ def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dic
             "dtype_counts": dict(sorted(dtype_counts.items())),
         },
         "tensors": tensors,
-        "warnings": [],
+        "warnings": warnings,
     }
 
 

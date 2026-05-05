@@ -1277,6 +1277,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     model_type = classify_model_type(components, arch)
     adapter_type = detect_adapter_type(keys, metadata)
     training_meta = _extract_training_meta(metadata)
+    warnings = list(metadata.get("smi.warnings") or [])
 
     # Build dtype list
     dtype_list = []
@@ -1361,6 +1362,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         "precision_display": precision_display,
         "metadata": metadata,
         "extra": extra,
+        "warnings": warnings,
     }
     store_cached_inspection(filepath, result, options)
     return result

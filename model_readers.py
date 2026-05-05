@@ -12,9 +12,19 @@ from typing import Iterable
 SUPPORTED_MODEL_EXTENSIONS = (".safetensors", ".gguf")
 MAX_METADATA_ARRAY_ITEMS = 50
 GGML_QUANT_NAMES = {
+    4: "Q4_2",
+    5: "Q4_3",
+    31: "Q4_0_4_4",
+    32: "Q4_0_4_8",
+    33: "Q4_0_8_8",
+    36: "IQ4_NL_4_4",
+    37: "IQ4_NL_4_8",
+    38: "IQ4_NL_8_8",
+    40: "NVFP4",
     41: "Q1_0",
     42: "Q2_0",
 }
+OBSOLETE_GGML_QUANT_IDS = {4, 5, 31, 32, 33, 36, 37, 38}
 
 
 def is_supported_model_path(path: str | Path) -> bool:
@@ -246,6 +256,17 @@ def _read_gguf_header_fast(filepath: str):
             "n_bytes": int(n_bytes),
             "data_offsets": [int(start), int(start + n_bytes)],
         }
+
+    obsolete_dtype_names = sorted({
+        GGML_QUANT_NAMES[raw_dtype]
+        for _, _, raw_dtype, _ in tensor_records
+        if raw_dtype in OBSOLETE_GGML_QUANT_IDS
+    })
+    if obsolete_dtype_names:
+        metadata["smi.warnings"] = [
+            "File contains obsolete or removed GGML quantization type(s): "
+            + ", ".join(obsolete_dtype_names)
+        ]
 
     return metadata, tensor_info, file_size
 

@@ -44,6 +44,10 @@ LLAMA_FILE_TYPE_NAMES = {
     32: "BF16",
     36: "TQ1_0",
     37: "TQ2_0",
+    38: "MXFP4_MOE",
+    39: "NVFP4",
+    40: "Q1_0",
+    41: "Q2_0",
     1024: "GUESSED",
 }
 GGML_QUANT_NAMES = {
@@ -104,6 +108,17 @@ def _add_common_metadata(metadata: dict, filepath: str):
     file_type = metadata.get("general.file_type")
     if isinstance(file_type, int):
         metadata["smi.quantization"] = LLAMA_FILE_TYPE_NAMES.get(file_type, f"FILE_TYPE_{file_type}")
+
+
+def _infer_quantization_from_tensor_dtypes(tensor_info: dict) -> str | None:
+    dtype_counts = Counter(
+        info.get("dtype")
+        for info in tensor_info.values()
+        if info.get("dtype") and info.get("dtype") not in {"F32", "F16", "BF16"}
+    )
+    if not dtype_counts:
+        return None
+    return dtype_counts.most_common(1)[0][0]
 
 
 def _to_jsonable(value):
@@ -317,6 +332,11 @@ def _read_gguf_header_fast(filepath: str):
             + ", ".join(obsolete_dtype_names)
         ]
     _add_common_metadata(metadata, filepath)
+    quantization = str(metadata.get("smi.quantization") or "")
+    if quantization.startswith("FILE_TYPE_"):
+        inferred = _infer_quantization_from_tensor_dtypes(tensor_info)
+        if inferred:
+            metadata["smi.quantization"] = inferred
 
     return metadata, tensor_info, file_size
 

@@ -212,3 +212,4 @@ venvars.bat
 .codex
 graphify-out/
 .model-inspector/
+test/

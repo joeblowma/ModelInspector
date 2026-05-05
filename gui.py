@@ -12,7 +12,7 @@ from pathlib import Path
 # Suppress Qt DPI awareness warning on Windows
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QTimer, QSettings
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QTimer, QSettings, QEvent
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QFont, QKeySequence, QAction, QShortcut, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -619,6 +619,15 @@ class CheckFilterButton(QToolButton):
         self.setText(f"{self._label}: {len(self._active)}/{len(self._arch_checks)}")
 
 
+class SortableTableWidgetItem(QTableWidgetItem):
+    def __lt__(self, other):
+        left = self.data(Qt.ItemDataRole.UserRole)
+        right = other.data(Qt.ItemDataRole.UserRole)
+        if isinstance(left, (int, float)) or isinstance(right, (int, float)):
+            return (left or 0) < (right or 0)
+        return super().__lt__(other)
+
+
 # ---------------------------------------------------------------------------
 # Model card widget
 # ---------------------------------------------------------------------------
@@ -694,6 +703,15 @@ class ModelCard(QFrame):
         adapter_type = data.get("adapter_type")
         if adapter_type:
             arch_row.addWidget(self._make_tag(adapter_type, "#f9e2af", "#1e1e2e"))
+        if data.get("is_moe"):
+            expert_count = data.get("expert_count")
+            expert_used_count = data.get("expert_used_count")
+            moe_label = "MoE"
+            if expert_count:
+                moe_label += f" {expert_count}"
+                if expert_used_count:
+                    moe_label += f"/{expert_used_count}"
+            arch_row.addWidget(self._make_tag(moe_label, "#fab387", "#1e1e2e"))
 
         # Component tags at top
         comp_colors = {
@@ -862,6 +880,11 @@ class ModelCard(QFrame):
                     border-color: #74c7ec;
                 }
             """)
+
+    def set_filter_visible(self, visible: bool):
+        self.setVisible(visible)
+        self.setMaximumHeight(16777215 if visible else 0)
+        self.updateGeometry()
 
     def _on_checkbox_clicked(self, checked):
         if self.filepath:
@@ -1139,7 +1162,7 @@ class MainWindow(QMainWindow):
         self._table_columns = [
             "", "File", "Format", "File Size", "Architecture", "Model Type", "Adapter", "Quantization",
             "Precision", "UNet Precision", "VAE Precision", "Text Encoder Precision", "Transformer Precision",
-            "Parameters", "Tensors", "LoRA Rank",
+            "Parameters", "Tensors", "LoRA Rank", "MoE", "Experts", "Active Experts",
             "Software", "Images", "Resolution", "Epochs", "Steps",
         ]
         self.table.setColumnCount(len(self._table_columns))
@@ -1165,11 +1188,14 @@ class MainWindow(QMainWindow):
         self.table.setColumnWidth(13, 95)   # Parameters
         self.table.setColumnWidth(14, 70)   # Tensors
         self.table.setColumnWidth(15, 85)   # LoRA Rank
-        self.table.setColumnWidth(16, 150)  # Software
-        self.table.setColumnWidth(17, 70)   # Images
-        self.table.setColumnWidth(18, 100)  # Resolution
-        self.table.setColumnWidth(19, 70)   # Epochs
-        self.table.setColumnWidth(20, 80)   # Steps
+        self.table.setColumnWidth(16, 60)   # MoE
+        self.table.setColumnWidth(17, 80)   # Experts
+        self.table.setColumnWidth(18, 105)  # Active Experts
+        self.table.setColumnWidth(19, 150)  # Software
+        self.table.setColumnWidth(20, 70)   # Images
+        self.table.setColumnWidth(21, 100)  # Resolution
+        self.table.setColumnWidth(22, 70)   # Epochs
+        self.table.setColumnWidth(23, 80)   # Steps
         self._apply_table_column_visibility()
         data_tab_layout.addWidget(self.table)
         self.tabs.addTab(data_tab, "Data")
@@ -1185,11 +1211,23 @@ class MainWindow(QMainWindow):
         raw_top.addWidget(QLabel("Select model:"))
         self.raw_combo = QComboBox()
         self.raw_combo.setMinimumWidth(300)
+        self.raw_combo.installEventFilter(self)
         self.raw_combo.currentIndexChanged.connect(self._on_raw_selection_changed)
         raw_top.addWidget(self.raw_combo, stretch=1)
+        self.raw_prev_btn = QToolButton()
+        self.raw_prev_btn.setText("▲")
+        self.raw_prev_btn.setToolTip("Previous model")
+        self.raw_prev_btn.clicked.connect(lambda: self._step_raw_selection(-1))
+        raw_top.addWidget(self.raw_prev_btn)
+        self.raw_next_btn = QToolButton()
+        self.raw_next_btn.setText("▼")
+        self.raw_next_btn.setToolTip("Next model")
+        self.raw_next_btn.clicked.connect(lambda: self._step_raw_selection(1))
+        raw_top.addWidget(self.raw_next_btn)
         self.raw_load_btn = QPushButton("Load Full Dump")
         self.raw_load_btn.clicked.connect(self._load_selected_raw_dump)
         raw_top.addWidget(self.raw_load_btn)
+        self._update_raw_controls()
         raw_layout.addLayout(raw_top)
 
         self.raw_text = QTextEdit()
@@ -1291,6 +1329,23 @@ class MainWindow(QMainWindow):
             else:
                 QApplication.clipboard().setText(self.raw_text.toPlainText())
             return
+
+    def eventFilter(self, obj, event):
+        if obj is self.raw_combo and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key == Qt.Key.Key_Up:
+                self._step_raw_selection(-1)
+                return True
+            if key == Qt.Key.Key_Down:
+                self._step_raw_selection(1)
+                return True
+            if key == Qt.Key.Key_PageUp:
+                self._step_raw_selection(-10)
+                return True
+            if key == Qt.Key.Key_PageDown:
+                self._step_raw_selection(10)
+                return True
+        return super().eventFilter(obj, event)
 
     def _on_tab_changed(self, index):
         if index == 3:
@@ -1445,6 +1500,7 @@ class MainWindow(QMainWindow):
                     self.table.setColumnHidden(idx, not cb.isChecked())
             self._save_ui_settings()
             self._rebuild_views_from_results()
+            self._update_raw_controls()
             self._apply_default_tab()
 
     def _apply_default_tab(self):
@@ -1475,6 +1531,7 @@ class MainWindow(QMainWindow):
         self.raw_combo.clear()
         self.raw_text.clear()
         self._raw_loaded_filepath = None
+        self._update_raw_controls()
         self._update_selection_ui_state()
 
     # -- Analysis ----------------------------------------------------------
@@ -1508,6 +1565,7 @@ class MainWindow(QMainWindow):
         self.raw_combo.clear()
         self.raw_text.clear()
         self._raw_loaded_filepath = None
+        self._update_raw_controls()
         self._update_selection_ui_state()
 
         self._worker = AnalysisWorker(
@@ -1556,6 +1614,9 @@ class MainWindow(QMainWindow):
             "lora_rank": None,
             "training_meta": {},
             "extra": {},
+            "is_moe": False,
+            "expert_count": None,
+            "expert_used_count": None,
         }
         self._results.append(err_data)
         self._add_card(err_data)
@@ -1576,6 +1637,27 @@ class MainWindow(QMainWindow):
         if not data.get("format"):
             suffix = Path(str(data.get("filepath") or "")).suffix.lower().lstrip(".")
             data["format"] = suffix.upper() if suffix else "UNKNOWN"
+        if "is_moe" not in data:
+            metadata = data.get("metadata") or {}
+            arch_text = str(data.get("architecture") or "").lower()
+            expert_count = None
+            expert_used_count = None
+            is_moe = "moe" in arch_text
+            for key, value in metadata.items():
+                lk = str(key).lower()
+                if "expert" in lk or "moe" in lk:
+                    is_moe = True
+                try:
+                    int_value = int(value)
+                except (TypeError, ValueError):
+                    int_value = None
+                if lk.endswith(".expert_count"):
+                    expert_count = int_value
+                elif lk.endswith(".expert_used_count"):
+                    expert_used_count = int_value
+            data["is_moe"] = is_moe
+            data["expert_count"] = expert_count
+            data["expert_used_count"] = expert_used_count
 
     def _dump_all(self):
         """Write a .modelinfo file next to every analyzed model."""
@@ -1622,6 +1704,7 @@ class MainWindow(QMainWindow):
         self.simple_cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.simple_cards_placeholder.setStyleSheet("color: #45475a; font-size: 14px; padding: 60px;")
         self.simple_cards_layout.insertWidget(0, self.simple_cards_placeholder)
+        self._refresh_card_layout_geometry()
 
     def _add_card(self, data: dict):
         # Remove placeholders if present
@@ -1656,6 +1739,17 @@ class MainWindow(QMainWindow):
         self._cards.append(detail_card)
         self.cards_layout.addWidget(detail_card)
         self.simple_cards_layout.addWidget(simple_card)
+        self._refresh_card_layout_geometry()
+
+    def _refresh_card_layout_geometry(self):
+        self.cards_layout.invalidate()
+        self.simple_cards_layout.invalidate()
+        self.cards_container.adjustSize()
+        self.simple_cards_container.adjustSize()
+        self.cards_container.updateGeometry()
+        self.simple_cards_container.updateGeometry()
+        self.cards_scroll.viewport().update()
+        self.simple_cards_scroll.viewport().update()
 
     # -- Data table view ---------------------------------------------------
 
@@ -1701,6 +1795,12 @@ class MainWindow(QMainWindow):
         # LoRA rank
         lora_rank = data.get("lora_rank")
         rank_str = str(lora_rank) if lora_rank else "-"
+        is_moe = bool(data.get("is_moe"))
+        expert_count = data.get("expert_count")
+        expert_used_count = data.get("expert_used_count")
+        moe_str = "Yes" if is_moe else "-"
+        expert_count_str = str(expert_count) if expert_count is not None else "-"
+        expert_used_count_str = str(expert_used_count) if expert_used_count is not None else "-"
 
         values = [
             data["filename"],
@@ -1718,6 +1818,9 @@ class MainWindow(QMainWindow):
             data["total_params_friendly"],
             str(data["tensor_count"]),
             rank_str,
+            moe_str,
+            expert_count_str,
+            expert_used_count_str,
             training_meta.get("software", "-"),
             training_meta.get("train_images", "-"),
             training_meta.get("resolution", "-"),
@@ -1732,13 +1835,20 @@ class MainWindow(QMainWindow):
         for col, val in enumerate(values, start=1):
             if col == 1 and self._show_full_paths and filepath:
                 val = filepath
-            item = QTableWidgetItem(val)
+            item = SortableTableWidgetItem(val)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             if col == 1:
                 item.setToolTip(filepath)
                 item.setData(Qt.ItemDataRole.UserRole, filepath)
             else:
                 item.setToolTip(str(val))
+            column_name = self._table_columns[col]
+            if column_name == "MoE":
+                item.setData(Qt.ItemDataRole.UserRole, 1 if is_moe else 0)
+            elif column_name == "Experts":
+                item.setData(Qt.ItemDataRole.UserRole, int(expert_count or 0))
+            elif column_name == "Active Experts":
+                item.setData(Qt.ItemDataRole.UserRole, int(expert_used_count or 0))
             self.table.setItem(row, col, item)
 
         if filepath:
@@ -1799,13 +1909,14 @@ class MainWindow(QMainWindow):
             )
             card = self._path_to_card.get(fp)
             if card:
-                card.setVisible(visible)
+                card.set_filter_visible(visible)
             scard = self._path_to_simple_card.get(fp)
             if scard:
-                scard.setVisible(visible)
+                scard.set_filter_visible(visible)
             row = self._row_for_filepath(fp)
             if row is not None and 0 <= row < self.table.rowCount():
                 self.table.setRowHidden(row, not visible)
+        self._refresh_card_layout_geometry()
         self._refresh_raw_combo_filtered()
         self._update_selection_ui_state()
 
@@ -1823,6 +1934,8 @@ class MainWindow(QMainWindow):
         adapter_type = data.get("adapter_type")
         if adapter_type:
             tags.append(str(adapter_type))
+        if data.get("is_moe"):
+            tags.append("MoE")
         quantization = data.get("quantization")
         if quantization:
             tags.append(str(quantization))
@@ -1855,6 +1968,7 @@ class MainWindow(QMainWindow):
             current_fp = self.raw_combo.currentData()
             if current_fp != self._raw_loaded_filepath:
                 self._show_raw_for_current_setting(current_fp)
+        self._update_raw_controls()
 
     def _show_raw_for_filepath(self, filepath: str):
         if not filepath:
@@ -1865,6 +1979,25 @@ class MainWindow(QMainWindow):
             self.raw_combo.setCurrentIndex(idx)
         self.tabs.setCurrentIndex(3)
         self._load_selected_raw_dump()
+
+    def _step_raw_selection(self, delta: int):
+        count = self.raw_combo.count()
+        if count <= 0:
+            return
+        current = self.raw_combo.currentIndex()
+        if current < 0:
+            current = 0
+        next_index = max(0, min(count - 1, current + delta))
+        if next_index != current:
+            self.raw_combo.setCurrentIndex(next_index)
+
+    def _update_raw_controls(self):
+        has_multiple = self.raw_combo.count() > 1
+        self.raw_prev_btn.setEnabled(has_multiple and self.raw_combo.currentIndex() > 0)
+        self.raw_next_btn.setEnabled(
+            has_multiple and self.raw_combo.currentIndex() < self.raw_combo.count() - 1
+        )
+        self.raw_load_btn.setVisible(not self._auto_load_raw_dump)
 
     def _on_cards_select_all_changed(self, state):
         if self._syncing_selection:
@@ -2277,6 +2410,7 @@ class MainWindow(QMainWindow):
         filepath = self.raw_combo.itemData(index)
         if not filepath:
             return
+        self._update_raw_controls()
         self._show_raw_for_current_setting(filepath)
 
     def _show_raw_for_current_setting(self, filepath: str):

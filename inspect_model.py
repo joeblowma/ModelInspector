@@ -1077,6 +1077,48 @@ def classify_model_type(components: dict, arch: str):
     return "Unknown"
 
 
+def detect_moe(keys: list[str], metadata: dict, arch: str) -> dict:
+    """Detect mixture-of-experts structure from metadata first, tensor keys second."""
+    lower_arch = str(arch or metadata.get("general.architecture", "")).lower()
+    moe = "moe" in lower_arch
+    expert_count = None
+    expert_used_count = None
+
+    def intish(value):
+        if value in (None, "", "None"):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    for key, value in metadata.items():
+        lk = str(key).lower()
+        if lk.endswith(".expert_count") or lk.endswith(".num_experts") or lk.endswith(".n_experts"):
+            expert_count = intish(value) or expert_count
+        elif lk.endswith(".expert_used_count") or lk.endswith(".num_experts_per_tok") or lk.endswith(".experts_per_token"):
+            expert_used_count = intish(value) or expert_used_count
+        if "expert" in lk or "moe" in lk:
+            moe = True
+
+    if not moe:
+        expert_markers = (
+            ".experts.",
+            ".feed_forward.experts.",
+            ".ffn.experts.",
+            ".block_sparse_moe.",
+            ".gate.experts.",
+            ".router.",
+        )
+        moe = any(marker in key.lower() for key in keys for marker in expert_markers)
+
+    return {
+        "is_moe": bool(moe),
+        "expert_count": expert_count,
+        "expert_used_count": expert_used_count,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Report formatting
 # ---------------------------------------------------------------------------
@@ -1278,8 +1320,13 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
             cached["format"] = model_format_for_path(filepath)
         metadata = cached.get("metadata") or {}
         file_type = metadata.get("general.file_type")
-        if not cached.get("quantization") and isinstance(file_type, int):
+        quantization = str(cached.get("quantization") or "")
+        if (not quantization or quantization.startswith("FILE_TYPE_")) and isinstance(file_type, int):
             cached["quantization"] = LLAMA_FILE_TYPE_NAMES.get(file_type, f"FILE_TYPE_{file_type}")
+        if "is_moe" not in cached:
+            metadata = cached.get("metadata") or {}
+            moe_info = detect_moe([], metadata, str(cached.get("architecture") or ""))
+            cached.update(moe_info)
         return cached
 
     allow_filename_alias_detection = bool(options.get("allow_filename_alias_detection", False))
@@ -1295,6 +1342,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     if allow_filename_alias_detection:
         arch = _apply_filename_alias_detection(arch, filepath)
     model_type = classify_model_type(components, arch)
+    moe_info = detect_moe(keys, metadata, arch)
     adapter_type = detect_adapter_type(keys, metadata)
     training_meta = _extract_training_meta(metadata)
     warnings = list(metadata.get("smi.warnings") or [])
@@ -1354,6 +1402,12 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         extra["author"] = metadata["modelspec.author"]
     if detected_adapter:
         extra["adapter_type"] = detected_adapter
+    if moe_info["is_moe"]:
+        extra["moe"] = "Yes"
+        if moe_info["expert_count"] is not None:
+            extra["expert_count"] = moe_info["expert_count"]
+        if moe_info["expert_used_count"] is not None:
+            extra["expert_used_count"] = moe_info["expert_used_count"]
     for mk, mv in training_meta.items():
         if mk not in extra:
             extra[mk] = mv
@@ -1376,6 +1430,9 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         "lora_rank": lora_rank,
         "adapter_type": detected_adapter,
         "quantization": quantization,
+        "is_moe": moe_info["is_moe"],
+        "expert_count": moe_info["expert_count"],
+        "expert_used_count": moe_info["expert_used_count"],
         "training_meta": training_meta,
         "dtypes": dtype_list,
         "precision_summary": precision_summary,

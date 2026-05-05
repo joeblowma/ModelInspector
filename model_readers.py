@@ -11,6 +11,10 @@ from typing import Iterable
 
 SUPPORTED_MODEL_EXTENSIONS = (".safetensors", ".gguf")
 MAX_METADATA_ARRAY_ITEMS = 50
+GGML_QUANT_NAMES = {
+    41: "Q1_0",
+    42: "Q2_0",
+}
 
 
 def is_supported_model_path(path: str | Path) -> bool:
@@ -177,7 +181,7 @@ def _read_gguf_value(f, value_type: int):
 def _read_gguf_header_fast(filepath: str):
     try:
         from gguf import GGMLQuantizationType
-        from gguf.constants import GGML_QUANT_SIZES, GGUF_DEFAULT_ALIGNMENT, GGUF_MAGIC
+        from gguf.constants import GGUF_DEFAULT_ALIGNMENT, GGUF_MAGIC
     except ImportError as exc:
         raise ValueError("GGUF support requires the gguf package") from exc
 
@@ -214,22 +218,36 @@ def _read_gguf_header_fast(filepath: str):
             data_offset += alignment - padding
 
     tensor_info = {}
+    file_size = os.path.getsize(filepath)
+    sorted_records = sorted(
+        tensor_records,
+        key=lambda record: record[3],
+    )
+    relative_sizes = {}
+    for idx, (name, _, _, relative_offset) in enumerate(sorted_records):
+        if idx + 1 < len(sorted_records):
+            relative_sizes[name] = max(0, sorted_records[idx + 1][3] - relative_offset)
+        else:
+            relative_sizes[name] = max(0, file_size - (data_offset + relative_offset))
+
     for name, dims, raw_dtype, relative_offset in tensor_records:
-        tensor_type = GGMLQuantizationType(raw_dtype)
+        try:
+            dtype_name = GGMLQuantizationType(raw_dtype).name
+        except ValueError:
+            dtype_name = GGML_QUANT_NAMES.get(raw_dtype, f"GGML_TYPE_{raw_dtype}")
         n_elements = 1
         for dim in dims:
             n_elements *= dim
-        block_size, type_size = GGML_QUANT_SIZES[tensor_type]
-        n_bytes = n_elements * type_size // block_size
+        n_bytes = relative_sizes.get(name, 0)
         start = data_offset + relative_offset
         tensor_info[name] = {
-            "dtype": tensor_type.name,
+            "dtype": dtype_name,
             "shape": [int(dim) for dim in dims],
             "n_bytes": int(n_bytes),
             "data_offsets": [int(start), int(start + n_bytes)],
         }
 
-    return metadata, tensor_info, os.path.getsize(filepath)
+    return metadata, tensor_info, file_size
 
 
 def analyze_tensors(tensor_info: dict):

@@ -501,7 +501,7 @@ class SettingsDialog(QDialog):
 # ---------------------------------------------------------------------------
 
 class ArchitectureFilterButton(QToolButton):
-    filter_changed = pyqtSignal(set)
+    filter_changed = pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -527,7 +527,7 @@ class ArchitectureFilterButton(QToolButton):
         self._all_cb.setChecked(True)
         self._active.clear()
         self._update_label()
-        self.filter_changed.emit(set())
+        self.filter_changed.emit(None)
 
     def remove_architecture(self, arch: str):
         cb = self._arch_checks.pop(arch, None)
@@ -563,12 +563,12 @@ class ArchitectureFilterButton(QToolButton):
             cb.blockSignals(False)
         self._active = set(self._arch_checks.keys()) if checked else set()
         self._update_label()
-        self.filter_changed.emit(set() if checked else set())
+        self.filter_changed.emit(self.active_filter())
 
-    def active_filter(self) -> set:
-        # Empty set means "show all"
+    def active_filter(self):
+        # None means "show all"; an empty set means "show none".
         if not self._arch_checks or len(self._active) == len(self._arch_checks):
-            return set()
+            return None
         return set(self._active)
 
     def _toggle_all(self, state):
@@ -579,7 +579,7 @@ class ArchitectureFilterButton(QToolButton):
             cb.blockSignals(False)
         self._active = set(self._arch_checks.keys()) if checked else set()
         self._update_label()
-        self.filter_changed.emit(set() if checked else set())
+        self.filter_changed.emit(self.active_filter())
 
     def _on_arch_toggled(self, _):
         self._active = {a for a, cb in self._arch_checks.items() if cb.isChecked()}
@@ -597,7 +597,7 @@ class ArchitectureFilterButton(QToolButton):
         if len(self._active) == len(self._arch_checks):
             self.setText("Filter: All")
             return
-        self.setText(f"Filter: {len(self._active)} selected")
+        self.setText(f"Filter: {len(self._active)}/{len(self._arch_checks)} types")
 
 
 # ---------------------------------------------------------------------------
@@ -878,7 +878,7 @@ class MainWindow(QMainWindow):
         self._syncing_selection = False
         self._last_selected_card_index = -1
         self._last_selected_row = -1
-        self._active_arch_filter: set[str] = set()
+        self._active_arch_filter: set[str] | None = None
         self._allow_filename_alias_detection = False
         self._show_full_paths = False
         self._top_folded = False
@@ -1424,7 +1424,7 @@ class MainWindow(QMainWindow):
         self._path_to_simple_card.clear()
         self._path_to_row.clear()
         self._selected_paths.clear()
-        self._active_arch_filter.clear()
+        self._active_arch_filter = None
         self.file_list.clear()
         self._update_file_count()
         self._clear_cards()
@@ -1457,7 +1457,7 @@ class MainWindow(QMainWindow):
         self._path_to_simple_card.clear()
         self._path_to_row.clear()
         self._selected_paths.clear()
-        self._active_arch_filter.clear()
+        self._active_arch_filter = None
         self._clear_cards()
         self.arch_filter_btn.clear_architectures()
         self.table.setRowCount(0)
@@ -1508,6 +1508,7 @@ class MainWindow(QMainWindow):
             "training_meta": {},
             "extra": {},
         }
+        self._results.append(err_data)
         self._add_card(err_data)
         self._add_table_row(err_data)
         self.arch_filter_btn.add_architecture(err_data.get("architecture", "Unknown"))
@@ -1687,9 +1688,9 @@ class MainWindow(QMainWindow):
             fp = data.get("filepath")
             if not fp:
                 continue
-            if fp not in self._path_to_row:
+            row = self._row_for_filepath(fp)
+            if row is None:
                 continue
-            row = self._path_to_row[fp]
             if row < 0 or row >= self.table.rowCount():
                 continue
             if self.table.isRowHidden(row):
@@ -1697,8 +1698,21 @@ class MainWindow(QMainWindow):
             paths.append(fp)
         return paths
 
-    def _on_arch_filter_changed(self, active: set):
-        self._active_arch_filter = set(active)
+    def _row_for_filepath(self, filepath: str) -> int | None:
+        row = self._path_to_row.get(filepath)
+        if row is not None and 0 <= row < self.table.rowCount():
+            item = self.table.item(row, 1)
+            if item and item.data(Qt.ItemDataRole.UserRole) == filepath:
+                return row
+        for scan_row in range(self.table.rowCount()):
+            item = self.table.item(scan_row, 1)
+            if item and item.data(Qt.ItemDataRole.UserRole) == filepath:
+                self._path_to_row[filepath] = scan_row
+                return scan_row
+        return None
+
+    def _on_arch_filter_changed(self, active):
+        self._active_arch_filter = None if active is None else set(active)
         self._apply_arch_filter()
 
     def _apply_arch_filter(self):
@@ -1706,14 +1720,14 @@ class MainWindow(QMainWindow):
         for data in self._results:
             fp = data.get("filepath")
             arch = data.get("architecture", "")
-            visible = (not active) or (arch in active)
+            visible = (active is None) or (arch in active)
             card = self._path_to_card.get(fp)
             if card:
                 card.setVisible(visible)
             scard = self._path_to_simple_card.get(fp)
             if scard:
                 scard.setVisible(visible)
-            row = self._path_to_row.get(fp)
+            row = self._row_for_filepath(fp)
             if row is not None and 0 <= row < self.table.rowCount():
                 self.table.setRowHidden(row, not visible)
         self._refresh_raw_combo_filtered()
@@ -1727,7 +1741,7 @@ class MainWindow(QMainWindow):
             fp = data.get("filepath", "")
             if not fp:
                 continue
-            row = self._path_to_row.get(fp)
+            row = self._row_for_filepath(fp)
             if row is None or row < 0 or row >= self.table.rowCount():
                 continue
             if self.table.isRowHidden(row):
@@ -2008,6 +2022,9 @@ class MainWindow(QMainWindow):
             for fp, card in self._path_to_simple_card.items():
                 card.set_selected(fp in self._selected_paths)
             for fp, row in self._path_to_row.items():
+                row = self._row_for_filepath(fp)
+                if row is None:
+                    continue
                 if 0 <= row < self.table.rowCount():
                     cb = self.table.cellWidget(row, 0)
                     if isinstance(cb, QCheckBox):
@@ -2019,15 +2036,22 @@ class MainWindow(QMainWindow):
         self._update_selection_ui_state()
 
     def _update_selection_ui_state(self):
-        count = len(self._selected_paths)
-        self.selected_count_label.setText(f"{count} selected")
-        enabled = count > 0
+        visible = set(self._visible_paths())
+        visible_selected_count = len(self._selected_paths & visible)
+        total_selected_count = len(self._selected_paths)
+        if total_selected_count == visible_selected_count:
+            self.selected_count_label.setText(f"{visible_selected_count} selected")
+        else:
+            hidden_count = total_selected_count - visible_selected_count
+            self.selected_count_label.setText(
+                f"{visible_selected_count} selected ({hidden_count} hidden)"
+            )
+        enabled = visible_selected_count > 0
         self.copy_files_btn.setEnabled(enabled)
         self.move_files_btn.setEnabled(enabled)
         self.copy_names_btn.setEnabled(enabled)
         self.copy_paths_btn.setEnabled(enabled)
 
-        visible = set(self._visible_paths())
         if visible:
             all_selected = visible.issubset(self._selected_paths)
         else:

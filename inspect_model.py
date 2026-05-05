@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 from model_readers import (
+    LLAMA_FILE_TYPE_NAMES,
     analyze_tensors,
     iter_model_paths,
     model_format_for_path,
@@ -475,7 +476,7 @@ def _detect_from_metadata(metadata: dict):
         return "HiDream"
 
     if gguf_arch:
-        return f"GGUF {gguf_arch}"
+        return gguf_arch
 
     # SD3 variants (check 3.5 before 3)
     if ("sd3.5" in all_meta or "sd35" in all_meta or
@@ -1270,6 +1271,15 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         cached["filepath"] = filepath
         cached["resolved_filepath"] = _resolve_display_path(filepath)
         cached["filename"] = Path(filepath).name
+        arch = str(cached.get("architecture") or "")
+        if arch.startswith("GGUF "):
+            cached["architecture"] = arch[5:]
+        if not cached.get("format"):
+            cached["format"] = model_format_for_path(filepath)
+        metadata = cached.get("metadata") or {}
+        file_type = metadata.get("general.file_type")
+        if not cached.get("quantization") and isinstance(file_type, int):
+            cached["quantization"] = LLAMA_FILE_TYPE_NAMES.get(file_type, f"FILE_TYPE_{file_type}")
         return cached
 
     allow_filename_alias_detection = bool(options.get("allow_filename_alias_detection", False))
@@ -1282,8 +1292,6 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
     arch, arch_details = detect_architecture(keys, shapes, total_params, components, metadata)
-    if arch.startswith("GGUF "):
-        arch = arch[5:]
     if allow_filename_alias_detection:
         arch = _apply_filename_alias_detection(arch, filepath)
     model_type = classify_model_type(components, arch)
@@ -1387,8 +1395,6 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
     arch, arch_details = detect_architecture(keys, shapes, total_params, components, metadata)
-    if arch.startswith("GGUF "):
-        arch = arch[5:]
     model_type = classify_model_type(components, arch)
 
     sep = "=" * 60

@@ -315,6 +315,7 @@ class SettingsDialog(QDialog):
         auto_fold_on_analyze=False,
         auto_analyze_on_add=True,
         dump_json_modelinfo=False,
+        auto_load_raw_dump=False,
         add_mode="replace",
         default_tab="simple",
         card_fields=None,
@@ -379,6 +380,13 @@ class SettingsDialog(QDialog):
             "When dumping modelinfo, also write a pretty-printed .modelinfo.json file."
         )
 
+        self.auto_load_raw_checkbox = QCheckBox("Auto-load Raw full dump")
+        self.auto_load_raw_checkbox.setChecked(auto_load_raw_dump)
+        raw_cell = make_general_cell(
+            self.auto_load_raw_checkbox,
+            "Automatically generate the full Raw tab dump when the selected model changes."
+        )
+
         mode_wrap = QWidget()
         mode_row = QHBoxLayout(mode_wrap)
         mode_row.setContentsMargins(0, 0, 0, 0)
@@ -423,6 +431,7 @@ class SettingsDialog(QDialog):
         g_layout.addWidget(mode_cell, 1, 0)
         g_layout.addWidget(tab_cell, 1, 1)
         g_layout.addWidget(dump_json_cell, 1, 2)
+        g_layout.addWidget(raw_cell, 2, 0)
         root.addWidget(general_group)
 
         cards_row = QHBoxLayout()
@@ -520,18 +529,21 @@ class CheckFilterButton(QToolButton):
         self._menu.addSeparator()
 
         self._arch_checks: dict[str, QCheckBox] = {}
+        self._counts: dict[str, int] = {}
         self._active: set[str] = set()
 
     def clear_items(self):
         for arch in list(self._arch_checks.keys()):
             self.remove_item(arch)
         self._all_cb.setChecked(True)
+        self._counts.clear()
         self._active.clear()
         self._update_label()
         self.filter_changed.emit(None)
 
     def remove_item(self, arch: str):
         cb = self._arch_checks.pop(arch, None)
+        self._counts.pop(arch, None)
         if not cb:
             return
         for action in self._menu.actions():
@@ -542,9 +554,15 @@ class CheckFilterButton(QToolButton):
             self._active.remove(arch)
 
     def add_item(self, arch: str):
-        if not arch or arch in self._arch_checks:
+        if not arch:
             return
-        cb = QCheckBox(arch)
+        if arch in self._arch_checks:
+            self._counts[arch] = self._counts.get(arch, 1) + 1
+            self._arch_checks[arch].setText(f"{arch} ({self._counts[arch]})")
+            self._update_label()
+            return
+        self._counts[arch] = 1
+        cb = QCheckBox(f"{arch} (1)")
         cb.setChecked(True)
         cb.stateChanged.connect(self._on_arch_toggled)
         act = QWidgetAction(self)
@@ -893,6 +911,7 @@ class MainWindow(QMainWindow):
         self._auto_fold_on_analyze = False
         self._auto_analyze_on_add = True
         self._dump_json_modelinfo = False
+        self._auto_load_raw_dump = False
         self._add_mode = "replace"  # replace | additive
         self._default_tab = "simple"  # simple | detailed | data | raw
         self._card_field_visibility = {
@@ -1047,6 +1066,7 @@ class MainWindow(QMainWindow):
         self.simple_cards_layout = QVBoxLayout(self.simple_cards_container)
         self.simple_cards_layout.setSpacing(12)
         self.simple_cards_layout.setContentsMargins(8, 8, 8, 8)
+        self.simple_cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.simple_cards_scroll.setWidget(self.simple_cards_container)
 
         self.simple_cards_placeholder = QLabel("No models analyzed yet.\nDrop files above and click Analyze.")
@@ -1078,6 +1098,7 @@ class MainWindow(QMainWindow):
         self.cards_layout = QVBoxLayout(self.cards_container)
         self.cards_layout.setSpacing(12)
         self.cards_layout.setContentsMargins(8, 8, 8, 8)
+        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.cards_scroll.setWidget(self.cards_container)
 
         self.cards_placeholder = QLabel("No models analyzed yet.\nDrop files above and click Analyze.")
@@ -1281,6 +1302,7 @@ class MainWindow(QMainWindow):
         self._auto_fold_on_analyze = str(s.value("auto_fold_on_analyze", "false")).lower() == "true"
         self._auto_analyze_on_add = str(s.value("auto_analyze_on_add", "true")).lower() == "true"
         self._dump_json_modelinfo = str(s.value("dump_json_modelinfo", "false")).lower() == "true"
+        self._auto_load_raw_dump = str(s.value("auto_load_raw_dump", "false")).lower() == "true"
         self._add_mode = str(s.value("add_mode", "replace")).lower()
         self._default_tab = str(s.value("default_tab", "simple")).lower()
         if self._add_mode not in ("replace", "additive"):
@@ -1318,6 +1340,7 @@ class MainWindow(QMainWindow):
         s.setValue("auto_fold_on_analyze", str(self._auto_fold_on_analyze).lower())
         s.setValue("auto_analyze_on_add", str(self._auto_analyze_on_add).lower())
         s.setValue("dump_json_modelinfo", str(self._dump_json_modelinfo).lower())
+        s.setValue("auto_load_raw_dump", str(self._auto_load_raw_dump).lower())
         s.setValue("add_mode", self._add_mode)
         s.setValue("default_tab", self._default_tab)
         s.setValue("detailed_card_fields", json.dumps(self._card_field_visibility))
@@ -1397,6 +1420,7 @@ class MainWindow(QMainWindow):
             auto_fold_on_analyze=self._auto_fold_on_analyze,
             auto_analyze_on_add=self._auto_analyze_on_add,
             dump_json_modelinfo=self._dump_json_modelinfo,
+            auto_load_raw_dump=self._auto_load_raw_dump,
             add_mode=self._add_mode,
             default_tab=self._default_tab,
             card_fields=self._card_field_visibility,
@@ -1408,6 +1432,7 @@ class MainWindow(QMainWindow):
             self._auto_fold_on_analyze = dlg.auto_fold_checkbox.isChecked()
             self._auto_analyze_on_add = dlg.auto_analyze_checkbox.isChecked()
             self._dump_json_modelinfo = dlg.dump_json_checkbox.isChecked()
+            self._auto_load_raw_dump = dlg.auto_load_raw_checkbox.isChecked()
             self._add_mode = dlg.add_mode_combo.currentData()
             self._default_tab = str(dlg.default_tab_combo.currentData() or "simple")
             for key, cb in dlg.card_field_checks.items():
@@ -1497,6 +1522,7 @@ class MainWindow(QMainWindow):
         self._worker.start()
 
     def _on_result(self, data: dict):
+        self._normalize_result_data(data)
         self._results.append(data)
         self.progress.setValue(len(self._results))
         self._add_card(data)
@@ -1542,6 +1568,14 @@ class MainWindow(QMainWindow):
     def _on_all_done(self):
         self.analyze_btn.setEnabled(True)
         self.progress.setVisible(False)
+
+    def _normalize_result_data(self, data: dict):
+        arch = str(data.get("architecture") or "Unknown")
+        if arch.startswith("GGUF "):
+            data["architecture"] = arch[5:]
+        if not data.get("format"):
+            suffix = Path(str(data.get("filepath") or "")).suffix.lower().lstrip(".")
+            data["format"] = suffix.upper() if suffix else "UNKNOWN"
 
     def _dump_all(self):
         """Write a .modelinfo file next to every analyzed model."""
@@ -1592,9 +1626,11 @@ class MainWindow(QMainWindow):
     def _add_card(self, data: dict):
         # Remove placeholders if present
         if self.cards_placeholder:
+            self.cards_layout.removeWidget(self.cards_placeholder)
             self.cards_placeholder.deleteLater()
             self.cards_placeholder = None
         if self.simple_cards_placeholder:
+            self.simple_cards_layout.removeWidget(self.simple_cards_placeholder)
             self.simple_cards_placeholder.deleteLater()
             self.simple_cards_placeholder = None
 
@@ -1725,6 +1761,10 @@ class MainWindow(QMainWindow):
             paths.append(fp)
         return paths
 
+    def _visible_selected_paths(self) -> list[str]:
+        visible = set(self._visible_paths())
+        return sorted(p for p in self._selected_paths if p in visible)
+
     def _row_for_filepath(self, filepath: str) -> int | None:
         row = self._path_to_row.get(filepath)
         if row is not None and 0 <= row < self.table.rowCount():
@@ -1774,6 +1814,9 @@ class MainWindow(QMainWindow):
         file_format = str(data.get("format") or "").upper()
         if file_format:
             tags.append(file_format)
+        if data.get("architecture") == "ERROR":
+            tags.append("ERROR")
+            return list(dict.fromkeys(tags))
         model_type = data.get("model_type")
         if model_type:
             tags.append(str(model_type))
@@ -1783,8 +1826,6 @@ class MainWindow(QMainWindow):
         quantization = data.get("quantization")
         if quantization:
             tags.append(str(quantization))
-        if data.get("architecture") == "ERROR":
-            tags.append("ERROR")
         return list(dict.fromkeys(tags))
 
     def _refresh_raw_combo_filtered(self):
@@ -1813,7 +1854,7 @@ class MainWindow(QMainWindow):
         else:
             current_fp = self.raw_combo.currentData()
             if current_fp != self._raw_loaded_filepath:
-                self._show_raw_summary(current_fp)
+                self._show_raw_for_current_setting(current_fp)
 
     def _show_raw_for_filepath(self, filepath: str):
         if not filepath:
@@ -2061,10 +2102,13 @@ class MainWindow(QMainWindow):
 
         menu = QMenu(self)
         view_raw = menu.addAction("View Raw")
+        copy_folder_path = menu.addAction("Copy Folder Path")
         copy_sel = menu.addAction("Copy Selected Entries")
         chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
         if chosen == view_raw and filepath:
             self._show_raw_for_filepath(filepath)
+        elif chosen == copy_folder_path and filepath:
+            QApplication.clipboard().setText(str(Path(filepath).parent))
         elif chosen == copy_sel:
             self._copy_selected_table_cells()
 
@@ -2120,23 +2164,25 @@ class MainWindow(QMainWindow):
         self.table_select_all_cb.blockSignals(False)
 
     def _copy_selected_files_to_clipboard(self):
-        if not self._selected_paths:
+        selected = self._visible_selected_paths()
+        if not selected:
             return
         mime = QMimeData()
         from PyQt6.QtCore import QUrl
-        urls = [QUrl.fromLocalFile(p) for p in sorted(self._selected_paths)]
+        urls = [QUrl.fromLocalFile(p) for p in selected]
         mime.setUrls(urls)
         QApplication.clipboard().setMimeData(mime)
 
     def _move_selected_files(self):
-        if not self._selected_paths:
+        selected = self._visible_selected_paths()
+        if not selected:
             return
         target = QFileDialog.getExistingDirectory(self, "Select destination folder")
         if not target:
             return
         import shutil
         moved = set()
-        for src in list(self._selected_paths):
+        for src in selected:
             try:
                 dst = str(Path(target) / Path(src).name)
                 shutil.move(src, dst)
@@ -2150,15 +2196,17 @@ class MainWindow(QMainWindow):
             self._rebuild_views_from_results()
 
     def _copy_selected_names(self):
-        if not self._selected_paths:
+        selected = self._visible_selected_paths()
+        if not selected:
             return
-        text = "\n".join(sorted(Path(p).name for p in self._selected_paths))
+        text = "\n".join(Path(p).name for p in selected)
         QApplication.clipboard().setText(text)
 
     def _copy_selected_paths(self):
-        if not self._selected_paths:
+        selected = self._visible_selected_paths()
+        if not selected:
             return
-        text = "\n".join(sorted(self._selected_paths))
+        text = "\n".join(selected)
         QApplication.clipboard().setText(text)
 
     def _rebuild_views_from_results(self):
@@ -2173,6 +2221,7 @@ class MainWindow(QMainWindow):
         self.tag_filter_btn.clear_items()
         self.raw_combo.clear()
         for data in current_results:
+            self._normalize_result_data(data)
             self._add_card(data)
             self._add_table_row(data)
             self.arch_filter_btn.add_item(data.get("architecture", "Unknown"))
@@ -2228,7 +2277,14 @@ class MainWindow(QMainWindow):
         filepath = self.raw_combo.itemData(index)
         if not filepath:
             return
-        self._show_raw_summary(filepath)
+        self._show_raw_for_current_setting(filepath)
+
+    def _show_raw_for_current_setting(self, filepath: str):
+        analysis_running = bool(self._worker and self._worker.isRunning())
+        if self._auto_load_raw_dump and not analysis_running:
+            self._load_raw_dump(filepath)
+        else:
+            self._show_raw_summary(filepath)
 
     def _result_for_filepath(self, filepath: str) -> dict | None:
         for data in self._results:
@@ -2267,10 +2323,12 @@ class MainWindow(QMainWindow):
         filepath = self.raw_combo.currentData()
         if not filepath:
             return
+        self._load_raw_dump(filepath)
+
+    def _load_raw_dump(self, filepath: str):
         try:
             self.raw_load_btn.setEnabled(False)
             self.raw_load_btn.setText("Loading...")
-            QApplication.processEvents()
             dump = generate_modelinfo_dump(filepath)
             self.raw_text.setPlainText(dump)
             self._raw_loaded_filepath = filepath

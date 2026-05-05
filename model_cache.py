@@ -29,7 +29,10 @@ def _entry_path(entry_id: str) -> Path:
 
 
 def _cache_key(filepath: str, options: dict | None) -> str:
-    resolved = str(Path(filepath).resolve()).lower()
+    try:
+        resolved = str(Path(filepath).resolve(strict=True)).lower()
+    except OSError:
+        resolved = str(Path(filepath).absolute()).lower()
     relevant_options = {
         "allow_filename_alias_detection": bool((options or {}).get("allow_filename_alias_detection", False)),
     }
@@ -43,8 +46,12 @@ def _entry_id(key: str) -> str:
 def _identity(filepath: str) -> dict[str, Any]:
     p = Path(filepath)
     st = p.stat()
+    try:
+        resolved = str(p.resolve(strict=True))
+    except OSError:
+        resolved = str(p.absolute())
     return {
-        "resolved_filepath": str(p.resolve()),
+        "resolved_filepath": resolved,
         "file_size": st.st_size,
         "mtime_ns": st.st_mtime_ns,
     }

@@ -500,12 +500,13 @@ class SettingsDialog(QDialog):
 # Architecture filter button
 # ---------------------------------------------------------------------------
 
-class ArchitectureFilterButton(QToolButton):
+class CheckFilterButton(QToolButton):
     filter_changed = pyqtSignal(object)
 
-    def __init__(self):
+    def __init__(self, label: str):
         super().__init__()
-        self.setText("Filter: All")
+        self._label = label
+        self.setText(f"{self._label}: All")
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._menu = QMenu(self)
         self.setMenu(self._menu)
@@ -521,15 +522,15 @@ class ArchitectureFilterButton(QToolButton):
         self._arch_checks: dict[str, QCheckBox] = {}
         self._active: set[str] = set()
 
-    def clear_architectures(self):
+    def clear_items(self):
         for arch in list(self._arch_checks.keys()):
-            self.remove_architecture(arch)
+            self.remove_item(arch)
         self._all_cb.setChecked(True)
         self._active.clear()
         self._update_label()
         self.filter_changed.emit(None)
 
-    def remove_architecture(self, arch: str):
+    def remove_item(self, arch: str):
         cb = self._arch_checks.pop(arch, None)
         if not cb:
             return
@@ -540,7 +541,7 @@ class ArchitectureFilterButton(QToolButton):
         if arch in self._active:
             self._active.remove(arch)
 
-    def add_architecture(self, arch: str):
+    def add_item(self, arch: str):
         if not arch or arch in self._arch_checks:
             return
         cb = QCheckBox(arch)
@@ -592,12 +593,12 @@ class ArchitectureFilterButton(QToolButton):
 
     def _update_label(self):
         if not self._arch_checks:
-            self.setText("Filter: All")
+            self.setText(f"{self._label}: All")
             return
         if len(self._active) == len(self._arch_checks):
-            self.setText("Filter: All")
+            self.setText(f"{self._label}: All")
             return
-        self.setText(f"Filter: {len(self._active)}/{len(self._arch_checks)} types")
+        self.setText(f"{self._label}: {len(self._active)}/{len(self._arch_checks)}")
 
 
 # ---------------------------------------------------------------------------
@@ -662,10 +663,16 @@ class ModelCard(QFrame):
 
         # Architecture + model type row
         arch_row = QHBoxLayout()
+        file_format = data.get("format")
+        if file_format:
+            arch_row.addWidget(self._make_tag(str(file_format).upper(), "#f38ba8", "#1e1e2e"))
         arch_tag = self._make_tag(data["architecture"], "#74c7ec", "#1e1e2e")
         type_tag = self._make_tag(data["model_type"], "#a6e3a1", "#1e1e2e")
         arch_row.addWidget(arch_tag)
         arch_row.addWidget(type_tag)
+        quantization = data.get("quantization")
+        if quantization:
+            arch_row.addWidget(self._make_tag(str(quantization), "#cba6f7", "#1e1e2e"))
         adapter_type = data.get("adapter_type")
         if adapter_type:
             arch_row.addWidget(self._make_tag(adapter_type, "#f9e2af", "#1e1e2e"))
@@ -879,6 +886,7 @@ class MainWindow(QMainWindow):
         self._last_selected_card_index = -1
         self._last_selected_row = -1
         self._active_arch_filter: set[str] | None = None
+        self._active_tag_filter: set[str] | None = None
         self._allow_filename_alias_detection = False
         self._show_full_paths = False
         self._top_folded = False
@@ -1039,7 +1047,6 @@ class MainWindow(QMainWindow):
         self.simple_cards_layout = QVBoxLayout(self.simple_cards_container)
         self.simple_cards_layout.setSpacing(12)
         self.simple_cards_layout.setContentsMargins(8, 8, 8, 8)
-        self.simple_cards_layout.addStretch()
         self.simple_cards_scroll.setWidget(self.simple_cards_container)
 
         self.simple_cards_placeholder = QLabel("No models analyzed yet.\nDrop files above and click Analyze.")
@@ -1071,7 +1078,6 @@ class MainWindow(QMainWindow):
         self.cards_layout = QVBoxLayout(self.cards_container)
         self.cards_layout.setSpacing(12)
         self.cards_layout.setContentsMargins(8, 8, 8, 8)
-        self.cards_layout.addStretch()
         self.cards_scroll.setWidget(self.cards_container)
 
         self.cards_placeholder = QLabel("No models analyzed yet.\nDrop files above and click Analyze.")
@@ -1110,7 +1116,7 @@ class MainWindow(QMainWindow):
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
 
         self._table_columns = [
-            "", "File", "File Size", "Architecture", "Model Type", "Adapter",
+            "", "File", "Format", "File Size", "Architecture", "Model Type", "Adapter", "Quantization",
             "Precision", "UNet Precision", "VAE Precision", "Text Encoder Precision", "Transformer Precision",
             "Parameters", "Tensors", "LoRA Rank",
             "Software", "Images", "Resolution", "Epochs", "Steps",
@@ -1124,23 +1130,25 @@ class MainWindow(QMainWindow):
         for i in range(1, len(self._table_columns)):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
         self.table.setColumnWidth(1, 280)   # File
-        self.table.setColumnWidth(2, 90)    # File Size
-        self.table.setColumnWidth(3, 140)   # Architecture
-        self.table.setColumnWidth(4, 100)   # Model Type
-        self.table.setColumnWidth(5, 90)    # Adapter
-        self.table.setColumnWidth(6, 100)   # Precision
-        self.table.setColumnWidth(7, 115)   # UNet
-        self.table.setColumnWidth(8, 115)   # VAE
-        self.table.setColumnWidth(9, 160)   # Text Encoder
-        self.table.setColumnWidth(10, 120)  # Transformer
-        self.table.setColumnWidth(11, 95)   # Parameters
-        self.table.setColumnWidth(12, 70)   # Tensors
-        self.table.setColumnWidth(13, 85)   # LoRA Rank
-        self.table.setColumnWidth(14, 150)  # Software
-        self.table.setColumnWidth(15, 70)   # Images
-        self.table.setColumnWidth(16, 100)  # Resolution
-        self.table.setColumnWidth(17, 70)   # Epochs
-        self.table.setColumnWidth(18, 80)   # Steps
+        self.table.setColumnWidth(2, 70)    # Format
+        self.table.setColumnWidth(3, 90)    # File Size
+        self.table.setColumnWidth(4, 140)   # Architecture
+        self.table.setColumnWidth(5, 100)   # Model Type
+        self.table.setColumnWidth(6, 90)    # Adapter
+        self.table.setColumnWidth(7, 100)   # Quantization
+        self.table.setColumnWidth(8, 100)   # Precision
+        self.table.setColumnWidth(9, 115)   # UNet
+        self.table.setColumnWidth(10, 115)  # VAE
+        self.table.setColumnWidth(11, 160)  # Text Encoder
+        self.table.setColumnWidth(12, 120)  # Transformer
+        self.table.setColumnWidth(13, 95)   # Parameters
+        self.table.setColumnWidth(14, 70)   # Tensors
+        self.table.setColumnWidth(15, 85)   # LoRA Rank
+        self.table.setColumnWidth(16, 150)  # Software
+        self.table.setColumnWidth(17, 70)   # Images
+        self.table.setColumnWidth(18, 100)  # Resolution
+        self.table.setColumnWidth(19, 70)   # Epochs
+        self.table.setColumnWidth(20, 80)   # Steps
         self._apply_table_column_visibility()
         data_tab_layout.addWidget(self.table)
         self.tabs.addTab(data_tab, "Data")
@@ -1182,12 +1190,19 @@ class MainWindow(QMainWindow):
         bottom_actions = QHBoxLayout()
         bottom_actions.setSpacing(10)
 
-        self.arch_filter_btn = ArchitectureFilterButton()
+        self.arch_filter_btn = CheckFilterButton("Architecture")
         self.arch_filter_btn.filter_changed.connect(self._on_arch_filter_changed)
         self.arch_filter_btn.setMinimumHeight(34)
-        self.arch_filter_btn.setMinimumWidth(360)
+        self.arch_filter_btn.setMinimumWidth(170)
         self.arch_filter_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         bottom_actions.addWidget(self.arch_filter_btn, 1)
+
+        self.tag_filter_btn = CheckFilterButton("Tags")
+        self.tag_filter_btn.filter_changed.connect(self._on_tag_filter_changed)
+        self.tag_filter_btn.setMinimumHeight(34)
+        self.tag_filter_btn.setMinimumWidth(170)
+        self.tag_filter_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        bottom_actions.addWidget(self.tag_filter_btn, 1)
 
         self.copy_files_btn = QPushButton("Copy Files")
         self.copy_files_btn.setEnabled(False)
@@ -1425,10 +1440,12 @@ class MainWindow(QMainWindow):
         self._path_to_row.clear()
         self._selected_paths.clear()
         self._active_arch_filter = None
+        self._active_tag_filter = None
         self.file_list.clear()
         self._update_file_count()
         self._clear_cards()
-        self.arch_filter_btn.clear_architectures()
+        self.arch_filter_btn.clear_items()
+        self.tag_filter_btn.clear_items()
         self.table.setRowCount(0)
         self.raw_combo.clear()
         self.raw_text.clear()
@@ -1458,8 +1475,10 @@ class MainWindow(QMainWindow):
         self._path_to_row.clear()
         self._selected_paths.clear()
         self._active_arch_filter = None
+        self._active_tag_filter = None
         self._clear_cards()
-        self.arch_filter_btn.clear_architectures()
+        self.arch_filter_btn.clear_items()
+        self.tag_filter_btn.clear_items()
         self.table.setRowCount(0)
         self.raw_combo.clear()
         self.raw_text.clear()
@@ -1482,7 +1501,9 @@ class MainWindow(QMainWindow):
         self.progress.setValue(len(self._results))
         self._add_card(data)
         self._add_table_row(data)
-        self.arch_filter_btn.add_architecture(data.get("architecture", "Unknown"))
+        self.arch_filter_btn.add_item(data.get("architecture", "Unknown"))
+        for tag in self._filter_tags_for_data(data):
+            self.tag_filter_btn.add_item(tag)
         self._apply_arch_filter()
         self._refresh_raw_combo_filtered()
 
@@ -1492,9 +1513,11 @@ class MainWindow(QMainWindow):
         err_data = {
             "filepath": filepath,
             "filename": Path(filepath).name,
+            "format": Path(filepath).suffix.lower().lstrip(".").upper() or "UNKNOWN",
             "architecture": "ERROR",
             "model_type": error,
             "adapter_type": None,
+            "quantization": None,
             "total_params_friendly": "-",
             "file_size_friendly": "-",
             "precision_summary": "-",
@@ -1511,7 +1534,9 @@ class MainWindow(QMainWindow):
         self._results.append(err_data)
         self._add_card(err_data)
         self._add_table_row(err_data)
-        self.arch_filter_btn.add_architecture(err_data.get("architecture", "Unknown"))
+        self.arch_filter_btn.add_item(err_data.get("architecture", "Unknown"))
+        for tag in self._filter_tags_for_data(err_data):
+            self.tag_filter_btn.add_item(tag)
         self._apply_arch_filter()
 
     def _on_all_done(self):
@@ -1546,7 +1571,7 @@ class MainWindow(QMainWindow):
     # -- Cards view --------------------------------------------------------
 
     def _clear_cards(self):
-        while self.cards_layout.count() > 1:  # keep the stretch
+        while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
@@ -1555,7 +1580,7 @@ class MainWindow(QMainWindow):
         self.cards_placeholder.setStyleSheet("color: #45475a; font-size: 14px; padding: 60px;")
         self.cards_layout.insertWidget(0, self.cards_placeholder)
 
-        while self.simple_cards_layout.count() > 1:  # keep the stretch
+        while self.simple_cards_layout.count():
             item = self.simple_cards_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
@@ -1593,8 +1618,8 @@ class MainWindow(QMainWindow):
             self._path_to_card[fp] = detail_card
             self._path_to_simple_card[fp] = simple_card
         self._cards.append(detail_card)
-        self.cards_layout.insertWidget(self.cards_layout.count() - 1, detail_card)
-        self.simple_cards_layout.insertWidget(self.simple_cards_layout.count() - 1, simple_card)
+        self.cards_layout.addWidget(detail_card)
+        self.simple_cards_layout.addWidget(simple_card)
 
     # -- Data table view ---------------------------------------------------
 
@@ -1643,10 +1668,12 @@ class MainWindow(QMainWindow):
 
         values = [
             data["filename"],
+            data.get("format", "-"),
             data["file_size_friendly"],
             data["architecture"],
             data["model_type"],
             data.get("adapter_type") or "-",
+            data.get("quantization") or "-",
             data.get("precision_summary", "-"),
             unet_str,
             vae_str,
@@ -1715,12 +1742,21 @@ class MainWindow(QMainWindow):
         self._active_arch_filter = None if active is None else set(active)
         self._apply_arch_filter()
 
+    def _on_tag_filter_changed(self, active):
+        self._active_tag_filter = None if active is None else set(active)
+        self._apply_arch_filter()
+
     def _apply_arch_filter(self):
-        active = self._active_arch_filter
+        active_arch = self._active_arch_filter
+        active_tags = self._active_tag_filter
         for data in self._results:
             fp = data.get("filepath")
             arch = data.get("architecture", "")
-            visible = (active is None) or (arch in active)
+            tags = set(self._filter_tags_for_data(data))
+            visible = (
+                ((active_arch is None) or (arch in active_arch))
+                and ((active_tags is None) or bool(tags & active_tags))
+            )
             card = self._path_to_card.get(fp)
             if card:
                 card.setVisible(visible)
@@ -1732,6 +1768,24 @@ class MainWindow(QMainWindow):
                 self.table.setRowHidden(row, not visible)
         self._refresh_raw_combo_filtered()
         self._update_selection_ui_state()
+
+    def _filter_tags_for_data(self, data: dict) -> list[str]:
+        tags = []
+        file_format = str(data.get("format") or "").upper()
+        if file_format:
+            tags.append(file_format)
+        model_type = data.get("model_type")
+        if model_type:
+            tags.append(str(model_type))
+        adapter_type = data.get("adapter_type")
+        if adapter_type:
+            tags.append(str(adapter_type))
+        quantization = data.get("quantization")
+        if quantization:
+            tags.append(str(quantization))
+        if data.get("architecture") == "ERROR":
+            tags.append("ERROR")
+        return list(dict.fromkeys(tags))
 
     def _refresh_raw_combo_filtered(self):
         prev_fp = self.raw_combo.currentData()
@@ -2115,12 +2169,15 @@ class MainWindow(QMainWindow):
         self._path_to_row.clear()
         self._clear_cards()
         self.table.setRowCount(0)
-        self.arch_filter_btn.clear_architectures()
+        self.arch_filter_btn.clear_items()
+        self.tag_filter_btn.clear_items()
         self.raw_combo.clear()
         for data in current_results:
             self._add_card(data)
             self._add_table_row(data)
-            self.arch_filter_btn.add_architecture(data.get("architecture", "Unknown"))
+            self.arch_filter_btn.add_item(data.get("architecture", "Unknown"))
+            for tag in self._filter_tags_for_data(data):
+                self.tag_filter_btn.add_item(tag)
         self._apply_arch_filter()
         self._refresh_raw_combo_filtered()
         self._sync_selection_visuals()

@@ -15,11 +15,19 @@ from typing import Iterable
 from model_readers import (
     analyze_tensors,
     iter_model_paths,
+    model_format_for_path,
     read_model_header,
     read_safetensors_header,
     SUPPORTED_MODEL_EXTENSIONS,
 )
 from model_cache import get_cached_inspection, store_cached_inspection
+
+
+def _resolve_display_path(filepath: str) -> str:
+    try:
+        return str(Path(filepath).resolve(strict=True))
+    except OSError:
+        return str(Path(filepath).absolute())
 
 DTYPE_BITS = {
     "F64": 64, "F32": 32, "F16": 16, "BF16": 16,
@@ -1260,18 +1268,22 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     if cached is not None:
         cached = dict(cached)
         cached["filepath"] = filepath
-        cached["resolved_filepath"] = str(Path(filepath).resolve())
+        cached["resolved_filepath"] = _resolve_display_path(filepath)
         cached["filename"] = Path(filepath).name
         return cached
 
     allow_filename_alias_detection = bool(options.get("allow_filename_alias_detection", False))
 
     metadata, tensor_info, file_size = read_model_header(filepath)
-    resolved_filepath = str(Path(filepath).resolve())
+    resolved_filepath = _resolve_display_path(filepath)
+    file_format = metadata.get("smi.format") or model_format_for_path(filepath)
+    quantization = metadata.get("smi.quantization")
     keys = sorted(tensor_info.keys())
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
     arch, arch_details = detect_architecture(keys, shapes, total_params, components, metadata)
+    if arch.startswith("GGUF "):
+        arch = arch[5:]
     if allow_filename_alias_detection:
         arch = _apply_filename_alias_detection(arch, filepath)
     model_type = classify_model_type(components, arch)
@@ -1341,6 +1353,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     result = {
         "filepath": filepath,
         "resolved_filepath": resolved_filepath,
+        "format": file_format,
         "filename": Path(filepath).name,
         "file_size": file_size,
         "file_size_friendly": format_size(file_size),
@@ -1354,6 +1367,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         "named_text_encoders": named_enc,
         "lora_rank": lora_rank,
         "adapter_type": detected_adapter,
+        "quantization": quantization,
         "training_meta": training_meta,
         "dtypes": dtype_list,
         "precision_summary": precision_summary,
@@ -1373,6 +1387,8 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
     arch, arch_details = detect_architecture(keys, shapes, total_params, components, metadata)
+    if arch.startswith("GGUF "):
+        arch = arch[5:]
     model_type = classify_model_type(components, arch)
 
     sep = "=" * 60
@@ -1383,10 +1399,13 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
     # File info
     print(f"\n  File:           {Path(filepath).name}")
     print(f"  Path:           {filepath}")
-    resolved_filepath = str(Path(filepath).resolve())
+    resolved_filepath = _resolve_display_path(filepath)
     if resolved_filepath != filepath:
         print(f"  Resolved path:  {resolved_filepath}")
     print(f"  File size:      {format_size(file_size)}")
+    print(f"  Format:         {metadata.get('smi.format') or model_format_for_path(filepath)}")
+    if metadata.get("smi.quantization"):
+        print(f"  Quantization:   {metadata['smi.quantization']}")
     print(f"  Tensor count:   {len(tensor_info)}")
     print(f"  Parameters:     {format_params(total_params)} ({total_params:,})")
 

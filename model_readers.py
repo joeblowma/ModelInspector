@@ -11,6 +11,41 @@ from typing import Iterable
 
 SUPPORTED_MODEL_EXTENSIONS = (".safetensors", ".gguf")
 MAX_METADATA_ARRAY_ITEMS = 50
+LLAMA_FILE_TYPE_NAMES = {
+    0: "F32",
+    1: "F16",
+    2: "Q4_0",
+    3: "Q4_1",
+    7: "Q8_0",
+    8: "Q5_0",
+    9: "Q5_1",
+    10: "Q2_K",
+    11: "Q3_K_S",
+    12: "Q3_K_M",
+    13: "Q3_K_L",
+    14: "Q4_K_S",
+    15: "Q4_K_M",
+    16: "Q5_K_S",
+    17: "Q5_K_M",
+    18: "Q6_K",
+    19: "IQ2_XXS",
+    20: "IQ2_XS",
+    21: "Q2_K_S",
+    22: "IQ3_XS",
+    23: "IQ3_XXS",
+    24: "IQ1_S",
+    25: "IQ4_NL",
+    26: "IQ3_S",
+    27: "IQ3_M",
+    28: "IQ2_S",
+    29: "IQ2_M",
+    30: "IQ4_XS",
+    31: "IQ1_M",
+    32: "BF16",
+    36: "TQ1_0",
+    37: "TQ2_0",
+    1024: "GUESSED",
+}
 GGML_QUANT_NAMES = {
     4: "Q4_2",
     5: "Q4_3",
@@ -31,6 +66,11 @@ def is_supported_model_path(path: str | Path) -> bool:
     return Path(path).suffix.lower() in SUPPORTED_MODEL_EXTENSIONS
 
 
+def model_format_for_path(path: str | Path) -> str:
+    suffix = Path(path).suffix.lower().lstrip(".")
+    return suffix.upper() if suffix else "UNKNOWN"
+
+
 def read_safetensors_header(filepath: str):
     """Read safetensors header without loading tensor data."""
     file_size = os.path.getsize(filepath)
@@ -45,6 +85,7 @@ def read_safetensors_header(filepath: str):
         header = json.loads(f.read(header_size))
 
     metadata = header.pop("__metadata__", {})
+    _add_common_metadata(metadata, filepath)
     tensor_info = header
     return metadata, tensor_info, file_size
 
@@ -56,6 +97,13 @@ def read_model_header(filepath: str):
     if suffix == ".gguf":
         return read_gguf_header(filepath)
     raise ValueError(f"Unsupported model format: {suffix or '(none)'}")
+
+
+def _add_common_metadata(metadata: dict, filepath: str):
+    metadata.setdefault("smi.format", model_format_for_path(filepath))
+    file_type = metadata.get("general.file_type")
+    if isinstance(file_type, int):
+        metadata["smi.quantization"] = LLAMA_FILE_TYPE_NAMES.get(file_type, f"FILE_TYPE_{file_type}")
 
 
 def _to_jsonable(value):
@@ -96,6 +144,7 @@ def _read_gguf_header_with_library(filepath: str):
         if key.startswith("GGUF."):
             continue
         metadata[key] = _to_jsonable(field.contents())
+    _add_common_metadata(metadata, filepath)
 
     tensor_info = {}
     for tensor in reader.tensors:
@@ -267,6 +316,7 @@ def _read_gguf_header_fast(filepath: str):
             "File contains obsolete or removed GGML quantization type(s): "
             + ", ".join(obsolete_dtype_names)
         ]
+    _add_common_metadata(metadata, filepath)
 
     return metadata, tensor_info, file_size
 
@@ -301,9 +351,12 @@ def iter_model_paths(
 
     for raw in targets:
         p = Path(raw)
-        if p.is_file():
+        if p.is_file() or p.is_symlink():
             if p.suffix.lower() in normalized_extensions:
-                resolved = str(p.resolve())
+                try:
+                    resolved = str(p.resolve(strict=True))
+                except OSError:
+                    resolved = str(p.absolute())
                 if resolved not in seen:
                     seen.add(resolved)
                     found.append(str(p))
@@ -312,9 +365,14 @@ def iter_model_paths(
         if p.is_dir():
             iterator = p.rglob("*") if recursive else p.glob("*")
             for fp in iterator:
-                if not fp.is_file() or fp.suffix.lower() not in normalized_extensions:
+                if fp.suffix.lower() not in normalized_extensions:
                     continue
-                resolved = str(fp.resolve())
+                if not fp.is_file() and not fp.is_symlink():
+                    continue
+                try:
+                    resolved = str(fp.resolve(strict=True))
+                except OSError:
+                    resolved = str(fp.absolute())
                 if resolved not in seen:
                     seen.add(resolved)
                     found.append(str(fp))

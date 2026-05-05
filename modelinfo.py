@@ -9,6 +9,13 @@ from inspect_model import FINGERPRINTS, inspect_file, _collect_lora_up_dims
 from model_readers import analyze_tensors, read_model_header
 
 
+def _resolve_display_path(filepath: str) -> str:
+    try:
+        return str(Path(filepath).resolve(strict=True))
+    except OSError:
+        return str(Path(filepath).absolute())
+
+
 def modelinfo_text_path(filepath: str) -> str:
     return filepath + ".modelinfo"
 
@@ -28,7 +35,7 @@ def generate_modelinfo_dump(filepath: str) -> str:
     lines.append(sep)
     lines.append(f"  FILE: {Path(filepath).name}")
     lines.append(f"  Path: {filepath}")
-    resolved_filepath = str(Path(filepath).resolve())
+    resolved_filepath = _resolve_display_path(filepath)
     if resolved_filepath != filepath:
         lines.append(f"  Resolved path: {resolved_filepath}")
     lines.append(f"  Keys: {len(keys)}    Params: {total_params:,}    Size: {file_size:,} bytes")
@@ -98,7 +105,7 @@ def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dic
         "format": f"{Path(filepath).suffix.lower().lstrip('.')}-modelinfo-json",
         "format_version": 1,
         "filepath": filepath,
-        "resolved_filepath": str(Path(filepath).resolve()),
+        "resolved_filepath": _resolve_display_path(filepath),
         "filename": Path(filepath).name,
         "file_size": file_size,
         "inspection": summary,

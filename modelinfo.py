@@ -16,12 +16,18 @@ def _resolve_display_path(filepath: str) -> str:
         return str(Path(filepath).absolute())
 
 
-def modelinfo_text_path(filepath: str) -> str:
-    return filepath + ".modelinfo"
+def _modelinfo_base_path(filepath: str, resolve_output_path: bool = False) -> str:
+    if resolve_output_path:
+        return _resolve_display_path(filepath)
+    return filepath
 
 
-def modelinfo_json_path(filepath: str) -> str:
-    return filepath + ".modelinfo.json"
+def modelinfo_text_path(filepath: str, resolve_output_path: bool = False) -> str:
+    return _modelinfo_base_path(filepath, resolve_output_path) + ".modelinfo"
+
+
+def modelinfo_json_path(filepath: str, resolve_output_path: bool = False) -> str:
+    return _modelinfo_base_path(filepath, resolve_output_path) + ".modelinfo.json"
 
 
 def generate_modelinfo_dump(filepath: str) -> str:
@@ -125,15 +131,19 @@ def generate_modelinfo_json(filepath: str, options: dict | None = None) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
 
 
-def write_modelinfo_dump(filepath: str) -> str:
-    out_path = modelinfo_text_path(filepath)
+def write_modelinfo_dump(filepath: str, resolve_output_path: bool = False) -> str:
+    out_path = modelinfo_text_path(filepath, resolve_output_path=resolve_output_path)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(generate_modelinfo_dump(filepath))
     return out_path
 
 
-def write_modelinfo_json(filepath: str, options: dict | None = None) -> str:
-    out_path = modelinfo_json_path(filepath)
+def write_modelinfo_json(
+    filepath: str,
+    options: dict | None = None,
+    resolve_output_path: bool = False,
+) -> str:
+    out_path = modelinfo_json_path(filepath, resolve_output_path=resolve_output_path)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(generate_modelinfo_json(filepath, options=options))
     return out_path

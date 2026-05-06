@@ -1664,23 +1664,31 @@ class MainWindow(QMainWindow):
         if not self._results:
             return
         count = 0
+        output_paths = []
         for data in self._results:
             filepath = data.get("filepath")
             if not filepath:
                 continue
             try:
-                write_modelinfo_dump(filepath)
+                outputs = [write_modelinfo_dump(filepath)]
                 if self._dump_json_modelinfo:
-                    write_modelinfo_json(
+                    outputs.append(write_modelinfo_json(
                         filepath,
                         options={
                             "allow_filename_alias_detection": self._allow_filename_alias_detection
                         },
-                    )
+                    ))
+                data["modelinfo_outputs"] = outputs
+                output_paths.extend(outputs)
                 count += 1
             except Exception:
                 pass
         self.dump_btn.setText(f"Dumped {count} file(s)")
+        if output_paths:
+            preview = "\n".join(output_paths[:20])
+            if len(output_paths) > 20:
+                preview += f"\n...and {len(output_paths) - 20} more"
+            self.dump_btn.setToolTip(f"Last .modelinfo output paths:\n{preview}")
         # Reset label after 3 seconds
         QTimer.singleShot(3000, lambda: self.dump_btn.setText("Dump .modelinfo"))
 

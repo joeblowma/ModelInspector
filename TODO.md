@@ -26,9 +26,9 @@ Actionable integration plan for repository organization, additional model format
 
 - [x] Investigate how Windows symlinks behave with `Path.resolve()` and file IDs.
 - [x] Decide whether `.modelinfo` should be written beside the user-provided path or the resolved target path.
-- Add an option if both behaviors are useful, for example `--resolve-output-path`.
+- [x] Add an option if both behaviors are useful, for example `--resolve-output-path`.
 - [x] Preserve the user-provided path for default `.modelinfo` output and expose `resolved_filepath` separately.
-- Handle failures conservatively and show the chosen output path in CLI/GUI results.
+- [x] Handle failures conservatively and show the chosen output path in CLI/GUI results.
 
 ## 4. Library Linking & Path Resolution
 

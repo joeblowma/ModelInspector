@@ -1568,18 +1568,26 @@ def generate_modelinfo_json(filepath: str, options: dict | None = None) -> str:
     return _generate_modelinfo_json(filepath, options=options)
 
 
-def write_modelinfo_dump(filepath: str) -> str:
+def write_modelinfo_dump(filepath: str, resolve_output_path: bool = False) -> str:
     """Write a text .modelinfo file next to the inspected model."""
     from modelinfo import write_modelinfo_dump as _write_modelinfo_dump
 
-    return _write_modelinfo_dump(filepath)
+    return _write_modelinfo_dump(filepath, resolve_output_path=resolve_output_path)
 
 
-def write_modelinfo_json(filepath: str, options: dict | None = None) -> str:
+def write_modelinfo_json(
+    filepath: str,
+    options: dict | None = None,
+    resolve_output_path: bool = False,
+) -> str:
     """Write a JSON .modelinfo file next to the inspected model."""
     from modelinfo import write_modelinfo_json as _write_modelinfo_json
 
-    return _write_modelinfo_json(filepath, options=options)
+    return _write_modelinfo_json(
+        filepath,
+        options=options,
+        resolve_output_path=resolve_output_path,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1637,6 +1645,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Write .modelinfo.json files next to each inspected model",
     )
+    parser.add_argument(
+        "--resolve-output-path",
+        action="store_true",
+        help=(
+            "Write .modelinfo outputs beside the resolved target path instead of "
+            "the user-provided path"
+        ),
+    )
     return parser
 
 
@@ -1669,15 +1685,22 @@ def main(argv=None):
                 },
             )
             results.append(info)
+            outputs = []
             if args.write_modelinfo:
-                write_modelinfo_dump(fp)
+                outputs.append(write_modelinfo_dump(
+                    fp,
+                    resolve_output_path=args.resolve_output_path,
+                ))
             if args.write_modelinfo_json:
-                write_modelinfo_json(
+                outputs.append(write_modelinfo_json(
                     fp,
                     options={
                         "allow_filename_alias_detection": args.allow_filename_alias_detection
                     },
-                )
+                    resolve_output_path=args.resolve_output_path,
+                ))
+            if outputs:
+                info["modelinfo_outputs"] = outputs
         except Exception as e:
             print(f"[ERROR] {fp}: {e}", file=sys.stderr)
 
@@ -1691,10 +1714,16 @@ def main(argv=None):
             print(json.dumps(results, indent=2, ensure_ascii=False))
         return 0
 
+    results_by_path = {result.get("filepath"): result for result in results}
     for fp in paths:
         try:
             metadata, tensor_info, file_size = read_model_header(fp)
             print_report(fp, metadata, tensor_info, file_size)
+            outputs = results_by_path.get(fp, {}).get("modelinfo_outputs") or []
+            if outputs:
+                print("  Modelinfo output:")
+                for output_path in outputs:
+                    print(f"    {output_path}")
         except Exception as e:
             print(f"[ERROR] {fp}: {e}", file=sys.stderr)
     return 0

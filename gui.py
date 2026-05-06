@@ -30,6 +30,8 @@ from inspect_model import (
 from model_readers import SUPPORTED_MODEL_EXTENSIONS, is_supported_model_path, iter_model_paths
 from app_paths import settings_path
 
+MODEL_FORMAT_FILTERS = (".safetensors", ".gguf", ".ckpt", ".pt", ".pth")
+
 
 def _model_file_filter() -> str:
     patterns = " ".join(f"*{ext}" for ext in SUPPORTED_MODEL_EXTENSIONS)
@@ -572,6 +574,20 @@ class CheckFilterButton(QToolButton):
         self._active.add(arch)
         self._update_label()
 
+    def ensure_item(self, arch: str, count: int = 0):
+        if not arch or arch in self._arch_checks:
+            return
+        self._counts[arch] = count
+        cb = QCheckBox(f"{arch} ({count})")
+        cb.setChecked(True)
+        cb.stateChanged.connect(self._on_arch_toggled)
+        act = QWidgetAction(self)
+        act.setDefaultWidget(cb)
+        self._menu.addAction(act)
+        self._arch_checks[arch] = cb
+        self._active.add(arch)
+        self._update_label()
+
     def set_all_checked(self, checked: bool):
         self._all_cb.blockSignals(True)
         self._all_cb.setChecked(checked)
@@ -928,6 +944,7 @@ class MainWindow(QMainWindow):
         self._last_selected_row = -1
         self._active_arch_filter: set[str] | None = None
         self._active_tag_filter: set[str] | None = None
+        self._active_format_filter: set[str] | None = None
         self._allow_filename_alias_detection = False
         self._show_full_paths = False
         self._top_folded = False
@@ -1263,6 +1280,14 @@ class MainWindow(QMainWindow):
         self.tag_filter_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         bottom_actions.addWidget(self.tag_filter_btn, 1)
 
+        self.format_filter_btn = CheckFilterButton("Format")
+        self.format_filter_btn.filter_changed.connect(self._on_format_filter_changed)
+        self.format_filter_btn.setMinimumHeight(34)
+        self.format_filter_btn.setMinimumWidth(150)
+        self.format_filter_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        bottom_actions.addWidget(self.format_filter_btn, 1)
+        self._reset_format_filter_items()
+
         self.copy_files_btn = QPushButton("Copy Files")
         self.copy_files_btn.setEnabled(False)
         self.copy_files_btn.clicked.connect(self._copy_selected_files_to_clipboard)
@@ -1522,11 +1547,13 @@ class MainWindow(QMainWindow):
         self._selected_paths.clear()
         self._active_arch_filter = None
         self._active_tag_filter = None
+        self._active_format_filter = None
         self.file_list.clear()
         self._update_file_count()
         self._clear_cards()
         self.arch_filter_btn.clear_items()
         self.tag_filter_btn.clear_items()
+        self._reset_format_filter_items()
         self.table.setRowCount(0)
         self.raw_combo.clear()
         self.raw_text.clear()
@@ -1558,9 +1585,11 @@ class MainWindow(QMainWindow):
         self._selected_paths.clear()
         self._active_arch_filter = None
         self._active_tag_filter = None
+        self._active_format_filter = None
         self._clear_cards()
         self.arch_filter_btn.clear_items()
         self.tag_filter_btn.clear_items()
+        self._reset_format_filter_items()
         self.table.setRowCount(0)
         self.raw_combo.clear()
         self.raw_text.clear()
@@ -1588,6 +1617,7 @@ class MainWindow(QMainWindow):
         self.arch_filter_btn.add_item(data.get("architecture", "Unknown"))
         for tag in self._filter_tags_for_data(data):
             self.tag_filter_btn.add_item(tag)
+        self.format_filter_btn.add_item(self._format_filter_for_data(data))
         self._apply_arch_filter()
         self._refresh_raw_combo_filtered()
 
@@ -1624,11 +1654,17 @@ class MainWindow(QMainWindow):
         self.arch_filter_btn.add_item(err_data.get("architecture", "Unknown"))
         for tag in self._filter_tags_for_data(err_data):
             self.tag_filter_btn.add_item(tag)
+        self.format_filter_btn.add_item(self._format_filter_for_data(err_data))
         self._apply_arch_filter()
 
     def _on_all_done(self):
         self.analyze_btn.setEnabled(True)
         self.progress.setVisible(False)
+
+    def _reset_format_filter_items(self):
+        self.format_filter_btn.clear_items()
+        for ext in MODEL_FORMAT_FILTERS:
+            self.format_filter_btn.ensure_item(ext)
 
     def _normalize_result_data(self, data: dict):
         arch = str(data.get("architecture") or "Unknown")
@@ -1904,16 +1940,23 @@ class MainWindow(QMainWindow):
         self._active_tag_filter = None if active is None else set(active)
         self._apply_arch_filter()
 
+    def _on_format_filter_changed(self, active):
+        self._active_format_filter = None if active is None else set(active)
+        self._apply_arch_filter()
+
     def _apply_arch_filter(self):
         active_arch = self._active_arch_filter
         active_tags = self._active_tag_filter
+        active_formats = self._active_format_filter
         for data in self._results:
             fp = data.get("filepath")
             arch = data.get("architecture", "")
             tags = set(self._filter_tags_for_data(data))
+            file_format = self._format_filter_for_data(data)
             visible = (
                 ((active_arch is None) or (arch in active_arch))
                 and ((active_tags is None) or bool(tags & active_tags))
+                and ((active_formats is None) or (file_format in active_formats))
             )
             card = self._path_to_card.get(fp)
             if card:
@@ -1930,9 +1973,6 @@ class MainWindow(QMainWindow):
 
     def _filter_tags_for_data(self, data: dict) -> list[str]:
         tags = []
-        file_format = str(data.get("format") or "").upper()
-        if file_format:
-            tags.append(file_format)
         if data.get("architecture") == "ERROR":
             tags.append("ERROR")
             return list(dict.fromkeys(tags))
@@ -1948,6 +1988,18 @@ class MainWindow(QMainWindow):
         if quantization:
             tags.append(str(quantization))
         return list(dict.fromkeys(tags))
+
+    def _format_filter_for_data(self, data: dict) -> str:
+        filepath = str(data.get("filepath") or "")
+        suffix = Path(filepath).suffix.lower()
+        if suffix:
+            return suffix
+        file_format = str(data.get("format") or "").strip().lower()
+        if not file_format:
+            return ".unknown"
+        if file_format.startswith("."):
+            return file_format
+        return "." + file_format
 
     def _refresh_raw_combo_filtered(self):
         prev_fp = self.raw_combo.currentData()
@@ -2360,6 +2412,7 @@ class MainWindow(QMainWindow):
         self.table.setRowCount(0)
         self.arch_filter_btn.clear_items()
         self.tag_filter_btn.clear_items()
+        self._reset_format_filter_items()
         self.raw_combo.clear()
         for data in current_results:
             self._normalize_result_data(data)
@@ -2368,6 +2421,7 @@ class MainWindow(QMainWindow):
             self.arch_filter_btn.add_item(data.get("architecture", "Unknown"))
             for tag in self._filter_tags_for_data(data):
                 self.tag_filter_btn.add_item(tag)
+            self.format_filter_btn.add_item(self._format_filter_for_data(data))
         self._apply_arch_filter()
         self._refresh_raw_combo_filtered()
         self._sync_selection_visuals()

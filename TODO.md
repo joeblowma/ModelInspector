@@ -16,8 +16,8 @@ Actionable integration plan for repository organization, additional model format
 
 ## 2. Explorer Filtering & Progress UX
 
-- Add format filters for `.safetensors`, `.gguf`, `.ckpt`, `.pt`, and `.pth` in a separated section of the filters popup.
-- Keep architecture/type filters separate from file-format filters so users can combine both.
+- [x] Add format filters for `.safetensors`, `.gguf`, `.ckpt`, `.pt`, and `.pth` in a separated section of the filters popup.
+- [x] Keep architecture/type filters separate from file-format filters so users can combine both.
 - Replace vague progress percentages with visible metrics, such as files discovered, files parsed, bytes scanned, and current directory.
 - Keep the progress bar visible during long directory scans and model-info loading.
 - Surface cancellation and partial-results behavior for long scans.

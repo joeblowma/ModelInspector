@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import Iterable
 
 from model_readers import (
+    CHECKPOINT_FORMAT_WARNING,
     LLAMA_FILE_TYPE_NAMES,
     analyze_tensors,
+    iter_checkpoint_paths,
     iter_model_paths,
     model_format_for_path,
     read_model_header,
@@ -1694,6 +1696,12 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     paths = _iter_model_paths(args.targets, args.recursive)
+    checkpoint_paths = iter_checkpoint_paths(args.targets, args.recursive)
+    if checkpoint_paths:
+        print(
+            f"[WARN] {CHECKPOINT_FORMAT_WARNING} Ignored {len(checkpoint_paths)} checkpoint file(s).",
+            file=sys.stderr,
+        )
     if not paths:
         formats = ", ".join(SUPPORTED_MODEL_EXTENSIONS)
         print(f"No supported model files found ({formats}) in provided targets.", file=sys.stderr)

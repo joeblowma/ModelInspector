@@ -10,6 +10,12 @@ from typing import Iterable
 
 
 SUPPORTED_MODEL_EXTENSIONS = (".safetensors", ".gguf")
+CHECKPOINT_MODEL_EXTENSIONS = (".ckpt", ".pt", ".pth")
+CHECKPOINT_FORMAT_WARNING = (
+    "PyTorch checkpoint formats (.ckpt, .pt, .pth) can require pickle "
+    "deserialization. They are not inspected until an explicit safe-loading "
+    "mode is implemented."
+)
 MAX_METADATA_ARRAY_ITEMS = 50
 LLAMA_FILE_TYPE_NAMES = {
     0: "F32",
@@ -68,6 +74,10 @@ OBSOLETE_GGML_QUANT_IDS = {4, 5, 31, 32, 33, 36, 37, 38}
 
 def is_supported_model_path(path: str | Path) -> bool:
     return Path(path).suffix.lower() in SUPPORTED_MODEL_EXTENSIONS
+
+
+def is_checkpoint_model_path(path: str | Path) -> bool:
+    return Path(path).suffix.lower() in CHECKPOINT_MODEL_EXTENSIONS
 
 
 def model_format_for_path(path: str | Path) -> str:
@@ -398,3 +408,7 @@ def iter_model_paths(
                     found.append(str(fp))
 
     return found
+
+
+def iter_checkpoint_paths(targets: Iterable[str], recursive: bool) -> list[str]:
+    return iter_model_paths(targets, recursive, extensions=CHECKPOINT_MODEL_EXTENSIONS)

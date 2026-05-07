@@ -151,6 +151,7 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 ## Notes
 
 - Folder drag/drop and folder browse both support recursive discovery of `.safetensors` and `.gguf`.
+- `.ckpt`, `.pt`, and `.pth` are treated as unsafe/unsupported for now because PyTorch checkpoint loading may require pickle deserialization. The app warns and ignores them until an explicit safe-loading mode exists.
 - Parsed model summaries are cached by resolved path, file size, and modified time to speed up repeat inspections.
 - Successful folder scans are cached immediately. The `Load default libraries on startup` setting restores cached scan results on launch and prunes missing files with a warning.
 - App settings and cache default to `.model-inspector` beside the app for portable use. Override with `SMI_DATA_DIR`, `SMI_CACHE_DIR`, or `SMI_SETTINGS_PATH`.

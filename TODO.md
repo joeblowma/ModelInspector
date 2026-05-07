@@ -96,10 +96,10 @@ Actionable integration plan for repository organization, additional model format
 
 ## 11. Add Checkpoint and `.pt`/`.pth` Support
 
-- Research safe metadata-only handling for PyTorch checkpoint formats.
-- Treat pickle-based formats as unsafe by default; require explicit opt-in before loading.
+- [x] Research safe metadata-only handling for PyTorch checkpoint formats.
+- [x] Treat pickle-based formats as unsafe by default; require explicit opt-in before loading.
 - Prefer lightweight inspection paths that avoid importing Torch unless necessary.
-- Add clear warnings in CLI and GUI when a format may execute pickle deserialization.
+- [x] Add clear warnings in CLI and GUI when a format may execute pickle deserialization.
 - Add extension dispatch for `.ckpt`, `.pt`, and `.pth` only after the safety model is explicit.
 
 ## 12. Refactor Overloaded Structures

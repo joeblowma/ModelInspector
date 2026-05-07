@@ -28,7 +28,13 @@ from PyQt6.QtWidgets import (
 from inspect_model import (
     inspect_file, generate_modelinfo_dump, write_modelinfo_dump, write_modelinfo_json,
 )
-from model_readers import SUPPORTED_MODEL_EXTENSIONS, is_supported_model_path, iter_model_paths
+from model_readers import (
+    CHECKPOINT_FORMAT_WARNING,
+    SUPPORTED_MODEL_EXTENSIONS,
+    is_checkpoint_model_path,
+    is_supported_model_path,
+    iter_model_paths,
+)
 from model_cache import (
     clear_inspection_cache,
     get_cached_directory_scan,
@@ -42,8 +48,12 @@ MODEL_FORMAT_FILTERS = (".safetensors", ".gguf", ".ckpt", ".pt", ".pth")
 
 def _model_file_filter() -> str:
     patterns = " ".join(f"*{ext}" for ext in SUPPORTED_MODEL_EXTENSIONS)
-    label = ", ".join(SUPPORTED_MODEL_EXTENSIONS)
-    return f"Model Files ({patterns});;All Files (*)"
+    checkpoint_patterns = " ".join(f"*{ext}" for ext in MODEL_FORMAT_FILTERS if ext not in SUPPORTED_MODEL_EXTENSIONS)
+    return (
+        f"Supported Model Files ({patterns});;"
+        f"Checkpoint Files - unsafe/unsupported ({checkpoint_patterns});;"
+        "All Files (*)"
+    )
 
 
 def _settings() -> QSettings:
@@ -266,6 +276,7 @@ class AnalysisWorker(QThread):
 
 class DropZone(QFrame):
     files_dropped = pyqtSignal(list)
+    unsupported_files_dropped = pyqtSignal(list)
 
     def __init__(self):
         super().__init__()
@@ -332,6 +343,7 @@ class DropZone(QFrame):
             }
         """)
         paths = []
+        unsupported = []
         for url in event.mimeData().urls():
             fp = url.toLocalFile()
             if not fp:
@@ -341,6 +353,10 @@ class DropZone(QFrame):
                 paths.extend(iter_model_paths([fp], recursive=True))
             elif is_supported_model_path(fp):
                 paths.append(fp)
+            elif is_checkpoint_model_path(fp):
+                unsupported.append(fp)
+        if unsupported:
+            self.unsupported_files_dropped.emit(unsupported)
         if paths:
             # Deduplicate while preserving order
             seen = set()
@@ -1086,6 +1102,7 @@ class MainWindow(QMainWindow):
         self.drop_zone = DropZone()
         self.drop_zone.setFixedWidth(340)
         self.drop_zone.files_dropped.connect(self._add_files)
+        self.drop_zone.unsupported_files_dropped.connect(self._warn_unsupported_checkpoint_files)
         top_layout.addWidget(self.drop_zone, 0)
 
         # File list (right)
@@ -1689,8 +1706,26 @@ class MainWindow(QMainWindow):
             self, "Select model files", "",
             _model_file_filter()
         )
-        if paths:
-            self._add_files(paths)
+        if not paths:
+            return
+        supported = [p for p in paths if is_supported_model_path(p)]
+        unsupported = [p for p in paths if is_checkpoint_model_path(p)]
+        if unsupported:
+            self._warn_unsupported_checkpoint_files(unsupported)
+        if supported:
+            self._add_files(supported)
+
+    def _warn_unsupported_checkpoint_files(self, paths: list[str]):
+        if not paths:
+            return
+        preview = "\n".join(Path(p).name for p in paths[:8])
+        if len(paths) > 8:
+            preview += f"\n...and {len(paths) - 8} more"
+        QMessageBox.warning(
+            self,
+            "Checkpoint Format Not Inspected",
+            f"{CHECKPOINT_FORMAT_WARNING}\n\nIgnored file(s):\n{preview}",
+        )
 
     def _browse_folder_recursive(self):
         folder = QFileDialog.getExistingDirectory(self, "Select folder to scan recursively")
@@ -1973,9 +2008,13 @@ class MainWindow(QMainWindow):
         self._clear_progress_status(delay_ms=4000)
 
     def _reset_format_filter_items(self):
-        self.format_filter_btn.clear_items()
-        for ext in MODEL_FORMAT_FILTERS:
-            self.format_filter_btn.ensure_item(ext)
+        self.format_filter_btn.blockSignals(True)
+        try:
+            self.format_filter_btn.clear_items()
+            for ext in MODEL_FORMAT_FILTERS:
+                self.format_filter_btn.ensure_item(ext)
+        finally:
+            self.format_filter_btn.blockSignals(False)
 
     def _update_analysis_progress(self, filepath: str):
         total = len(self._queued_files)

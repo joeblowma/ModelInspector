@@ -18,9 +18,9 @@ Actionable integration plan for repository organization, additional model format
 
 - [x] Add format filters for `.safetensors`, `.gguf`, `.ckpt`, `.pt`, and `.pth` in a separated section of the filters popup.
 - [x] Keep architecture/type filters separate from file-format filters so users can combine both.
-- Replace vague progress percentages with visible metrics, such as files discovered, files parsed, bytes scanned, and current directory.
-- Keep the progress bar visible during long directory scans and model-info loading.
-- Surface cancellation and partial-results behavior for long scans.
+- [x] Replace vague progress percentages with visible metrics, such as files discovered, files parsed, bytes scanned, and current directory.
+- [x] Keep the progress bar visible during long directory scans and model-info loading.
+- [x] Surface cancellation and partial-results behavior for long scans.
 
 ## 3. Resolve Real Paths for Dump Targets
 
@@ -66,11 +66,11 @@ Actionable integration plan for repository organization, additional model format
 
 ## 8. Research Safetensors Library Integration
 
-- Evaluate the official `safetensors` Python package as a replacement or supplement for the current custom header reader.
-- Confirm whether `safe_open` can provide metadata, keys, tensor shapes, and dtypes without loading full tensor payloads or requiring Torch.
-- Test `framework="numpy"` and metadata-only/key-only flows to avoid a full Torch dependency.
+- [x] Evaluate the official `safetensors` Python package as a replacement or supplement for the current custom header reader.
+- [x] Confirm whether `safe_open` can provide metadata, keys, tensor shapes, and dtypes without loading full tensor payloads or requiring Torch.
+- [x] Test `framework="numpy"` and metadata-only/key-only flows to avoid a full Torch dependency.
 - If suitable, add `safetensors` to `requirements.txt` and isolate usage behind the reader abstraction.
-- If unsuitable, document why the custom header parser remains preferable.
+- [x] If unsuitable, document why the custom header parser remains preferable.
 
 ## 9. Caching & Default Libraries
 

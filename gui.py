@@ -202,9 +202,18 @@ class AnalysisWorker(QThread):
         super().__init__()
         self.filepaths = filepaths
         self.inspect_options = inspect_options or {}
+        self._cancel_requested = False
+        self.was_cancelled = False
+
+    def cancel(self):
+        self._cancel_requested = True
+        self.requestInterruption()
 
     def run(self):
         for fp in self.filepaths:
+            if self._cancel_requested or self.isInterruptionRequested():
+                self.was_cancelled = True
+                break
             try:
                 result = inspect_file(fp, options=self.inspect_options)
                 self.result_ready.emit(result)
@@ -945,6 +954,11 @@ class MainWindow(QMainWindow):
         self._active_arch_filter: set[str] | None = None
         self._active_tag_filter: set[str] | None = None
         self._active_format_filter: set[str] | None = None
+        self._analysis_done_count = 0
+        self._analysis_error_count = 0
+        self._analysis_bytes_scanned = 0
+        self._scan_cancel_requested = False
+        self._progress_status_generation = 0
         self._allow_filename_alias_detection = False
         self._show_full_paths = False
         self._top_folded = False
@@ -1066,6 +1080,19 @@ class MainWindow(QMainWindow):
         self.progress.setFixedWidth(200)
         self.progress.setVisible(False)
         btn_row_1.addWidget(self.progress)
+
+        self.progress_label = QLabel("")
+        self.progress_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        self.progress_label.setVisible(False)
+        self.progress_label.setMinimumWidth(260)
+        self.progress_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        btn_row_1.addWidget(self.progress_label, 1)
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.setVisible(False)
+        self.cancel_btn.clicked.connect(self._cancel_current_operation)
+        btn_row_1.addWidget(self.cancel_btn)
 
         self.analyze_btn = QPushButton("Analyze")
         self.analyze_btn.setObjectName("analyzeBtn")
@@ -1442,6 +1469,104 @@ class MainWindow(QMainWindow):
 
     # -- File management ---------------------------------------------------
 
+    def _format_bytes(self, size: int) -> str:
+        value = float(size)
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if value < 1024 or unit == "TB":
+                return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+            value /= 1024
+        return f"{value:.1f} TB"
+
+    def _set_progress_status(self, text: str):
+        self._progress_status_generation += 1
+        self.progress_label.setText(text)
+        self.progress_label.setToolTip(text)
+        self.progress_label.setVisible(bool(text))
+
+    def _set_cancel_available(self, available: bool):
+        self.cancel_btn.setEnabled(available)
+        self.cancel_btn.setVisible(available)
+
+    def _cancel_current_operation(self):
+        self._scan_cancel_requested = True
+        if self._worker and self._worker.isRunning():
+            self._worker.cancel()
+        self._set_cancel_available(False)
+        self._set_progress_status("Cancelling after the current file or directory...")
+
+    def _clear_progress_status(self, delay_ms: int = 0):
+        generation = self._progress_status_generation
+
+        def clear():
+            if delay_ms and generation != self._progress_status_generation:
+                return
+            self.progress.setVisible(False)
+            self.progress_label.clear()
+            self.progress_label.setToolTip("")
+            self.progress_label.setVisible(False)
+            self._set_cancel_available(False)
+
+        if delay_ms:
+            QTimer.singleShot(delay_ms, clear)
+        else:
+            clear()
+
+    def _discover_model_paths(self, folder: str) -> list[str]:
+        found = []
+        seen = set()
+        discovered = 0
+        scanned_dirs = 0
+        normalized_extensions = tuple(ext.lower() for ext in SUPPORTED_MODEL_EXTENSIONS)
+        self._scan_cancel_requested = False
+
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)
+        self._set_cancel_available(True)
+        self._set_progress_status(f"Discovering: 0 files | Current directory: {folder}")
+        QApplication.processEvents()
+
+        for dirpath, _, filenames in os.walk(folder):
+            if self._scan_cancel_requested:
+                break
+            scanned_dirs += 1
+            for filename in filenames:
+                if self._scan_cancel_requested:
+                    break
+                fp = Path(dirpath) / filename
+                if fp.suffix.lower() not in normalized_extensions:
+                    continue
+                if not fp.is_file() and not fp.is_symlink():
+                    continue
+                try:
+                    resolved = str(fp.resolve(strict=True))
+                except OSError:
+                    resolved = str(fp.absolute())
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                found.append(str(fp))
+                discovered += 1
+            self._set_progress_status(
+                f"Discovering: {discovered} files | Directories: {scanned_dirs} | "
+                f"Current directory: {dirpath}"
+            )
+            QApplication.processEvents()
+
+        self.progress.setRange(0, 1)
+        self.progress.setValue(1)
+        if self._scan_cancel_requested:
+            self._set_progress_status(
+                f"Discovery cancelled: {discovered} partial file"
+                f"{'s' if discovered != 1 else ''} found"
+            )
+        else:
+            self._set_progress_status(
+                f"Discovered {discovered} file{'s' if discovered != 1 else ''} "
+                f"in {scanned_dirs} director{'ies' if scanned_dirs != 1 else 'y'}"
+            )
+        self._set_cancel_available(False)
+        return found
+
     def _add_files(self, paths: list[str]):
         if not paths:
             return
@@ -1484,9 +1609,13 @@ class MainWindow(QMainWindow):
         folder = QFileDialog.getExistingDirectory(self, "Select folder to scan recursively")
         if not folder:
             return
-        found = iter_model_paths([folder], recursive=True)
+        found = self._discover_model_paths(folder)
         if found:
             self._add_files(found)
+            if not self._auto_analyze_on_add:
+                self._clear_progress_status(delay_ms=3000)
+        elif not self._auto_analyze_on_add:
+            self._clear_progress_status(delay_ms=3000)
 
     def _open_settings(self):
         col_vis = {
@@ -1573,8 +1702,16 @@ class MainWindow(QMainWindow):
 
         self.analyze_btn.setEnabled(False)
         self.progress.setVisible(True)
+        self.progress.setRange(0, len(self._queued_files))
         self.progress.setMaximum(len(self._queued_files))
         self.progress.setValue(0)
+        self._set_cancel_available(True)
+        self._analysis_done_count = 0
+        self._analysis_error_count = 0
+        self._analysis_bytes_scanned = 0
+        self._set_progress_status(
+            f"Parsed: 0/{len(self._queued_files)} | Bytes scanned: 0 B"
+        )
 
         # Clear previous results
         self._results.clear()
@@ -1611,7 +1748,9 @@ class MainWindow(QMainWindow):
     def _on_result(self, data: dict):
         self._normalize_result_data(data)
         self._results.append(data)
-        self.progress.setValue(len(self._results))
+        self._analysis_done_count += 1
+        self._analysis_bytes_scanned += int(data.get("file_size") or 0)
+        self._update_analysis_progress(data.get("filepath", ""))
         self._add_card(data)
         self._add_table_row(data)
         self.arch_filter_btn.add_item(data.get("architecture", "Unknown"))
@@ -1622,7 +1761,13 @@ class MainWindow(QMainWindow):
         self._refresh_raw_combo_filtered()
 
     def _on_error(self, filepath: str, error: str):
-        self.progress.setValue(self.progress.value() + 1)
+        self._analysis_done_count += 1
+        self._analysis_error_count += 1
+        try:
+            self._analysis_bytes_scanned += Path(filepath).stat().st_size
+        except OSError:
+            pass
+        self._update_analysis_progress(filepath)
         # Add an error card
         err_data = {
             "filepath": filepath,
@@ -1659,12 +1804,42 @@ class MainWindow(QMainWindow):
 
     def _on_all_done(self):
         self.analyze_btn.setEnabled(True)
-        self.progress.setVisible(False)
+        self._set_cancel_available(False)
+        was_cancelled = bool(self._worker and self._worker.was_cancelled)
+        error_text = (
+            f" | Errors: {self._analysis_error_count}"
+            if self._analysis_error_count else ""
+        )
+        if was_cancelled:
+            self._set_progress_status(
+                f"Analysis cancelled: {self._analysis_done_count}/{len(self._queued_files)} "
+                f"parsed | Partial results remain visible{error_text}"
+            )
+        else:
+            self._set_progress_status(
+                f"Parsed: {self._analysis_done_count}/{len(self._queued_files)} | "
+                f"Bytes scanned: {self._format_bytes(self._analysis_bytes_scanned)}{error_text}"
+            )
+        self._clear_progress_status(delay_ms=4000)
 
     def _reset_format_filter_items(self):
         self.format_filter_btn.clear_items()
         for ext in MODEL_FORMAT_FILTERS:
             self.format_filter_btn.ensure_item(ext)
+
+    def _update_analysis_progress(self, filepath: str):
+        total = len(self._queued_files)
+        self.progress.setValue(self._analysis_done_count)
+        filename = Path(filepath).name if filepath else "-"
+        error_text = (
+            f" | Errors: {self._analysis_error_count}"
+            if self._analysis_error_count else ""
+        )
+        self._set_progress_status(
+            f"Parsed: {self._analysis_done_count}/{total} | "
+            f"Bytes scanned: {self._format_bytes(self._analysis_bytes_scanned)} | "
+            f"Current file: {filename}{error_text}"
+        )
 
     def _normalize_result_data(self, data: dict):
         arch = str(data.get("architecture") or "Unknown")
@@ -1701,11 +1876,21 @@ class MainWindow(QMainWindow):
             return
         count = 0
         output_paths = []
+        total = len(self._results)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, total)
+        self.progress.setValue(0)
+        self._set_progress_status(f"Writing .modelinfo: 0/{total}")
+        QApplication.processEvents()
         for data in self._results:
             filepath = data.get("filepath")
             if not filepath:
                 continue
             try:
+                self._set_progress_status(
+                    f"Writing .modelinfo: {count}/{total} | Current file: {Path(filepath).name}"
+                )
+                QApplication.processEvents()
                 outputs = [write_modelinfo_dump(filepath)]
                 if self._dump_json_modelinfo:
                     outputs.append(write_modelinfo_json(
@@ -1717,9 +1902,12 @@ class MainWindow(QMainWindow):
                 data["modelinfo_outputs"] = outputs
                 output_paths.extend(outputs)
                 count += 1
+                self.progress.setValue(count)
             except Exception:
                 pass
         self.dump_btn.setText(f"Dumped {count} file(s)")
+        self._set_progress_status(f"Wrote .modelinfo for {count}/{total} file(s)")
+        self._clear_progress_status(delay_ms=4000)
         if output_paths:
             preview = "\n".join(output_paths[:20])
             if len(output_paths) > 20:
@@ -2523,6 +2711,10 @@ class MainWindow(QMainWindow):
 
     def _load_raw_dump(self, filepath: str):
         try:
+            self.progress.setVisible(True)
+            self.progress.setRange(0, 0)
+            self._set_progress_status(f"Loading full dump: {Path(filepath).name}")
+            QApplication.processEvents()
             self.raw_load_btn.setEnabled(False)
             self.raw_load_btn.setText("Loading...")
             dump = generate_modelinfo_dump(filepath)
@@ -2534,6 +2726,7 @@ class MainWindow(QMainWindow):
         finally:
             self.raw_load_btn.setEnabled(True)
             self.raw_load_btn.setText("Load Full Dump")
+            self._clear_progress_status(delay_ms=1500)
 
 
 # ---------------------------------------------------------------------------

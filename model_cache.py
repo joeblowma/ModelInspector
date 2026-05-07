@@ -5,6 +5,7 @@ import json
 import os
 import hashlib
 import shutil
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from app_paths import cache_dir
 
 
 CACHE_VERSION = 1
+_CACHE_LOCK = threading.Lock()
 
 
 def _legacy_cache_path() -> Path | None:
@@ -35,6 +37,10 @@ def _raw_dump_path() -> Path:
 
 def _entry_path(entry_id: str) -> Path:
     return cache_dir() / "entries" / f"{entry_id}.json"
+
+
+def _data_path(entry_id: str) -> Path:
+    return cache_dir() / "data" / f"{entry_id}.json"
 
 
 def _cache_key(filepath: str, options: dict | None) -> str:
@@ -154,7 +160,28 @@ def _write_entry(entry_id: str, entry: dict):
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(entry, f, ensure_ascii=False, sort_keys=True)
+            json.dump(entry, f, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        os.replace(tmp_path, path)
+    except Exception:
+        pass
+
+
+def _read_data_entry(entry_id: str) -> dict | None:
+    try:
+        with open(_data_path(entry_id), "r", encoding="utf-8") as f:
+            entry = json.load(f)
+    except Exception:
+        return None
+    return entry if isinstance(entry, dict) else None
+
+
+def _write_data_entry(entry_id: str, entry: dict):
+    try:
+        path = _data_path(entry_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(entry, f, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         os.replace(tmp_path, path)
     except Exception:
         pass
@@ -169,8 +196,22 @@ def _iter_cached_entries():
                 yield entry
         return
 
+    seen = set()
+    try:
+        entry_paths = sorted((cache_dir() / "entries").glob("*.json"))
+    except Exception:
+        entry_paths = []
+    for path in entry_paths:
+        entry_id = path.stem
+        entry = _read_entry(entry_id)
+        if isinstance(entry, dict):
+            seen.add(entry_id)
+            yield entry
+
     index = _load_index()
     for entry_id in index["entries"].keys():
+        if entry_id in seen:
+            continue
         entry = _read_entry(entry_id)
         if isinstance(entry, dict):
             yield entry
@@ -199,8 +240,7 @@ def get_cached_inspection(filepath: str, options: dict | None = None) -> dict | 
         entry = cache["entries"].get(key)
     else:
         index = _load_index()
-        index_entry = index["entries"].get(entry_id)
-        entry = _read_entry(entry_id) if index_entry else None
+        entry = _read_entry(entry_id)
     if not entry:
         return None
     if entry.get("identity") != ident:
@@ -220,6 +260,34 @@ def get_cached_inspection_snapshot(filepath: str) -> dict | None:
             snapshot.setdefault("cache_status", "snapshot")
             return snapshot
     return None
+
+
+def get_cached_inspection_snapshots(filepaths: list[str]) -> dict[str, dict]:
+    """Return cached inspection snapshots for many paths using one cache scan."""
+    wanted_by_value = {}
+    for filepath in filepaths:
+        for value in _path_match_values(filepath):
+            wanted_by_value[value] = filepath
+
+    snapshots = {}
+    for entry in _iter_cached_entries():
+        identity = entry.get("identity") if isinstance(entry.get("identity"), dict) else {}
+        data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+        if not data:
+            continue
+        candidates = {
+            str(identity.get("resolved_filepath") or "").lower(),
+            str(data.get("filepath") or "").lower(),
+            str(data.get("resolved_filepath") or "").lower(),
+        }
+        candidates.discard("")
+        for candidate in candidates:
+            filepath = wanted_by_value.get(candidate)
+            if filepath and filepath not in snapshots:
+                snapshot = dict(data)
+                snapshot.setdefault("cache_status", "snapshot")
+                snapshots[filepath] = snapshot
+    return snapshots
 
 
 def store_cached_inspection(filepath: str, data: dict, options: dict | None = None):
@@ -243,13 +311,71 @@ def store_cached_inspection(filepath: str, data: dict, options: dict | None = No
             pass
         return
 
-    _write_entry(entry_id, entry)
-    index = _load_index()
-    index["entries"][entry_id] = {
-        "identity": entry["identity"],
-        "data_file": f"entries/{entry_id}.json",
+    with _CACHE_LOCK:
+        _write_entry(entry_id, entry)
+        index = _load_index()
+        index_entry = dict(index["entries"].get(entry_id) or {})
+        index_entry.update({
+            "identity": entry["identity"],
+            "data_file": f"entries/{entry_id}.json",
+        })
+        index["entries"][entry_id] = index_entry
+        _save_index(index)
+
+
+def store_model_data(
+    filepath: str,
+    metadata: dict,
+    tensor_info: dict,
+    file_size: int,
+    options: dict | None = None,
+):
+    key = _cache_key(filepath, options)
+    entry_id = _entry_id(key)
+    entry = {
+        "identity": _identity(filepath),
+        "filepath": filepath,
+        "resolved_filepath": _identity(filepath)["resolved_filepath"],
+        "metadata": metadata,
+        "tensor_info": tensor_info,
+        "file_size": file_size,
     }
-    _save_index(index)
+    with _CACHE_LOCK:
+        _write_data_entry(entry_id, entry)
+        index = _load_index()
+        index["entries"].setdefault(entry_id, {})["data_cache_file"] = f"data/{entry_id}.json"
+        _save_index(index)
+
+
+def get_cached_model_data(filepath: str, options: dict | None = None) -> dict | None:
+    try:
+        key = _cache_key(filepath, options)
+        entry_id = _entry_id(key)
+        entry = _read_data_entry(entry_id)
+        if isinstance(entry, dict):
+            return entry
+    except Exception:
+        pass
+
+    wanted = _path_match_values(filepath)
+    data_dir = cache_dir() / "data"
+    try:
+        candidates = list(data_dir.glob("*.json"))
+    except Exception:
+        candidates = []
+    for path in candidates:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                entry = json.load(f)
+        except Exception:
+            continue
+        entry_values = {
+            str(entry.get("filepath") or "").lower(),
+            str(entry.get("resolved_filepath") or "").lower(),
+        }
+        if wanted & entry_values:
+            return entry
+    return None
 
 
 def store_directory_scan(folder: str, paths: list[str]):

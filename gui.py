@@ -1,6 +1,6 @@
 ﻿#!/usr/bin/env python3
 """
-Safetensors Model Inspector â€” PyQt6 GUI
+Safetensors Model Inspector PyQt6 GUI
 Dark-mode interface with drag-and-drop, card view, and data table view.
 """
 
@@ -38,7 +38,7 @@ from model_readers import (
 from model_cache import (
     clear_inspection_cache,
     get_cached_directory_scan,
-    get_cached_inspection_snapshot,
+    get_cached_inspection_snapshots,
     get_cached_raw_dump,
     list_cached_directories,
     store_raw_dump,
@@ -385,9 +385,10 @@ class SettingsDialog(QDialog):
         dump_json_modelinfo=False,
         auto_load_raw_dump=False,
         load_default_libraries_on_startup=False,
+        cache_full_data_on_analyze=False,
         analysis_threads=2,
         add_mode="replace",
-        default_tab="simple",
+        default_tab="cards",
         card_fields=None,
         simple_card_fields=None,
         table_column_visibility=None,
@@ -404,6 +405,14 @@ class SettingsDialog(QDialog):
         title = QLabel("Display Settings")
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #f5c2e7;")
         root.addWidget(title)
+
+        tabs = QTabWidget()
+        root.addWidget(tabs, 1)
+
+        general_tab = QWidget()
+        general_tab_layout = QVBoxLayout(general_tab)
+        general_tab_layout.setContentsMargins(0, 0, 0, 0)
+        general_tab_layout.setSpacing(10)
 
         general_group = QGroupBox("General")
         g_layout = QGridLayout(general_group)
@@ -457,6 +466,13 @@ class SettingsDialog(QDialog):
             "Automatically generate and cache the full Raw tab dump when the selected model changes."
         )
 
+        self.cache_full_data_checkbox = QCheckBox("Cache full tensor data during analysis")
+        self.cache_full_data_checkbox.setChecked(cache_full_data_on_analyze)
+        cache_full_data_cell = make_general_cell(
+            self.cache_full_data_checkbox,
+            "Store compact metadata and tensor descriptors while scanning so details remain available without the model file."
+        )
+
         self.default_libraries_checkbox = QCheckBox("Load default libraries on startup")
         self.default_libraries_checkbox.setChecked(load_default_libraries_on_startup)
         default_libraries_cell = make_general_cell(
@@ -506,8 +522,7 @@ class SettingsDialog(QDialog):
         tab_row.setSpacing(6)
         tab_row.addWidget(QLabel("Default tab:"))
         self.default_tab_combo = QComboBox()
-        self.default_tab_combo.addItem("Simple Cards", "simple")
-        self.default_tab_combo.addItem("Detailed Cards", "detailed")
+        self.default_tab_combo.addItem("Cards", "cards")
         self.default_tab_combo.addItem("Data", "data")
         self.default_tab_combo.addItem("Raw", "raw")
         idx = self.default_tab_combo.findData(default_tab)
@@ -529,8 +544,25 @@ class SettingsDialog(QDialog):
         g_layout.addWidget(raw_cell, 2, 0)
         g_layout.addWidget(default_libraries_cell, 2, 1)
         g_layout.addWidget(thread_cell, 2, 2)
-        root.addWidget(general_group)
+        g_layout.addWidget(cache_full_data_cell, 3, 0)
+        general_tab_layout.addWidget(general_group)
 
+        cache_group = QGroupBox("Cache")
+        cache_layout = QHBoxLayout(cache_group)
+        cache_layout.setSpacing(10)
+        cache_note = QLabel("Clear parsed model summaries and cached tensor data.")
+        cache_note.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        cache_layout.addWidget(cache_note, 1)
+        self.clear_cache_btn = QPushButton("Clear Cache")
+        cache_layout.addWidget(self.clear_cache_btn)
+        general_tab_layout.addWidget(cache_group)
+        general_tab_layout.addStretch()
+        tabs.addTab(general_tab, "General")
+
+        cards_tab = QWidget()
+        cards_tab_layout = QVBoxLayout(cards_tab)
+        cards_tab_layout.setContentsMargins(0, 0, 0, 0)
+        cards_tab_layout.setSpacing(10)
         cards_row = QHBoxLayout()
         cards_row.setSpacing(10)
 
@@ -575,8 +607,14 @@ class SettingsDialog(QDialog):
             d_layout.addWidget(cb)
         d_layout.addStretch()
         cards_row.addWidget(detailed_group, 1)
-        root.addLayout(cards_row)
+        cards_tab_layout.addLayout(cards_row)
+        cards_tab_layout.addStretch()
+        tabs.addTab(cards_tab, "Cards")
 
+        data_tab = QWidget()
+        data_tab_layout = QVBoxLayout(data_tab)
+        data_tab_layout.setContentsMargins(0, 0, 0, 0)
+        data_tab_layout.setSpacing(10)
         data_group = QGroupBox("Data Columns")
         data_layout = QGridLayout(data_group)
         data_layout.setHorizontalSpacing(18)
@@ -592,17 +630,9 @@ class SettingsDialog(QDialog):
             row = idx % rows_count if rows_count else 0
             col = idx // rows_count if rows_count else 0
             data_layout.addWidget(cb, row, col)
-        root.addWidget(data_group)
-
-        cache_group = QGroupBox("Cache")
-        cache_layout = QHBoxLayout(cache_group)
-        cache_layout.setSpacing(10)
-        cache_note = QLabel("Clear parsed model summaries from the app cache.")
-        cache_note.setStyleSheet("color: #a6adc8; font-size: 11px;")
-        cache_layout.addWidget(cache_note, 1)
-        self.clear_cache_btn = QPushButton("Clear Cache")
-        cache_layout.addWidget(self.clear_cache_btn)
-        root.addWidget(cache_group)
+        data_tab_layout.addWidget(data_group)
+        data_tab_layout.addStretch()
+        tabs.addTab(data_tab, "Data Columns")
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -633,64 +663,92 @@ class CheckFilterButton(QToolButton):
         all_action = QWidgetAction(self)
         all_action.setDefaultWidget(self._all_cb)
         self._menu.addAction(all_action)
-        self._menu.addSeparator()
 
         self._arch_checks: dict[str, QCheckBox] = {}
         self._counts: dict[str, int] = {}
         self._active: set[str] = set()
+        self._item_actions: list[QWidgetAction | QAction] = []
 
     def clear_items(self):
-        for arch in list(self._arch_checks.keys()):
-            self.remove_item(arch)
+        self._clear_item_actions()
+        self._all_cb.blockSignals(True)
         self._all_cb.setChecked(True)
+        self._all_cb.blockSignals(False)
         self._counts.clear()
+        self._arch_checks.clear()
         self._active.clear()
         self._update_label()
         self.filter_changed.emit(None)
+
+    def _clear_item_actions(self):
+        for action in self._item_actions:
+            if isinstance(action, QWidgetAction):
+                widget = action.defaultWidget()
+                action.setDefaultWidget(None)
+                if widget is not None:
+                    widget.deleteLater()
+            self._menu.removeAction(action)
+        self._item_actions.clear()
+
+    def _filter_sort_key(self, value: str):
+        if value == "ERROR":
+            return (0, "")
+        if value == "Unknown":
+            return (1, "")
+        return (2, value.lower())
+
+    def _rebuild_item_actions(self):
+        checked_state = {
+            arch: cb.isChecked()
+            for arch, cb in self._arch_checks.items()
+        }
+        self._clear_item_actions()
+        self._arch_checks.clear()
+        ordered = sorted(self._counts.keys(), key=self._filter_sort_key)
+        inserted_divider = False
+        for arch in ordered:
+            if not inserted_divider and arch != "ERROR" and "ERROR" in self._arch_checks:
+                sep = self._menu.addSeparator()
+                self._item_actions.append(sep)
+                inserted_divider = True
+            checked = checked_state.get(arch, arch in self._active)
+            cb = QCheckBox(f"{arch} ({self._counts.get(arch, 0)})")
+            cb.setChecked(checked)
+            cb.stateChanged.connect(self._on_arch_toggled)
+            self._arch_checks[arch] = cb
+            act = QWidgetAction(self)
+            act.setDefaultWidget(cb)
+            self._menu.addAction(act)
+            self._item_actions.append(act)
 
     def remove_item(self, arch: str):
         cb = self._arch_checks.pop(arch, None)
         self._counts.pop(arch, None)
         if not cb:
             return
-        for action in self._menu.actions():
-            if isinstance(action, QWidgetAction) and action.defaultWidget() is cb:
-                self._menu.removeAction(action)
-                break
         if arch in self._active:
             self._active.remove(arch)
+        self._rebuild_item_actions()
 
     def add_item(self, arch: str):
         if not arch:
             return
-        if arch in self._arch_checks:
+        if arch in self._counts:
             self._counts[arch] = self._counts.get(arch, 1) + 1
-            self._arch_checks[arch].setText(f"{arch} ({self._counts[arch]})")
+            self._rebuild_item_actions()
             self._update_label()
             return
         self._counts[arch] = 1
-        cb = QCheckBox(f"{arch} (1)")
-        cb.setChecked(True)
-        cb.stateChanged.connect(self._on_arch_toggled)
-        act = QWidgetAction(self)
-        act.setDefaultWidget(cb)
-        self._menu.addAction(act)
-        self._arch_checks[arch] = cb
         self._active.add(arch)
+        self._rebuild_item_actions()
         self._update_label()
 
     def ensure_item(self, arch: str, count: int = 0):
-        if not arch or arch in self._arch_checks:
+        if not arch or arch in self._counts:
             return
         self._counts[arch] = count
-        cb = QCheckBox(f"{arch} ({count})")
-        cb.setChecked(True)
-        cb.stateChanged.connect(self._on_arch_toggled)
-        act = QWidgetAction(self)
-        act.setDefaultWidget(cb)
-        self._menu.addAction(act)
-        self._arch_checks[arch] = cb
         self._active.add(arch)
+        self._rebuild_item_actions()
         self._update_label()
 
     def set_all_checked(self, checked: bool):
@@ -1064,9 +1122,11 @@ class MainWindow(QMainWindow):
         self._dump_json_modelinfo = False
         self._auto_load_raw_dump = False
         self._load_default_libraries_on_startup = False
+        self._cache_full_data_on_analyze = False
         self._analysis_threads = 2
         self._add_mode = "replace"  # replace | additive
-        self._default_tab = "simple"  # simple | detailed | data | raw
+        self._default_tab = "cards"  # cards | data | raw
+        self._simple_cards_view = False
         self._card_field_visibility = {
             "parameters": True,
             "file_size": True,
@@ -1224,11 +1284,24 @@ class MainWindow(QMainWindow):
         # --- Tab widget (Cards / Data) -------------------------------------
         self.tabs = QTabWidget()
 
-        # Simple Cards tab (default)
-        simple_cards_tab = QWidget()
-        simple_cards_tab_layout = QVBoxLayout(simple_cards_tab)
-        simple_cards_tab_layout.setContentsMargins(0, 0, 0, 0)
-        simple_cards_tab_layout.setSpacing(6)
+        # Cards tab
+        cards_tab = QWidget()
+        cards_tab_layout = QVBoxLayout(cards_tab)
+        cards_tab_layout.setContentsMargins(0, 0, 0, 0)
+        cards_tab_layout.setSpacing(6)
+
+        cards_toolbar = QHBoxLayout()
+        self.cards_select_all_cb = QCheckBox("Select All")
+        self.cards_select_all_cb.stateChanged.connect(self._on_cards_select_all_changed)
+        cards_toolbar.addWidget(self.cards_select_all_cb)
+        self.cards_simple_view_cb = QCheckBox("Simple View")
+        self.cards_simple_view_cb.stateChanged.connect(self._on_cards_view_changed)
+        cards_toolbar.addWidget(self.cards_simple_view_cb)
+        self.selected_count_label = QLabel("0 selected")
+        self.selected_count_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        cards_toolbar.addWidget(self.selected_count_label)
+        cards_toolbar.addStretch()
+        cards_tab_layout.addLayout(cards_toolbar)
 
         self.simple_cards_scroll = QScrollArea()
         self.simple_cards_scroll.setWidgetResizable(True)
@@ -1243,24 +1316,6 @@ class MainWindow(QMainWindow):
         self.simple_cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.simple_cards_placeholder.setStyleSheet("color: #45475a; font-size: 14px; padding: 60px;")
         self.simple_cards_layout.insertWidget(0, self.simple_cards_placeholder)
-        simple_cards_tab_layout.addWidget(self.simple_cards_scroll)
-        self.tabs.addTab(simple_cards_tab, "Simple Cards")
-
-        # Detailed Cards tab
-        cards_tab = QWidget()
-        cards_tab_layout = QVBoxLayout(cards_tab)
-        cards_tab_layout.setContentsMargins(0, 0, 0, 0)
-        cards_tab_layout.setSpacing(6)
-
-        cards_toolbar = QHBoxLayout()
-        self.cards_select_all_cb = QCheckBox("Select All")
-        self.cards_select_all_cb.stateChanged.connect(self._on_cards_select_all_changed)
-        cards_toolbar.addWidget(self.cards_select_all_cb)
-        self.selected_count_label = QLabel("0 selected")
-        self.selected_count_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
-        cards_toolbar.addWidget(self.selected_count_label)
-        cards_toolbar.addStretch()
-        cards_tab_layout.addLayout(cards_toolbar)
 
         self.cards_scroll = QScrollArea()
         self.cards_scroll.setWidgetResizable(True)
@@ -1277,7 +1332,9 @@ class MainWindow(QMainWindow):
         self.cards_layout.insertWidget(0, self.cards_placeholder)
 
         cards_tab_layout.addWidget(self.cards_scroll)
-        self.tabs.addTab(cards_tab, "Detailed Cards")
+        cards_tab_layout.addWidget(self.simple_cards_scroll)
+        self.tabs.addTab(cards_tab, "Cards")
+        self._apply_cards_view_mode()
 
         # Data table tab
         data_tab = QWidget()
@@ -1305,6 +1362,7 @@ class MainWindow(QMainWindow):
         self.table.cellClicked.connect(self._on_table_cell_clicked)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
+        self.table.horizontalHeader().sortIndicatorChanged.connect(self._on_table_sort_changed)
 
         self._table_columns = [
             "", "File", "Format", "File Size", "Architecture", "Model Type", "Adapter", "Quantization",
@@ -1473,13 +1531,13 @@ class MainWindow(QMainWindow):
 
     def _on_copy_shortcut(self):
         tab = self.tabs.currentIndex()
-        if tab in (0, 1):
-            self._copy_selected_cards_info(tab == 0)
+        if tab == 0:
+            self._copy_selected_cards_info(self._simple_cards_view)
             return
-        if tab == 2:
+        if tab == 1:
             self._copy_selected_table_cells()
             return
-        if tab == 3:
+        if tab == 2:
             if self.raw_text.textCursor().hasSelection():
                 self.raw_text.copy()
             else:
@@ -1504,7 +1562,7 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def _on_tab_changed(self, index):
-        if index == 3:
+        if index == 2:
             self._refresh_raw_combo_filtered()
 
     def _load_ui_settings(self):
@@ -1515,16 +1573,19 @@ class MainWindow(QMainWindow):
         self._dump_json_modelinfo = str(s.value("dump_json_modelinfo", "false")).lower() == "true"
         self._auto_load_raw_dump = str(s.value("auto_load_raw_dump", "false")).lower() == "true"
         self._load_default_libraries_on_startup = str(s.value("load_default_libraries_on_startup", "false")).lower() == "true"
+        self._cache_full_data_on_analyze = str(s.value("cache_full_data_on_analyze", "false")).lower() == "true"
         try:
             self._analysis_threads = max(1, min(8, int(s.value("analysis_threads", "2"))))
         except (TypeError, ValueError):
             self._analysis_threads = 2
         self._add_mode = str(s.value("add_mode", "replace")).lower()
-        self._default_tab = str(s.value("default_tab", "simple")).lower()
+        self._default_tab = str(s.value("default_tab", "cards")).lower()
+        if self._default_tab in ("simple", "detailed"):
+            self._default_tab = "cards"
         if self._add_mode not in ("replace", "additive"):
             self._add_mode = "replace"
-        if self._default_tab not in ("simple", "detailed", "data", "raw"):
-            self._default_tab = "simple"
+        if self._default_tab not in ("cards", "data", "raw"):
+            self._default_tab = "cards"
         raw_detailed = s.value("detailed_card_fields", "")
         if raw_detailed:
             try:
@@ -1558,6 +1619,7 @@ class MainWindow(QMainWindow):
         s.setValue("dump_json_modelinfo", str(self._dump_json_modelinfo).lower())
         s.setValue("auto_load_raw_dump", str(self._auto_load_raw_dump).lower())
         s.setValue("load_default_libraries_on_startup", str(self._load_default_libraries_on_startup).lower())
+        s.setValue("cache_full_data_on_analyze", str(self._cache_full_data_on_analyze).lower())
         s.setValue("analysis_threads", str(self._analysis_threads))
         s.setValue("add_mode", self._add_mode)
         s.setValue("default_tab", self._default_tab)
@@ -1771,6 +1833,7 @@ class MainWindow(QMainWindow):
         self._startup_cache_load_cancelled = False
         queued_paths = []
         snapshot_count = 0
+        snapshots = get_cached_inspection_snapshots(cached_paths)
         total = len(cached_paths)
         batch_size = 20
         self.progress.setVisible(True)
@@ -1789,7 +1852,7 @@ class MainWindow(QMainWindow):
 
             end_index = min(start_index + batch_size, total)
             for path in cached_paths[start_index:end_index]:
-                cached = get_cached_inspection_snapshot(path)
+                cached = snapshots.get(path)
                 if cached is not None:
                     cached["filepath"] = path
                     cached["filename"] = Path(path).name
@@ -1852,6 +1915,7 @@ class MainWindow(QMainWindow):
             dump_json_modelinfo=self._dump_json_modelinfo,
             auto_load_raw_dump=self._auto_load_raw_dump,
             load_default_libraries_on_startup=self._load_default_libraries_on_startup,
+            cache_full_data_on_analyze=self._cache_full_data_on_analyze,
             analysis_threads=self._analysis_threads,
             add_mode=self._add_mode,
             default_tab=self._default_tab,
@@ -1867,9 +1931,10 @@ class MainWindow(QMainWindow):
             self._dump_json_modelinfo = dlg.dump_json_checkbox.isChecked()
             self._auto_load_raw_dump = dlg.auto_load_raw_checkbox.isChecked()
             self._load_default_libraries_on_startup = dlg.default_libraries_checkbox.isChecked()
+            self._cache_full_data_on_analyze = dlg.cache_full_data_checkbox.isChecked()
             self._analysis_threads = int(dlg.analysis_threads_combo.currentData() or 1)
             self._add_mode = dlg.add_mode_combo.currentData()
-            self._default_tab = str(dlg.default_tab_combo.currentData() or "simple")
+            self._default_tab = str(dlg.default_tab_combo.currentData() or "cards")
             for key, cb in dlg.card_field_checks.items():
                 self._card_field_visibility[key] = cb.isChecked()
             for key, cb in dlg.simple_card_field_checks.items():
@@ -1902,10 +1967,9 @@ class MainWindow(QMainWindow):
 
     def _apply_default_tab(self):
         tab_idx = {
-            "simple": 0,
-            "detailed": 1,
-            "data": 2,
-            "raw": 3,
+            "cards": 0,
+            "data": 1,
+            "raw": 2,
         }.get(self._default_tab, 0)
         self.tabs.setCurrentIndex(tab_idx)
 
@@ -1980,7 +2044,8 @@ class MainWindow(QMainWindow):
         self._worker = AnalysisWorker(
             list(self._queued_files),
             inspect_options={
-                "allow_filename_alias_detection": self._allow_filename_alias_detection
+                "allow_filename_alias_detection": self._allow_filename_alias_detection,
+                "cache_full_data": self._cache_full_data_on_analyze,
             },
             threads=self._analysis_threads,
         )
@@ -2122,7 +2187,7 @@ class MainWindow(QMainWindow):
         selected = self._visible_selected_paths()
         if selected:
             return selected
-        if self.tabs.currentIndex() == 3:
+        if self.tabs.currentIndex() == 2:
             current = self.raw_combo.currentData()
             if current:
                 return [current]
@@ -2198,6 +2263,17 @@ class MainWindow(QMainWindow):
         self.simple_cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.simple_cards_placeholder.setStyleSheet("color: #45475a; font-size: 14px; padding: 60px;")
         self.simple_cards_layout.insertWidget(0, self.simple_cards_placeholder)
+        self._refresh_card_layout_geometry()
+
+    def _on_cards_view_changed(self, state):
+        self._simple_cards_view = state == Qt.CheckState.Checked.value
+        self._apply_cards_view_mode()
+
+    def _apply_cards_view_mode(self):
+        if not hasattr(self, "cards_scroll") or not hasattr(self, "simple_cards_scroll"):
+            return
+        self.cards_scroll.setVisible(not self._simple_cards_view)
+        self.simple_cards_scroll.setVisible(self._simple_cards_view)
         self._refresh_card_layout_geometry()
 
     def _add_card(self, data: dict):
@@ -2351,23 +2427,18 @@ class MainWindow(QMainWindow):
 
     def _visible_paths(self) -> list[str]:
         paths = []
-        for data in self._results:
-            fp = data.get("filepath")
-            if not fp:
-                continue
-            row = self._row_for_filepath(fp)
-            if row is None:
-                continue
-            if row < 0 or row >= self.table.rowCount():
-                continue
+        for row in range(self.table.rowCount()):
             if self.table.isRowHidden(row):
+                continue
+            item = self.table.item(row, 1)
+            fp = item.data(Qt.ItemDataRole.UserRole) if item else None
+            if not fp:
                 continue
             paths.append(fp)
         return paths
 
     def _visible_selected_paths(self) -> list[str]:
-        visible = set(self._visible_paths())
-        return sorted(p for p in self._selected_paths if p in visible)
+        return [p for p in self._visible_paths() if p in self._selected_paths]
 
     def _row_for_filepath(self, filepath: str) -> int | None:
         row = self._path_to_row.get(filepath)
@@ -2381,6 +2452,31 @@ class MainWindow(QMainWindow):
                 self._path_to_row[filepath] = scan_row
                 return scan_row
         return None
+
+    def _on_table_sort_changed(self, *_):
+        QTimer.singleShot(0, self._sync_order_from_table)
+
+    def _sync_order_from_table(self):
+        ordered_paths = []
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 1)
+            fp = item.data(Qt.ItemDataRole.UserRole) if item else None
+            if fp:
+                ordered_paths.append(fp)
+                self._path_to_row[fp] = row
+
+        for layout, cards in (
+            (self.cards_layout, self._path_to_card),
+            (self.simple_cards_layout, self._path_to_simple_card),
+        ):
+            for fp in ordered_paths:
+                card = cards.get(fp)
+                if card:
+                    layout.removeWidget(card)
+                    layout.addWidget(card)
+        self._refresh_card_layout_geometry()
+        if hasattr(self, "raw_combo"):
+            self._refresh_raw_combo_filtered()
 
     def _on_arch_filter_changed(self, active):
         self._active_arch_filter = None if active is None else set(active)
@@ -2417,8 +2513,7 @@ class MainWindow(QMainWindow):
             row = self._row_for_filepath(fp)
             if row is not None and 0 <= row < self.table.rowCount():
                 self.table.setRowHidden(row, not visible)
-        self._refresh_card_layout_geometry()
-        self._refresh_raw_combo_filtered()
+        self._sync_order_from_table()
         self._update_selection_ui_state()
 
     def _filter_tags_for_data(self, data: dict) -> list[str]:
@@ -2455,14 +2550,9 @@ class MainWindow(QMainWindow):
         prev_fp = self.raw_combo.currentData()
         self.raw_combo.blockSignals(True)
         self.raw_combo.clear()
-        for data in self._results:
-            fp = data.get("filepath", "")
-            if not fp:
-                continue
-            row = self._row_for_filepath(fp)
-            if row is None or row < 0 or row >= self.table.rowCount():
-                continue
-            if self.table.isRowHidden(row):
+        for fp in self._visible_paths():
+            data = self._result_for_filepath(fp)
+            if not data:
                 continue
             self.raw_combo.addItem(data.get("filename", Path(fp).name), fp)
         if prev_fp:
@@ -2487,7 +2577,7 @@ class MainWindow(QMainWindow):
         idx = self.raw_combo.findData(filepath)
         if idx >= 0:
             self.raw_combo.setCurrentIndex(idx)
-        self.tabs.setCurrentIndex(3)
+        self.tabs.setCurrentIndex(2)
         self._show_raw_summary(filepath)
 
     def _step_raw_selection(self, delta: int):
@@ -2650,8 +2740,7 @@ class MainWindow(QMainWindow):
         return "\n".join(lines)
 
     def _copy_selected_cards_info(self, simple_view: bool):
-        visible = set(self._visible_paths())
-        paths = [p for p in sorted(self._selected_paths) if p in visible]
+        paths = self._visible_selected_paths()
         if not paths:
             return
         blocks = []
@@ -2980,12 +3069,6 @@ class MainWindow(QMainWindow):
             self._clear_progress_status(delay_ms=1500)
             return
 
-        if not Path(filepath).exists():
-            self._show_raw_summary(filepath)
-            self._set_progress_status(f"No cached full dump for unavailable file: {Path(filepath).name}")
-            self._clear_progress_status(delay_ms=3500)
-            return
-
         try:
             self.progress.setVisible(True)
             self.progress.setRange(0, 0)
@@ -2998,7 +3081,13 @@ class MainWindow(QMainWindow):
             self.raw_text.setPlainText(dump)
             self._raw_loaded_filepath = filepath
         except Exception as e:
-            self.raw_text.setPlainText(f"Error reading file:\n{e}")
+            if not Path(filepath).exists():
+                self._show_raw_summary(filepath)
+                self._set_progress_status(
+                    f"No cached full dump/tensor data for unavailable file: {Path(filepath).name}"
+                )
+            else:
+                self.raw_text.setPlainText(f"Error reading file:\n{e}")
             self._raw_loaded_filepath = None
         finally:
             self.raw_load_btn.setEnabled(True)

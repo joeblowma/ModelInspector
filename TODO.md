@@ -18,6 +18,8 @@ Actionable integration plan for repository organization, additional model format
 
 - [x] Add format filters for `.safetensors`, `.gguf`, `.ckpt`, `.pt`, and `.pth` in a separated section of the filters popup.
 - [x] Keep architecture/type filters separate from file-format filters so users can combine both.
+- [x] Sort filter menus with `ERROR` first, then `Unknown`, then alphabetical values.
+- [x] Keep card and Raw dropdown ordering aligned with the current Data table sort order.
 - [x] Replace vague progress percentages with visible metrics, such as files discovered, files parsed, bytes scanned, and current directory.
 - [x] Keep the progress bar visible during long directory scans and model-info loading.
 - [x] Surface cancellation and partial-results behavior for long scans.
@@ -34,7 +36,7 @@ Actionable integration plan for repository organization, additional model format
 
 - Add an option to create symbolic links alongside the existing move-file actions.
 - Support destination templates for common model library layouts, such as `.\models\<type>\<model name>\<file>`.
-- Add presets for ComfyUI and A1111 directory conventions, with editable templates.
+- Add presets for ComfyUI, LMStudio, Foooocus, and A1111 directory conventions, with editable templates.
 - Resolve canonical target paths before creating links so the same model is not duplicated under symlink, junction, hardlink, or original-path aliases.
 - Show the resolved source path and planned link path before applying bulk link operations.
 - Detect existing destination files/links and offer skip, overwrite, or open-location behavior.
@@ -82,6 +84,7 @@ Actionable integration plan for repository organization, additional model format
 - [x] Add a `load default libraries on startup` setting backed by the cached directory list.
 - [x] Keep cached startup entries for missing or temporarily unavailable files instead of pruning stale paths.
 - [x] Add a settings action to clear the cache entirely.
+- [x] Organize settings into General, Cards, and Data Columns tabs.
 - [x] Decide whether cache writes happen immediately after each scan or only after successful batch completion.
 
 ## 10. Replace Raw Tab with Explorer Tab

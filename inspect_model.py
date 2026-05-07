@@ -24,7 +24,7 @@ from model_readers import (
     read_safetensors_header,
     SUPPORTED_MODEL_EXTENSIONS,
 )
-from model_cache import get_cached_inspection, store_cached_inspection
+from model_cache import get_cached_inspection, store_cached_inspection, store_model_data
 
 
 def _resolve_display_path(filepath: str) -> str:
@@ -1335,6 +1335,8 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     allow_filename_alias_detection = bool(options.get("allow_filename_alias_detection", False))
 
     metadata, tensor_info, file_size = read_model_header(filepath)
+    if options.get("cache_full_data", False):
+        store_model_data(filepath, metadata, tensor_info, file_size, options)
     resolved_filepath = _resolve_display_path(filepath)
     file_format = metadata.get("smi.format") or model_format_for_path(filepath)
     quantization = metadata.get("smi.quantization")

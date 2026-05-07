@@ -6,6 +6,7 @@ from collections import Counter
 from pathlib import Path
 
 from inspect_model import FINGERPRINTS, inspect_file, _collect_lora_up_dims
+from model_cache import get_cached_inspection_snapshot, get_cached_model_data
 from model_readers import analyze_tensors, read_model_header
 
 
@@ -30,9 +31,19 @@ def modelinfo_json_path(filepath: str, resolve_output_path: bool = False) -> str
     return _modelinfo_base_path(filepath, resolve_output_path) + ".modelinfo.json"
 
 
+def _read_header_or_cached(filepath: str, options: dict | None = None):
+    try:
+        return read_model_header(filepath)
+    except Exception:
+        cached = get_cached_model_data(filepath, options=options)
+        if not cached:
+            raise
+        return cached["metadata"], cached["tensor_info"], int(cached["file_size"])
+
+
 def generate_modelinfo_dump(filepath: str) -> str:
     """Generate detailed .modelinfo text dump for a single safetensors file."""
-    metadata, tensor_info, file_size = read_model_header(filepath)
+    metadata, tensor_info, file_size = _read_header_or_cached(filepath)
     keys = sorted(tensor_info.keys())
     _, total_params, shapes = analyze_tensors(tensor_info)
 
@@ -89,9 +100,12 @@ def generate_modelinfo_dump(filepath: str) -> str:
 
 def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dict:
     """Build the structured .modelinfo JSON payload for a model file."""
-    metadata, tensor_info, file_size = read_model_header(filepath)
+    metadata, tensor_info, file_size = _read_header_or_cached(filepath, options=options)
     dtype_counts, total_params, shapes = analyze_tensors(tensor_info)
-    summary = inspect_file(filepath, options=options)
+    try:
+        summary = inspect_file(filepath, options=options)
+    except Exception:
+        summary = get_cached_inspection_snapshot(filepath) or {}
 
     tensors = []
     for name in sorted(tensor_info.keys()):

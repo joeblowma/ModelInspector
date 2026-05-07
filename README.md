@@ -106,18 +106,11 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
  
 <img width="2547" height="373" alt="image" src="https://github.com/user-attachments/assets/419e5d42-e3f2-469e-8850-633720ac7782" />
 
+### Tab: Cards
 
-### Tab: Simple Cards
-
-- Lightweight model cards
+- Detailed model cards with a `Simple View` toggle for lightweight cards
 - Supports card selection, multi-select, and context menu actions
-
-<img width="1323" height="369" alt="image" src="https://github.com/user-attachments/assets/09cae186-42b5-4c57-be21-611ff8a11396" />
-
-### Tab: Detailed Cards
-
-- Full card details with configured metadata visibility
-- Supports card selection, multi-select, and context menu actions
+- Card order follows the current Data table sort order
 
 <img width="1708" height="1076" alt="image" src="https://github.com/user-attachments/assets/a146a5a7-3a9f-422f-8eee-64efb36af715" />
 
@@ -134,6 +127,7 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 - Multi-select cells and copy via `Ctrl+C`
 - Right-click actions (`View Raw`, `Copy Selected Entries`)
 - Column visibility can be configured in settings
+- Sorting the table also reorders the Cards tab and Raw model dropdown
 
 <img width="2385" height="257" alt="image" src="https://github.com/user-attachments/assets/1dcd1a23-ca36-433e-8e77-9252cfcc0208" />
 
@@ -154,6 +148,7 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 - Folder drag/drop and folder browse both support recursive discovery of `.safetensors` and `.gguf`.
 - `.ckpt`, `.pt`, and `.pth` are treated as unsafe/unsupported for now because PyTorch checkpoint loading may require pickle deserialization. The app warns and ignores them until an explicit safe-loading mode exists.
 - Parsed model summaries are cached by resolved path, file size, and modified time to speed up repeat inspections.
+- If `Cache full tensor data during analysis` is enabled, compact tensor descriptors are stored under `cache/data/` beside the summary cache and can be used for Raw/modelinfo output even when the model file is unavailable.
 - Successful folder scans are cached immediately. The `Load default libraries on startup` setting restores cached scan results on launch and keeps cached summaries even when files are missing or temporarily unreachable.
 - App settings and cache default to `.model-inspector` beside the app for portable use. Override with `SMI_DATA_DIR`, `SMI_CACHE_DIR`, or `SMI_SETTINGS_PATH`.
 - Filtering in the UI affects visibility and copy behavior (hidden rows are excluded from table copy).
@@ -172,14 +167,18 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 - `Auto-analyze when files are added`
 - `Load default libraries on startup`: restores files from cached folder scans
 - `Analysis threads`: bounded worker count for independent file inspection, default `2`
+- `Cache full tensor data during analysis`: stores compact tensor descriptors for offline Raw/modelinfo use
 - `Also dump JSON .modelinfo`: writes `.modelinfo.json` files with the dump action
 - `File add behavior`:
   - `Replace current input list`
   - `Append to current input list`
-- `Default tab`: `Simple Cards`, `Detailed Cards`, `Data`, or `Raw`
+- `Default tab`: `Cards`, `Data`, or `Raw`
 
-### Visibility Groups
+### Cards
 
 - `Simple Cards`: choose which data fields are shown
 - `Detailed Cards`: choose which data fields are shown
+
+### Data Columns
+
 - `Data Columns`: choose visible columns in the Data tab

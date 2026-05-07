@@ -41,11 +41,11 @@ Actionable integration plan for repository organization, additional model format
 
 ## 5. Add Configurable Parallel Loading
 
-- Audit current `AnalysisWorker` behavior and CLI folder scanning for safe concurrency points.
-- Add a setting/CLI option such as `--threads N` for batch inspection.
-- Use bounded worker pools only for independent file reads; avoid parallel UI mutation.
+- [x] Audit current `AnalysisWorker` behavior and CLI folder scanning for safe concurrency points.
+- [x] Add a setting/CLI option such as `--threads N` for batch inspection.
+- [x] Use bounded worker pools only for independent file reads; avoid parallel UI mutation.
 - Benchmark on large folders before enabling a default above one thread.
-- Surface per-file errors without cancelling the full batch.
+- [x] Surface per-file errors without cancelling the full batch.
 
 ## 6. Add JSON `.modelinfo` Dumps
 
@@ -78,11 +78,11 @@ Actionable integration plan for repository organization, additional model format
 - [x] Store enough identity data to detect moved, deleted, or changed files, such as canonical path, size, modified time, and format.
 - [x] Default settings/cache to a portable app-local data directory with relocation overrides.
 - [x] Use a cache index with per-entry files instead of one monolithic cache blob.
-- Add a cache for scanned directories to speed up repeated launches.
-- Add a `load default libraries on startup` setting backed by the cached directory list.
-- Add optional startup pruning for missing files, with a warning before removing stale entries.
-- Add a settings action to clear the cache entirely.
-- Decide whether cache writes happen immediately after each scan or only after successful batch completion.
+- [x] Add a cache for scanned directories to speed up repeated launches.
+- [x] Add a `load default libraries on startup` setting backed by the cached directory list.
+- [x] Add optional startup pruning for missing files, with a warning before removing stale entries.
+- [x] Add a settings action to clear the cache entirely.
+- [x] Decide whether cache writes happen immediately after each scan or only after successful batch completion.
 
 ## 10. Replace Raw Tab with Explorer Tab
 

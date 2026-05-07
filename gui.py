@@ -7,6 +7,7 @@ Dark-mode interface with drag-and-drop, card view, and data table view.
 import sys
 import os
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # Suppress Qt DPI awareness warning on Windows
@@ -21,13 +22,19 @@ from PyQt6.QtWidgets import (
     QGridLayout, QSizePolicy, QProgressBar, QListWidget, QListWidgetItem,
     QAbstractItemView, QTextEdit, QComboBox, QCheckBox,
     QToolButton, QMenu, QWidgetAction, QDialog, QDialogButtonBox,
-    QTableWidgetSelectionRange, QGroupBox,
+    QTableWidgetSelectionRange, QGroupBox, QMessageBox,
 )
 
 from inspect_model import (
     inspect_file, generate_modelinfo_dump, write_modelinfo_dump, write_modelinfo_json,
 )
 from model_readers import SUPPORTED_MODEL_EXTENSIONS, is_supported_model_path, iter_model_paths
+from model_cache import (
+    clear_inspection_cache,
+    get_cached_directory_scan,
+    list_cached_directories,
+    store_directory_scan,
+)
 from app_paths import settings_path
 
 MODEL_FORMAT_FILTERS = (".safetensors", ".gguf", ".ckpt", ".pt", ".pth")
@@ -198,10 +205,16 @@ class AnalysisWorker(QThread):
     error_occurred = pyqtSignal(str, str)   # filepath, error message
     all_done = pyqtSignal()
 
-    def __init__(self, filepaths: list[str], inspect_options: dict | None = None):
+    def __init__(
+        self,
+        filepaths: list[str],
+        inspect_options: dict | None = None,
+        threads: int = 1,
+    ):
         super().__init__()
         self.filepaths = filepaths
         self.inspect_options = inspect_options or {}
+        self.threads = max(1, int(threads or 1))
         self._cancel_requested = False
         self.was_cancelled = False
 
@@ -210,6 +223,9 @@ class AnalysisWorker(QThread):
         self.requestInterruption()
 
     def run(self):
+        if self.threads > 1:
+            self._run_parallel()
+            return
         for fp in self.filepaths:
             if self._cancel_requested or self.isInterruptionRequested():
                 self.was_cancelled = True
@@ -219,6 +235,28 @@ class AnalysisWorker(QThread):
                 self.result_ready.emit(result)
             except Exception as e:
                 self.error_occurred.emit(fp, str(e))
+        self.all_done.emit()
+
+    def _inspect_one(self, fp: str):
+        return inspect_file(fp, options=self.inspect_options)
+
+    def _run_parallel(self):
+        max_workers = min(self.threads, len(self.filepaths))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_path = {
+                executor.submit(self._inspect_one, fp): fp
+                for fp in self.filepaths
+            }
+            for future in as_completed(future_to_path):
+                fp = future_to_path[future]
+                if self._cancel_requested or self.isInterruptionRequested():
+                    self.was_cancelled = True
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+                try:
+                    self.result_ready.emit(future.result())
+                except Exception as e:
+                    self.error_occurred.emit(fp, str(e))
         self.all_done.emit()
 
 
@@ -327,6 +365,8 @@ class SettingsDialog(QDialog):
         auto_analyze_on_add=True,
         dump_json_modelinfo=False,
         auto_load_raw_dump=False,
+        load_default_libraries_on_startup=False,
+        analysis_threads=1,
         add_mode="replace",
         default_tab="simple",
         card_fields=None,
@@ -398,6 +438,31 @@ class SettingsDialog(QDialog):
             "Automatically generate the full Raw tab dump when the selected model changes."
         )
 
+        self.default_libraries_checkbox = QCheckBox("Load default libraries on startup")
+        self.default_libraries_checkbox.setChecked(load_default_libraries_on_startup)
+        default_libraries_cell = make_general_cell(
+            self.default_libraries_checkbox,
+            "Load files from cached folder scans when the app starts."
+        )
+
+        thread_wrap = QWidget()
+        thread_row = QHBoxLayout(thread_wrap)
+        thread_row.setContentsMargins(0, 0, 0, 0)
+        thread_row.setSpacing(6)
+        thread_row.addWidget(QLabel("Analysis threads:"))
+        self.analysis_threads_combo = QComboBox()
+        for value in (1, 2, 4, 8):
+            self.analysis_threads_combo.addItem(str(value), value)
+        idx = self.analysis_threads_combo.findData(int(analysis_threads or 1))
+        if idx >= 0:
+            self.analysis_threads_combo.setCurrentIndex(idx)
+        thread_row.addWidget(self.analysis_threads_combo)
+        thread_row.addStretch()
+        thread_cell = make_general_cell(
+            thread_wrap,
+            "Use bounded worker threads for independent file reads. Keep at 1 if the disk is already busy."
+        )
+
         mode_wrap = QWidget()
         mode_row = QHBoxLayout(mode_wrap)
         mode_row.setContentsMargins(0, 0, 0, 0)
@@ -443,6 +508,8 @@ class SettingsDialog(QDialog):
         g_layout.addWidget(tab_cell, 1, 1)
         g_layout.addWidget(dump_json_cell, 1, 2)
         g_layout.addWidget(raw_cell, 2, 0)
+        g_layout.addWidget(default_libraries_cell, 2, 1)
+        g_layout.addWidget(thread_cell, 2, 2)
         root.addWidget(general_group)
 
         cards_row = QHBoxLayout()
@@ -507,6 +574,16 @@ class SettingsDialog(QDialog):
             col = idx // rows_count if rows_count else 0
             data_layout.addWidget(cb, row, col)
         root.addWidget(data_group)
+
+        cache_group = QGroupBox("Cache")
+        cache_layout = QHBoxLayout(cache_group)
+        cache_layout.setSpacing(10)
+        cache_note = QLabel("Clear parsed model summaries from the app cache.")
+        cache_note.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        cache_layout.addWidget(cache_note, 1)
+        self.clear_cache_btn = QPushButton("Clear Cache")
+        cache_layout.addWidget(self.clear_cache_btn)
+        root.addWidget(cache_group)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -966,6 +1043,8 @@ class MainWindow(QMainWindow):
         self._auto_analyze_on_add = True
         self._dump_json_modelinfo = False
         self._auto_load_raw_dump = False
+        self._load_default_libraries_on_startup = False
+        self._analysis_threads = 1
         self._add_mode = "replace"  # replace | additive
         self._default_tab = "simple"  # simple | detailed | data | raw
         self._card_field_visibility = {
@@ -1342,6 +1421,7 @@ class MainWindow(QMainWindow):
 
         self.copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self)
         self.copy_shortcut.activated.connect(self._on_copy_shortcut)
+        QTimer.singleShot(0, self._load_default_libraries_from_cache_on_startup)
 
     def _center_window(self):
         screen = QApplication.primaryScreen()
@@ -1410,6 +1490,11 @@ class MainWindow(QMainWindow):
         self._auto_analyze_on_add = str(s.value("auto_analyze_on_add", "true")).lower() == "true"
         self._dump_json_modelinfo = str(s.value("dump_json_modelinfo", "false")).lower() == "true"
         self._auto_load_raw_dump = str(s.value("auto_load_raw_dump", "false")).lower() == "true"
+        self._load_default_libraries_on_startup = str(s.value("load_default_libraries_on_startup", "false")).lower() == "true"
+        try:
+            self._analysis_threads = max(1, min(8, int(s.value("analysis_threads", "1"))))
+        except (TypeError, ValueError):
+            self._analysis_threads = 1
         self._add_mode = str(s.value("add_mode", "replace")).lower()
         self._default_tab = str(s.value("default_tab", "simple")).lower()
         if self._add_mode not in ("replace", "additive"):
@@ -1448,6 +1533,8 @@ class MainWindow(QMainWindow):
         s.setValue("auto_analyze_on_add", str(self._auto_analyze_on_add).lower())
         s.setValue("dump_json_modelinfo", str(self._dump_json_modelinfo).lower())
         s.setValue("auto_load_raw_dump", str(self._auto_load_raw_dump).lower())
+        s.setValue("load_default_libraries_on_startup", str(self._load_default_libraries_on_startup).lower())
+        s.setValue("analysis_threads", str(self._analysis_threads))
         s.setValue("add_mode", self._add_mode)
         s.setValue("default_tab", self._default_tab)
         s.setValue("detailed_card_fields", json.dumps(self._card_field_visibility))
@@ -1610,12 +1697,52 @@ class MainWindow(QMainWindow):
         if not folder:
             return
         found = self._discover_model_paths(folder)
+        if found and not self._scan_cancel_requested:
+            store_directory_scan(folder, found)
         if found:
             self._add_files(found)
             if not self._auto_analyze_on_add:
                 self._clear_progress_status(delay_ms=3000)
         elif not self._auto_analyze_on_add:
             self._clear_progress_status(delay_ms=3000)
+
+    def _load_default_libraries_from_cache_on_startup(self):
+        if not self._load_default_libraries_on_startup:
+            return
+        folders = list_cached_directories()
+        if not folders:
+            return
+
+        paths = []
+        missing_total = 0
+        for folder in folders:
+            cached_paths, missing = get_cached_directory_scan(folder, prune_missing=True)
+            paths.extend(cached_paths)
+            missing_total += missing
+
+        if paths:
+            previous_auto_analyze = self._auto_analyze_on_add
+            self._auto_analyze_on_add = False
+            try:
+                self._add_files(paths)
+            finally:
+                self._auto_analyze_on_add = previous_auto_analyze
+            self._set_progress_status(
+                f"Loaded {len(paths)} cached library file"
+                f"{'s' if len(paths) != 1 else ''} from {len(folders)} folder"
+                f"{'s' if len(folders) != 1 else ''}"
+            )
+            self._clear_progress_status(delay_ms=4000)
+            if previous_auto_analyze:
+                self._analyze_all()
+
+        if missing_total:
+            QMessageBox.warning(
+                self,
+                "Cached Libraries Pruned",
+                f"Removed {missing_total} missing cached file"
+                f"{'s' if missing_total != 1 else ''} from default libraries.",
+            )
 
     def _open_settings(self):
         col_vis = {
@@ -1630,18 +1757,23 @@ class MainWindow(QMainWindow):
             auto_analyze_on_add=self._auto_analyze_on_add,
             dump_json_modelinfo=self._dump_json_modelinfo,
             auto_load_raw_dump=self._auto_load_raw_dump,
+            load_default_libraries_on_startup=self._load_default_libraries_on_startup,
+            analysis_threads=self._analysis_threads,
             add_mode=self._add_mode,
             default_tab=self._default_tab,
             card_fields=self._card_field_visibility,
             simple_card_fields=self._simple_card_field_visibility,
             table_column_visibility=col_vis,
         )
+        dlg.clear_cache_btn.clicked.connect(self._clear_inspection_cache_from_settings)
         if dlg.exec():
             self._allow_filename_alias_detection = dlg.alias_checkbox.isChecked()
             self._auto_fold_on_analyze = dlg.auto_fold_checkbox.isChecked()
             self._auto_analyze_on_add = dlg.auto_analyze_checkbox.isChecked()
             self._dump_json_modelinfo = dlg.dump_json_checkbox.isChecked()
             self._auto_load_raw_dump = dlg.auto_load_raw_checkbox.isChecked()
+            self._load_default_libraries_on_startup = dlg.default_libraries_checkbox.isChecked()
+            self._analysis_threads = int(dlg.analysis_threads_combo.currentData() or 1)
             self._add_mode = dlg.add_mode_combo.currentData()
             self._default_tab = str(dlg.default_tab_combo.currentData() or "simple")
             for key, cb in dlg.card_field_checks.items():
@@ -1656,6 +1788,23 @@ class MainWindow(QMainWindow):
             self._rebuild_views_from_results()
             self._update_raw_controls()
             self._apply_default_tab()
+
+    def _clear_inspection_cache_from_settings(self):
+        reply = QMessageBox.question(
+            self,
+            "Clear Cache",
+            "Clear all cached inspection summaries? Existing analyzed results stay visible.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        removed = clear_inspection_cache()
+        QMessageBox.information(
+            self,
+            "Cache Cleared",
+            f"Removed {removed} cached file{'s' if removed != 1 else ''}.",
+        )
 
     def _apply_default_tab(self):
         tab_idx = {
@@ -1739,6 +1888,7 @@ class MainWindow(QMainWindow):
             inspect_options={
                 "allow_filename_alias_detection": self._allow_filename_alias_detection
             },
+            threads=self._analysis_threads,
         )
         self._worker.result_ready.connect(self._on_result)
         self._worker.error_occurred.connect(self._on_error)

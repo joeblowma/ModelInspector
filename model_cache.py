@@ -4,6 +4,7 @@
 import json
 import os
 import hashlib
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,10 @@ def _legacy_cache_path() -> Path | None:
 
 def _index_path() -> Path:
     return cache_dir() / "index.json"
+
+
+def _directory_scan_path() -> Path:
+    return cache_dir() / "directory_scans.json"
 
 
 def _entry_path(entry_id: str) -> Path:
@@ -89,6 +94,36 @@ def _save_index(index: dict):
         os.replace(tmp_path, path)
     except Exception:
         pass
+
+
+def _load_directory_scan_index() -> dict:
+    try:
+        with open(_directory_scan_path(), "r", encoding="utf-8") as f:
+            index = json.load(f)
+    except Exception:
+        return {"version": CACHE_VERSION, "directories": {}}
+    if index.get("version") != CACHE_VERSION or not isinstance(index.get("directories"), dict):
+        return {"version": CACHE_VERSION, "directories": {}}
+    return index
+
+
+def _save_directory_scan_index(index: dict):
+    try:
+        path = _directory_scan_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(index, f, ensure_ascii=False, sort_keys=True)
+        os.replace(tmp_path, path)
+    except Exception:
+        pass
+
+
+def _directory_key(folder: str) -> str:
+    try:
+        return str(Path(folder).resolve(strict=True)).lower()
+    except OSError:
+        return str(Path(folder).absolute()).lower()
 
 
 def _read_entry(entry_id: str) -> dict | None:
@@ -160,3 +195,71 @@ def store_cached_inspection(filepath: str, data: dict, options: dict | None = No
         "data_file": f"entries/{entry_id}.json",
     }
     _save_index(index)
+
+
+def store_directory_scan(folder: str, paths: list[str]):
+    """Cache the latest successful recursive scan for a model library folder."""
+    index = _load_directory_scan_index()
+    try:
+        resolved_folder = str(Path(folder).resolve(strict=True))
+    except OSError:
+        resolved_folder = str(Path(folder).absolute())
+    index["directories"][_directory_key(folder)] = {
+        "folder": resolved_folder,
+        "paths": list(dict.fromkeys(paths)),
+    }
+    _save_directory_scan_index(index)
+
+
+def list_cached_directories() -> list[str]:
+    index = _load_directory_scan_index()
+    directories = []
+    for entry in index["directories"].values():
+        folder = entry.get("folder")
+        if folder:
+            directories.append(str(folder))
+    return directories
+
+
+def get_cached_directory_scan(folder: str, prune_missing: bool = True) -> tuple[list[str], int]:
+    """Return cached scan paths and optionally prune missing files from the cache."""
+    index = _load_directory_scan_index()
+    key = _directory_key(folder)
+    entry = index["directories"].get(key)
+    if not isinstance(entry, dict):
+        return [], 0
+    paths = [str(p) for p in entry.get("paths", []) if p]
+    if not prune_missing:
+        return paths, 0
+
+    kept = [p for p in paths if Path(p).exists()]
+    missing = len(paths) - len(kept)
+    if missing:
+        entry["paths"] = kept
+        index["directories"][key] = entry
+        _save_directory_scan_index(index)
+    return kept, missing
+
+
+def clear_inspection_cache() -> int:
+    """Remove cached inspection entries and return the number of files removed."""
+    paths = []
+    legacy_path = _legacy_cache_path()
+    if legacy_path and legacy_path.exists():
+        paths.append(legacy_path)
+    cache_path = cache_dir()
+    if cache_path.exists():
+        paths.append(cache_path)
+
+    removed = 0
+    for path in paths:
+        try:
+            if path.is_dir():
+                removed += sum(1 for child in path.rglob("*") if child.is_file())
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+                removed += 1
+        except Exception:
+            pass
+    return removed

@@ -9,6 +9,7 @@ import argparse
 import re
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable
 
@@ -1590,6 +1591,31 @@ def write_modelinfo_json(
     )
 
 
+def _inspect_and_write_modelinfo(
+    filepath: str,
+    options: dict,
+    write_text: bool,
+    write_json: bool,
+    resolve_output_path: bool,
+) -> dict:
+    info = inspect_file(filepath, options=options)
+    outputs = []
+    if write_text:
+        outputs.append(write_modelinfo_dump(
+            filepath,
+            resolve_output_path=resolve_output_path,
+        ))
+    if write_json:
+        outputs.append(write_modelinfo_json(
+            filepath,
+            options=options,
+            resolve_output_path=resolve_output_path,
+        ))
+    if outputs:
+        info["modelinfo_outputs"] = outputs
+    return info
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -1653,6 +1679,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "the user-provided path"
         ),
     )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=1,
+        help="Number of worker threads for independent file inspection (default: 1)",
+    )
     return parser
 
 
@@ -1675,34 +1707,47 @@ def main(argv=None):
                 print(f"[ERROR] {fp}: {e}", file=sys.stderr)
         return 0
 
-    results = []
-    for fp in paths:
-        try:
-            info = inspect_file(
-                fp,
-                options={
-                    "allow_filename_alias_detection": args.allow_filename_alias_detection
-                },
-            )
-            results.append(info)
-            outputs = []
-            if args.write_modelinfo:
-                outputs.append(write_modelinfo_dump(
+    inspect_options = {
+        "allow_filename_alias_detection": args.allow_filename_alias_detection
+    }
+    thread_count = max(1, min(int(args.threads or 1), len(paths)))
+    results_by_input_path = {}
+    if thread_count == 1:
+        for fp in paths:
+            try:
+                results_by_input_path[fp] = _inspect_and_write_modelinfo(
                     fp,
-                    resolve_output_path=args.resolve_output_path,
-                ))
-            if args.write_modelinfo_json:
-                outputs.append(write_modelinfo_json(
+                    inspect_options,
+                    args.write_modelinfo,
+                    args.write_modelinfo_json,
+                    args.resolve_output_path,
+                )
+            except Exception as e:
+                print(f"[ERROR] {fp}: {e}", file=sys.stderr)
+    else:
+        with ThreadPoolExecutor(max_workers=thread_count) as executor:
+            future_to_path = {
+                executor.submit(
+                    _inspect_and_write_modelinfo,
                     fp,
-                    options={
-                        "allow_filename_alias_detection": args.allow_filename_alias_detection
-                    },
-                    resolve_output_path=args.resolve_output_path,
-                ))
-            if outputs:
-                info["modelinfo_outputs"] = outputs
-        except Exception as e:
-            print(f"[ERROR] {fp}: {e}", file=sys.stderr)
+                    inspect_options,
+                    args.write_modelinfo,
+                    args.write_modelinfo_json,
+                    args.resolve_output_path,
+                ): fp
+                for fp in paths
+            }
+            for future in as_completed(future_to_path):
+                fp = future_to_path[future]
+                try:
+                    results_by_input_path[fp] = future.result()
+                except Exception as e:
+                    print(f"[ERROR] {fp}: {e}", file=sys.stderr)
+    results = [
+        results_by_input_path[fp]
+        for fp in paths
+        if fp in results_by_input_path
+    ]
 
     if not results:
         return 1

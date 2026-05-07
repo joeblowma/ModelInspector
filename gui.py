@@ -1054,6 +1054,7 @@ class MainWindow(QMainWindow):
         self._analysis_error_count = 0
         self._analysis_bytes_scanned = 0
         self._scan_cancel_requested = False
+        self._startup_cache_load_cancelled = False
         self._progress_status_generation = 0
         self._allow_filename_alias_detection = False
         self._show_full_paths = False
@@ -1599,6 +1600,7 @@ class MainWindow(QMainWindow):
 
     def _cancel_current_operation(self):
         self._scan_cancel_requested = True
+        self._startup_cache_load_cancelled = True
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
         self._set_cancel_available(False)
@@ -1660,7 +1662,8 @@ class MainWindow(QMainWindow):
                 f"Discovering: {discovered} files | Directories: {scanned_dirs} | "
                 f"Current directory: {dirpath}"
             )
-            QApplication.processEvents()
+            if scanned_dirs % 10 == 0:
+                QApplication.processEvents()
 
         self.progress.setRange(0, 1)
         self.progress.setValue(1)
@@ -1754,10 +1757,38 @@ class MainWindow(QMainWindow):
         if not folders:
             return
 
-        queued_paths = []
-        snapshot_count = 0
+        cached_paths = []
+        seen = set()
         for folder in folders:
             for path in get_cached_directory_scan(folder):
+                if path in seen:
+                    continue
+                seen.add(path)
+                cached_paths.append(path)
+        if not cached_paths:
+            return
+
+        self._startup_cache_load_cancelled = False
+        queued_paths = []
+        snapshot_count = 0
+        total = len(cached_paths)
+        batch_size = 20
+        self.progress.setVisible(True)
+        self.progress.setRange(0, total)
+        self.progress.setValue(0)
+        self._set_cancel_available(True)
+
+        def load_batch(start_index: int):
+            nonlocal snapshot_count
+            if self._startup_cache_load_cancelled:
+                self._set_progress_status(
+                    f"Startup cache load cancelled: {snapshot_count}/{total} summaries loaded"
+                )
+                self._clear_progress_status(delay_ms=4000)
+                return
+
+            end_index = min(start_index + batch_size, total)
+            for path in cached_paths[start_index:end_index]:
                 cached = get_cached_inspection_snapshot(path)
                 if cached is not None:
                     cached["filepath"] = path
@@ -1774,29 +1805,38 @@ class MainWindow(QMainWindow):
                 else:
                     queued_paths.append(path)
 
-        if snapshot_count:
-            self._apply_arch_filter()
-            self._refresh_raw_combo_filtered()
-            self._sync_selection_visuals()
+            self.progress.setValue(end_index)
+            self._set_progress_status(
+                f"Loading startup cache: {end_index}/{total} paths | "
+                f"{snapshot_count} cached summaries"
+            )
 
-        if queued_paths:
-            previous_auto_analyze = self._auto_analyze_on_add
-            self._auto_analyze_on_add = False
-            try:
-                self._add_files(queued_paths)
-            finally:
-                self._auto_analyze_on_add = previous_auto_analyze
-            if previous_auto_analyze:
-                self._analyze_all()
+            if end_index < total:
+                QTimer.singleShot(0, lambda: load_batch(end_index))
+                return
 
-        loaded_total = snapshot_count + len(queued_paths)
-        if loaded_total:
+            if snapshot_count:
+                self._apply_arch_filter()
+                self._refresh_raw_combo_filtered()
+                self._sync_selection_visuals()
+
+            if queued_paths:
+                previous_auto_analyze = self._auto_analyze_on_add
+                self._auto_analyze_on_add = False
+                try:
+                    self._add_files(queued_paths)
+                finally:
+                    self._auto_analyze_on_add = previous_auto_analyze
+
+            self._set_cancel_available(False)
             self._set_progress_status(
                 f"Loaded {snapshot_count} cached summar"
                 f"{'ies' if snapshot_count != 1 else 'y'} and queued {len(queued_paths)} "
                 f"uncached path{'s' if len(queued_paths) != 1 else ''}"
             )
             self._clear_progress_status(delay_ms=5000)
+
+        load_batch(0)
 
     def _open_settings(self):
         col_vis = {

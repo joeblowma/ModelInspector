@@ -29,6 +29,10 @@ def _directory_scan_path() -> Path:
     return cache_dir() / "directory_scans.json"
 
 
+def _raw_dump_path() -> Path:
+    return cache_dir() / "raw_dumps.json"
+
+
 def _entry_path(entry_id: str) -> Path:
     return cache_dir() / "entries" / f"{entry_id}.json"
 
@@ -126,6 +130,15 @@ def _directory_key(folder: str) -> str:
         return str(Path(folder).absolute()).lower()
 
 
+def _path_match_values(filepath: str) -> set[str]:
+    values = {str(Path(filepath).absolute()).lower()}
+    try:
+        values.add(str(Path(filepath).resolve(strict=True)).lower())
+    except OSError:
+        pass
+    return values
+
+
 def _read_entry(entry_id: str) -> dict | None:
     try:
         with open(_entry_path(entry_id), "r", encoding="utf-8") as f:
@@ -147,6 +160,35 @@ def _write_entry(entry_id: str, entry: dict):
         pass
 
 
+def _iter_cached_entries():
+    legacy_path = _legacy_cache_path()
+    if legacy_path:
+        cache = _load_legacy_cache(legacy_path)
+        for entry in cache["entries"].values():
+            if isinstance(entry, dict):
+                yield entry
+        return
+
+    index = _load_index()
+    for entry_id in index["entries"].keys():
+        entry = _read_entry(entry_id)
+        if isinstance(entry, dict):
+            yield entry
+
+
+def _entry_matches_path(entry: dict, filepath: str) -> bool:
+    wanted = _path_match_values(filepath)
+    identity = entry.get("identity") if isinstance(entry.get("identity"), dict) else {}
+    data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+    candidates = {
+        str(identity.get("resolved_filepath") or "").lower(),
+        str(data.get("filepath") or "").lower(),
+        str(data.get("resolved_filepath") or "").lower(),
+    }
+    candidates.discard("")
+    return bool(wanted & candidates)
+
+
 def get_cached_inspection(filepath: str, options: dict | None = None) -> dict | None:
     key = _cache_key(filepath, options)
     entry_id = _entry_id(key)
@@ -165,6 +207,19 @@ def get_cached_inspection(filepath: str, options: dict | None = None) -> dict | 
         return None
     data = entry.get("data")
     return data if isinstance(data, dict) else None
+
+
+def get_cached_inspection_snapshot(filepath: str) -> dict | None:
+    """Return cached inspection data for a path without requiring the file to exist."""
+    for entry in _iter_cached_entries():
+        if not _entry_matches_path(entry, filepath):
+            continue
+        data = entry.get("data")
+        if isinstance(data, dict):
+            snapshot = dict(data)
+            snapshot.setdefault("cache_status", "snapshot")
+            return snapshot
+    return None
 
 
 def store_cached_inspection(filepath: str, data: dict, options: dict | None = None):
@@ -221,24 +276,82 @@ def list_cached_directories() -> list[str]:
     return directories
 
 
-def get_cached_directory_scan(folder: str, prune_missing: bool = True) -> tuple[list[str], int]:
-    """Return cached scan paths and optionally prune missing files from the cache."""
+def get_cached_directory_scan(folder: str) -> list[str]:
+    """Return cached scan paths without pruning missing or temporarily unavailable files."""
     index = _load_directory_scan_index()
     key = _directory_key(folder)
     entry = index["directories"].get(key)
     if not isinstance(entry, dict):
-        return [], 0
-    paths = [str(p) for p in entry.get("paths", []) if p]
-    if not prune_missing:
-        return paths, 0
+        return []
+    return [str(p) for p in entry.get("paths", []) if p]
 
-    kept = [p for p in paths if Path(p).exists()]
-    missing = len(paths) - len(kept)
-    if missing:
-        entry["paths"] = kept
-        index["directories"][key] = entry
-        _save_directory_scan_index(index)
-    return kept, missing
+
+def _load_raw_dump_index() -> dict:
+    try:
+        with open(_raw_dump_path(), "r", encoding="utf-8") as f:
+            index = json.load(f)
+    except Exception:
+        return {"version": CACHE_VERSION, "entries": []}
+    if index.get("version") != CACHE_VERSION or not isinstance(index.get("entries"), list):
+        return {"version": CACHE_VERSION, "entries": []}
+    return index
+
+
+def _save_raw_dump_index(index: dict):
+    try:
+        path = _raw_dump_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(index, f, ensure_ascii=False, sort_keys=True)
+        os.replace(tmp_path, path)
+    except Exception:
+        pass
+
+
+def store_raw_dump(filepath: str, dump: str):
+    index = _load_raw_dump_index()
+    try:
+        resolved = str(Path(filepath).resolve(strict=True))
+    except OSError:
+        resolved = str(Path(filepath).absolute())
+    entry = {
+        "filepath": filepath,
+        "resolved_filepath": resolved,
+        "dump": dump,
+    }
+    match_values = _path_match_values(filepath)
+    entries = []
+    replaced = False
+    for existing in index["entries"]:
+        existing_values = {
+            str(existing.get("filepath") or "").lower(),
+            str(existing.get("resolved_filepath") or "").lower(),
+        }
+        if match_values & existing_values:
+            entries.append(entry)
+            replaced = True
+        else:
+            entries.append(existing)
+    if not replaced:
+        entries.append(entry)
+    index["entries"] = entries
+    _save_raw_dump_index(index)
+
+
+def get_cached_raw_dump(filepath: str) -> str | None:
+    match_values = _path_match_values(filepath)
+    index = _load_raw_dump_index()
+    for entry in index["entries"]:
+        if not isinstance(entry, dict):
+            continue
+        entry_values = {
+            str(entry.get("filepath") or "").lower(),
+            str(entry.get("resolved_filepath") or "").lower(),
+        }
+        if match_values & entry_values and isinstance(entry.get("dump"), str):
+            return entry["dump"]
+    return None
 
 
 def clear_inspection_cache() -> int:

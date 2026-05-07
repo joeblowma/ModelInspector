@@ -80,7 +80,7 @@ Actionable integration plan for repository organization, additional model format
 - [x] Use a cache index with per-entry files instead of one monolithic cache blob.
 - [x] Add a cache for scanned directories to speed up repeated launches.
 - [x] Add a `load default libraries on startup` setting backed by the cached directory list.
-- [x] Add optional startup pruning for missing files, with a warning before removing stale entries.
+- [x] Keep cached startup entries for missing or temporarily unavailable files instead of pruning stale paths.
 - [x] Add a settings action to clear the cache entirely.
 - [x] Decide whether cache writes happen immediately after each scan or only after successful batch completion.
 

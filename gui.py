@@ -38,7 +38,10 @@ from model_readers import (
 from model_cache import (
     clear_inspection_cache,
     get_cached_directory_scan,
+    get_cached_inspection_snapshot,
+    get_cached_raw_dump,
     list_cached_directories,
+    store_raw_dump,
     store_directory_scan,
 )
 from app_paths import settings_path
@@ -451,7 +454,7 @@ class SettingsDialog(QDialog):
         self.auto_load_raw_checkbox.setChecked(auto_load_raw_dump)
         raw_cell = make_general_cell(
             self.auto_load_raw_checkbox,
-            "Automatically generate the full Raw tab dump when the selected model changes."
+            "Automatically generate and cache the full Raw tab dump when the selected model changes."
         )
 
         self.default_libraries_checkbox = QCheckBox("Load default libraries on startup")
@@ -1751,36 +1754,49 @@ class MainWindow(QMainWindow):
         if not folders:
             return
 
-        paths = []
-        missing_total = 0
+        queued_paths = []
+        snapshot_count = 0
         for folder in folders:
-            cached_paths, missing = get_cached_directory_scan(folder, prune_missing=True)
-            paths.extend(cached_paths)
-            missing_total += missing
+            for path in get_cached_directory_scan(folder):
+                cached = get_cached_inspection_snapshot(path)
+                if cached is not None:
+                    cached["filepath"] = path
+                    cached["filename"] = Path(path).name
+                    self._normalize_result_data(cached)
+                    self._results.append(cached)
+                    self._add_card(cached)
+                    self._add_table_row(cached)
+                    self.arch_filter_btn.add_item(cached.get("architecture", "Unknown"))
+                    for tag in self._filter_tags_for_data(cached):
+                        self.tag_filter_btn.add_item(tag)
+                    self.format_filter_btn.add_item(self._format_filter_for_data(cached))
+                    snapshot_count += 1
+                else:
+                    queued_paths.append(path)
 
-        if paths:
+        if snapshot_count:
+            self._apply_arch_filter()
+            self._refresh_raw_combo_filtered()
+            self._sync_selection_visuals()
+
+        if queued_paths:
             previous_auto_analyze = self._auto_analyze_on_add
             self._auto_analyze_on_add = False
             try:
-                self._add_files(paths)
+                self._add_files(queued_paths)
             finally:
                 self._auto_analyze_on_add = previous_auto_analyze
-            self._set_progress_status(
-                f"Loaded {len(paths)} cached library file"
-                f"{'s' if len(paths) != 1 else ''} from {len(folders)} folder"
-                f"{'s' if len(folders) != 1 else ''}"
-            )
-            self._clear_progress_status(delay_ms=4000)
             if previous_auto_analyze:
                 self._analyze_all()
 
-        if missing_total:
-            QMessageBox.warning(
-                self,
-                "Cached Libraries Pruned",
-                f"Removed {missing_total} missing cached file"
-                f"{'s' if missing_total != 1 else ''} from default libraries.",
+        loaded_total = snapshot_count + len(queued_paths)
+        if loaded_total:
+            self._set_progress_status(
+                f"Loaded {snapshot_count} cached summar"
+                f"{'ies' if snapshot_count != 1 else 'y'} and queued {len(queued_paths)} "
+                f"uncached path{'s' if len(queued_paths) != 1 else ''}"
             )
+            self._clear_progress_status(delay_ms=5000)
 
     def _open_settings(self):
         col_vis = {
@@ -2062,22 +2078,35 @@ class MainWindow(QMainWindow):
             data["expert_count"] = expert_count
             data["expert_used_count"] = expert_used_count
 
+    def _dump_modelinfo_targets(self) -> list[str]:
+        selected = self._visible_selected_paths()
+        if selected:
+            return selected
+        if self.tabs.currentIndex() == 3:
+            current = self.raw_combo.currentData()
+            if current:
+                return [current]
+        return []
+
     def _dump_all(self):
-        """Write a .modelinfo file next to every analyzed model."""
-        if not self._results:
+        """Write .modelinfo files for selected models or the current Raw model."""
+        targets = self._dump_modelinfo_targets()
+        if not targets:
+            self._set_progress_status("Select one or more models to dump, or open a model in Raw.")
+            self._clear_progress_status(delay_ms=3500)
             return
         count = 0
         output_paths = []
-        total = len(self._results)
+        total = len(targets)
         self.progress.setVisible(True)
         self.progress.setRange(0, total)
         self.progress.setValue(0)
         self._set_progress_status(f"Writing .modelinfo: 0/{total}")
         QApplication.processEvents()
-        for data in self._results:
-            filepath = data.get("filepath")
+        for filepath in targets:
             if not filepath:
                 continue
+            data = self._result_for_filepath(filepath) or {}
             try:
                 self._set_progress_status(
                     f"Writing .modelinfo: {count}/{total} | Current file: {Path(filepath).name}"
@@ -2091,7 +2120,8 @@ class MainWindow(QMainWindow):
                             "allow_filename_alias_detection": self._allow_filename_alias_detection
                         },
                     ))
-                data["modelinfo_outputs"] = outputs
+                if data:
+                    data["modelinfo_outputs"] = outputs
                 output_paths.extend(outputs)
                 count += 1
                 self.progress.setValue(count)
@@ -2418,7 +2448,7 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             self.raw_combo.setCurrentIndex(idx)
         self.tabs.setCurrentIndex(3)
-        self._load_selected_raw_dump()
+        self._show_raw_summary(filepath)
 
     def _step_raw_selection(self, delta: int):
         count = self.raw_combo.count()
@@ -2437,7 +2467,7 @@ class MainWindow(QMainWindow):
         self.raw_next_btn.setEnabled(
             has_multiple and self.raw_combo.currentIndex() < self.raw_combo.count() - 1
         )
-        self.raw_load_btn.setVisible(not self._auto_load_raw_dump)
+        self.raw_load_btn.setVisible(True)
 
     def _on_cards_select_all_changed(self, state):
         if self._syncing_selection:
@@ -2902,6 +2932,20 @@ class MainWindow(QMainWindow):
         self._load_raw_dump(filepath)
 
     def _load_raw_dump(self, filepath: str):
+        cached_dump = get_cached_raw_dump(filepath)
+        if cached_dump is not None:
+            self.raw_text.setPlainText(cached_dump)
+            self._raw_loaded_filepath = filepath
+            self._set_progress_status(f"Loaded cached full dump: {Path(filepath).name}")
+            self._clear_progress_status(delay_ms=1500)
+            return
+
+        if not Path(filepath).exists():
+            self._show_raw_summary(filepath)
+            self._set_progress_status(f"No cached full dump for unavailable file: {Path(filepath).name}")
+            self._clear_progress_status(delay_ms=3500)
+            return
+
         try:
             self.progress.setVisible(True)
             self.progress.setRange(0, 0)
@@ -2910,6 +2954,7 @@ class MainWindow(QMainWindow):
             self.raw_load_btn.setEnabled(False)
             self.raw_load_btn.setText("Loading...")
             dump = generate_modelinfo_dump(filepath)
+            store_raw_dump(filepath, dump)
             self.raw_text.setPlainText(dump)
             self._raw_loaded_filepath = filepath
         except Exception as e:

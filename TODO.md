@@ -44,7 +44,7 @@ Actionable integration plan for repository organization, additional model format
 - [x] Audit current `AnalysisWorker` behavior and CLI folder scanning for safe concurrency points.
 - [x] Add a setting/CLI option such as `--threads N` for batch inspection.
 - [x] Use bounded worker pools only for independent file reads; avoid parallel UI mutation.
-- Benchmark on large folders before enabling a default above one thread.
+- [x] Benchmark on large folders before enabling a default above one thread.
 - [x] Surface per-file errors without cancelling the full batch.
 
 ## 6. Add JSON `.modelinfo` Dumps

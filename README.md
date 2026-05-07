@@ -169,7 +169,7 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 - `Auto-minimize top section on Analyze`
 - `Auto-analyze when files are added`
 - `Load default libraries on startup`: restores files from cached folder scans
-- `Analysis threads`: bounded worker count for independent file inspection
+- `Analysis threads`: bounded worker count for independent file inspection, default `2`
 - `Also dump JSON .modelinfo`: writes `.modelinfo.json` files with the dump action
 - `File add behavior`:
   - `Replace current input list`

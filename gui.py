@@ -382,7 +382,7 @@ class SettingsDialog(QDialog):
         dump_json_modelinfo=False,
         auto_load_raw_dump=False,
         load_default_libraries_on_startup=False,
-        analysis_threads=1,
+        analysis_threads=2,
         add_mode="replace",
         default_tab="simple",
         card_fields=None,
@@ -1060,7 +1060,7 @@ class MainWindow(QMainWindow):
         self._dump_json_modelinfo = False
         self._auto_load_raw_dump = False
         self._load_default_libraries_on_startup = False
-        self._analysis_threads = 1
+        self._analysis_threads = 2
         self._add_mode = "replace"  # replace | additive
         self._default_tab = "simple"  # simple | detailed | data | raw
         self._card_field_visibility = {
@@ -1177,13 +1177,6 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(False)
         btn_row_1.addWidget(self.progress)
 
-        self.progress_label = QLabel("")
-        self.progress_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
-        self.progress_label.setVisible(False)
-        self.progress_label.setMinimumWidth(260)
-        self.progress_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        btn_row_1.addWidget(self.progress_label, 1)
-
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.setVisible(False)
@@ -1199,6 +1192,16 @@ class MainWindow(QMainWindow):
         btn_row_1.addWidget(self.analyze_btn, 1)
 
         controls_layout.addLayout(btn_row_1)
+
+        self.progress_label = QLabel("")
+        self.progress_label.setStyleSheet(
+            "color: #a6adc8; font-size: 11px; padding-left: 2px;"
+        )
+        self.progress_label.setVisible(False)
+        self.progress_label.setWordWrap(False)
+        self.progress_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.progress_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        controls_layout.addWidget(self.progress_label)
 
         root.addWidget(controls_container)
 
@@ -1509,9 +1512,9 @@ class MainWindow(QMainWindow):
         self._auto_load_raw_dump = str(s.value("auto_load_raw_dump", "false")).lower() == "true"
         self._load_default_libraries_on_startup = str(s.value("load_default_libraries_on_startup", "false")).lower() == "true"
         try:
-            self._analysis_threads = max(1, min(8, int(s.value("analysis_threads", "1"))))
+            self._analysis_threads = max(1, min(8, int(s.value("analysis_threads", "2"))))
         except (TypeError, ValueError):
-            self._analysis_threads = 1
+            self._analysis_threads = 2
         self._add_mode = str(s.value("add_mode", "replace")).lower()
         self._default_tab = str(s.value("default_tab", "simple")).lower()
         if self._add_mode not in ("replace", "additive"):

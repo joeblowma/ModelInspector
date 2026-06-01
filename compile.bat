@@ -47,7 +47,7 @@ if %ERRORLEVEL% neq 0 (
 
 :: Convert icon.png to icon.ico (Windows executables require .ico)
 echo Converting icon.png to icon.ico...
-python -c "from PIL import Image; img = Image.open('src/assets/icon.png'); img.save('src/assets/icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
+python -c "from PIL import Image; img = Image.open('assets/icon.png'); img.save('assets/icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Icon conversion failed.
     pause
@@ -56,12 +56,7 @@ if %ERRORLEVEL% neq 0 (
 
 :: Run PyInstaller
 echo Starting compilation...
-pyinstaller --noconfirm --onefile --windowed ^
-    --name "SafetensorsModelInspector" ^
-    --icon "src/assets/icon.ico" ^
-    --add-data "src/assets/icon.png;src/assets" ^
-    --clean ^
-    "gui.py"
+pyinstaller --noconfirm --clean ModelInspector.spec
 
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Compilation failed.

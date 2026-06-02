@@ -9,7 +9,7 @@ echo.
 if not exist venvars.bat (
     echo.
     echo.
-    echo ERROR: venvars.bat not found
+    echo [ERROR] venvars.bat not found
     echo Run venv_create.bat to get started.
     pause
     exit 1
@@ -27,11 +27,11 @@ if not exist "%VENV_NAME%\Scripts\activate.bat" (
 )
 
 :: Activate virtual environment
-echo Activating virtual environment...
+echo [INFO] Activating virtual environment...
 call "%VENV_NAME%\Scripts\activate.bat"
 
 :: Ensure pyinstaller is installed
-echo Verifying PyInstaller installation...
+echo [INFO] Verifying PyInstaller installation...
 pip show pyinstaller >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo [INFO] PyInstaller not found in venv. Installing...
@@ -46,17 +46,64 @@ if %ERRORLEVEL% neq 0 (
 )
 
 :: Convert icon.png to icon.ico (Windows executables require .ico)
-echo Converting icon.png to icon.ico...
-python -c "from PIL import Image; img = Image.open('assets/icon.png'); img.save('assets/icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
-if %ERRORLEVEL% neq 0 (
-    echo [ERROR] Icon conversion failed.
-    pause
-    exit /b 1
+if not exist assets\icon.ico (
+    echo [INFO] Converting icon.png to icon.ico...
+    python -c "from PIL import Image; img = Image.open('assets/icon.png'); img.save('assets/icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
+    if %ERRORLEVEL% neq 0 (
+        echo [ERROR] Icon conversion failed.
+        pause
+        exit /b 1
+    )
+)
+
+:: Convert splash_base.png to splash.png (Pyinstaller wants 640x480 from 800x600, may need to update this if base is changed)
+if not exist assets\splash.png (
+    echo [INFO] Converting splash_base.png to splash.png...
+    python assets\ResizeSplash.py
+    if %ERRORLEVEL% neq 0 (
+        echo [ERROR] Icon conversion failed.
+        pause
+        exit /b 1
+    )
 )
 
 :: Run PyInstaller
-echo Starting compilation...
-pyinstaller --noconfirm --clean ModelInspector.spec
+if exist assets\GetVersion.py (
+    echo [INFO] Updating version.txt
+    python assets\GetVersion.py
+    if %ERRORLEVEL% neq 0 (
+        echo [ERROR] Generating version.txt failed.
+        pause
+        exit /b 1
+    )
+)
+
+echo [INFO] Starting compilation...
+if not exist ModelInspector.spec (
+    echo [WARNING] ModelInspector.spec not found! Attempting to generate...
+    pyi-makespec ^
+        --onefile ^
+        --windowed ^
+        --argv-emulation ^
+        --optimize 2 ^
+        --name "ModelInspector" ^
+        --version-file "version.txt" ^
+        --icon "assets/icon.ico" ^
+        --add-data "assets/icon.png:assets" ^
+        --splash "assets/splash.png" ^
+        src/gui.py
+    if %ERRORLEVEL% neq 0 (
+        echo [ERROR] Generating ModelInspector.spec failed.
+        pause
+        exit /b 1
+    )
+)
+
+pyinstaller ModelInspector.spec --clean
+
+echo [INFO] Calling pyinstaller...
+:: pyinstaller --noconfirm --clean ModelInspector.spec
+pyinstaller --noconfirm ModelInspector.spec
 
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Compilation failed.

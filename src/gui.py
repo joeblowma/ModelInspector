@@ -3107,8 +3107,8 @@ def main():
 
     window = MainWindow()
     window.show()
+    pyi_splash.close()
     sys.exit(app.exec())
-
 
 if __name__ == "__main__":
     main()

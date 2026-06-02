@@ -213,3 +213,6 @@ venvars.bat
 graphify-out/
 .model-inspector/
 test/
+assets/splash.png
+version.txt
+assets/splash.png

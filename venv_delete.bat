@@ -1,4 +1,7 @@
+:: Remove the virtual environment
+:: Version 1.6
 @echo off
+title ModelInspector VENV Delete
 
 echo --------------------------------------------------------------------------------
 echo VENV Cleanup Script - Removes virtual environment data if it exists (2026-05-04)
@@ -35,47 +38,28 @@ if /I "!DELETE_ALL!"=="Y" (
 )
 
 :startcleanup
-:: get rid of the venv created folder
-if exist %VENV_NAME% (
-    echo deleting %VENV_NAME%
-    del /s /q %VENV_NAME%
-    rd /s /q %VENV_NAME%
-) else (
-    echo .\%VENV_NAME% directory not found, moving on
-)
-
-:: get rid of the build folder
-if exist build (
-    echo deleting build
-    del /s /q build
-    rd /s /q build
-) else (
-    echo .\build directory not found, moving on
-)
-
-:: get rid of the __pycache__ folder
-if exist __pycache__ (
-    echo deleting __pycache__
-    del /s /q __pycache__
-    rd /s /q __pycache__
-) else (
-    echo .\__pycache__ directory not found, moving on
+:: clean up directories
+for %%P in (
+    "%VENV_NAME%"
+    "build"
+) do (
+    if exist "%%~P" (
+        echo Deleting directory %%~P
+        rmdir /s /q %%~P
+    ) else (
+        echo %%~P not found, moving on
+    )
 )
 
 :: get rid of venvars.bat
+:: no need to exist this one, it's the gate to the script
 echo deleting venvars.bat
-del /q venvars.bat
+del /f /q ".\venvars.bat"
 
 echo.
-echo Done.
+echo ------------------------------------------------------------------------------
+echo DONE: Build VENV cleanup finished.
+echo ------------------------------------------------------------------------------
 pause
+
 exit 0
-
-:errorexit
-echo.
-echo.
-echo.
-echo WARINGING: Unexpected error %ERRORLEVEL% occured, aborting.
-pause
-exit %ERRORLEVEL%
-

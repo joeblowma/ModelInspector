@@ -7,6 +7,7 @@ Dark-mode interface with drag-and-drop, card view, and data table view.
 import sys
 import os
 import json
+import pyi_splash
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -3107,7 +3108,8 @@ def main():
 
     window = MainWindow()
     window.show()
-    pyi_splash.close()
+    if pyi_splash:
+        pyi_splash.close()
     sys.exit(app.exec())
 
 if __name__ == "__main__":

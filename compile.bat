@@ -1,8 +1,9 @@
 @echo off
+title ModelInspector Compile
 
-echo ------------------------------------------------------------------------------
-echo Safetensors Model Inspector - Compilation Script (PyInstaller)
-echo ------------------------------------------------------------------------------
+echo -------------------------------------------------
+echo ModelInspector - Compilation Script (PyInstaller)
+echo -------------------------------------------------
 echo.
 
 :: Check for virtual environment var file created by install script
@@ -23,7 +24,7 @@ if not exist "%VENV_NAME%\Scripts\activate.bat" (
     echo [ERROR] Virtual environment '%VENV_NAME%' not found.
     echo Please run 'venv_create.bat' first to set up the environment.
     pause
-    exit /b 1
+    exit 1
 )
 
 :: Activate virtual environment
@@ -52,7 +53,7 @@ if not exist assets\icon.ico (
     if %ERRORLEVEL% neq 0 (
         echo [ERROR] Icon conversion failed.
         pause
-        exit /b 1
+        exit 1
     )
 )
 
@@ -63,24 +64,25 @@ if not exist assets\splash.png (
     if %ERRORLEVEL% neq 0 (
         echo [ERROR] Icon conversion failed.
         pause
-        exit /b 1
+        exit 1
     )
 )
 
-:: Run PyInstaller
+:: Update or create version.txt
 if exist assets\GetVersion.py (
     echo [INFO] Updating version.txt
     python assets\GetVersion.py
     if %ERRORLEVEL% neq 0 (
         echo [ERROR] Generating version.txt failed.
         pause
-        exit /b 1
+        exit 1
     )
 )
 
+:: Need to confirm or create ModelInspector.spec
 echo [INFO] Starting compilation...
 if not exist ModelInspector.spec (
-    echo [WARNING] ModelInspector.spec not found! Attempting to generate...
+    echo [WARNING] ModelInspector.spec not found! Generating...
     pyi-makespec ^
         --onefile ^
         --windowed ^
@@ -95,21 +97,21 @@ if not exist ModelInspector.spec (
     if %ERRORLEVEL% neq 0 (
         echo [ERROR] Generating ModelInspector.spec failed.
         pause
-        exit /b 1
+        exit 1
+    ) else (
+        echo [INFO] ModelInspector.spec created!
     )
 )
 
-pyinstaller ModelInspector.spec --clean
-
-echo [INFO] Calling pyinstaller...
-:: pyinstaller --noconfirm --clean ModelInspector.spec
+:: Finally, compile the executable
+echo [INFO] Building with pyinstaller...
 pyinstaller --noconfirm ModelInspector.spec
 
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Compilation failed.
     echo error %ERRORLEVEL%
     pause
-    exit /b 1
+    exit 1
 )
 
 echo.

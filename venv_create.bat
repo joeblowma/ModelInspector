@@ -1,6 +1,7 @@
 :: Guides the user through a virtual environment creation process
-:: Version 1.5
+:: Version 1.6
 @echo off
+title ModelInspector VENV Install
 
 echo ------------------------------------------------------------------------------
 echo VENV Installation Script - Helps you create a virtual environment (2026-05-04)

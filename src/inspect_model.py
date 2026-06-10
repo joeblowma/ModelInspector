@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Safetensors Model Inspector
+Model Inspector
 Identifies architecture, components, and properties of .safetensors model files.
 """
 

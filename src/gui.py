@@ -1,15 +1,20 @@
 ﻿#!/usr/bin/env python3
 """
-Safetensors Model Inspector PyQt6 GUI
+Model Inspector PyQt6 GUI
 Dark-mode interface with drag-and-drop, card view, and data table view.
 """
 
 import sys
 import os
 import json
-import pyi_splash
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+# for dismissing the Windows exe splash screen
+try:
+    import pyi_splash
+except ImportError:
+    pyi_splash = None
 
 # Suppress Qt DPI awareness warning on Windows
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
@@ -1088,7 +1093,7 @@ class ModelCard(QFrame):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Safetensors Model Inspector")
+        self.setWindowTitle("Model Inspector")
         self.setWindowIcon(QIcon(_asset("icon.png")))
         self.setMinimumSize(1050, 720)
         self.resize(1100, 780)

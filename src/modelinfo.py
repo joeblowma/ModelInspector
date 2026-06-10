@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Model-info dump helpers for Safetensors Model Inspector."""
+"""Model-info dump helpers for Model Inspector."""
 
 import json
 from collections import Counter

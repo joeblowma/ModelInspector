@@ -208,12 +208,15 @@ __marimo__/
 
 # Custom
 venvars.bat
+version.txt
 .claude
 .codex
-graphify-out/
+.vscode
 .model-inspector/
+ModelInspector.spec
+src/.model-inspector
 test/
 assets/splash.png
-version.txt
-assets/splash.png
 assets/icon.ico
+graphify-out/
+/_mockups

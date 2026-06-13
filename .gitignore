@@ -206,17 +206,21 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Custom
+# Files autobuilt by batch files
 venvars.bat
 version.txt
+ModelInspector.spec
+assets/splash.bmp
+assets/icon.ico
+
+# LLM
 .claude
 .codex
+graphify-out/
+
+# Extras
 .vscode
 .model-inspector/
-ModelInspector.spec
 src/.model-inspector
 test/
-assets/splash.png
-assets/icon.ico
-graphify-out/
 /_mockups

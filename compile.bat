@@ -58,8 +58,8 @@ if not exist assets\icon.ico (
 )
 
 :: Convert splash_base.png to splash.png (Pyinstaller wants 640x480 from 800x600, may need to update this if base is changed)
-if not exist assets\splash.png (
-    echo [INFO] Converting splash_base.png to splash.png...
+if not exist assets\splash.bmp (
+    echo [INFO] Converting splash_base.bmp to splash.bmp...
     python assets\ResizeSplash.py
     if %ERRORLEVEL% neq 0 (
         echo [ERROR] Icon conversion failed.
@@ -91,8 +91,8 @@ if not exist ModelInspector.spec (
         --name "ModelInspector" ^
         --version-file "version.txt" ^
         --icon "assets/icon.ico" ^
-        --add-data "assets/icon.png:assets" ^
-        --splash "assets/splash.png" ^
+        --add-data "assets/icon.ico:assets" ^
+        --splash "assets/splash.bmp" ^
         src/gui.py
     if %ERRORLEVEL% neq 0 (
         echo [ERROR] Generating ModelInspector.spec failed.

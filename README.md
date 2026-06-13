@@ -103,7 +103,7 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 - `Analyze` processes queued inputs
 - `Settings` controls visibility and behavior
 - `Minimize` / `Restore` collapses or expands the top area for more workspace
- 
+
 <img width="2547" height="373" alt="image" src="https://github.com/user-attachments/assets/419e5d42-e3f2-469e-8850-633720ac7782" />
 
 ### Tab: Cards

@@ -70,11 +70,20 @@ def _settings() -> QSettings:
     path.parent.mkdir(parents=True, exist_ok=True)
     return QSettings(str(path), QSettings.Format.IniFormat)
 
+# [info] base  path: R:\Temp\_MEI73962
+# [info] asset path: R:\Temp\_MEI73962\assets\icon.ico
+# [info] base  path: R:\Temp\_MEI73962
+# [info] asset path: R:\Temp\_MEI73962\assets\icon.ico
+
+# [info] base  path: C:\Users\Joseph\Desktop\SafetensorsModelInspector\src
+# [info] asset path: C:\Users\Joseph\Desktop\SafetensorsModelInspector\src\assets\icon.ico
+# [info] base  path: C:\Users\Joseph\Desktop\SafetensorsModelInspector\src
+# [info] asset path: C:\Users\Joseph\Desktop\SafetensorsModelInspector\src\assets\icon.ico
 
 def _asset(name: str) -> str:
     """Resolve path to a bundled asset; works both in dev and when frozen by PyInstaller."""
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
-    return str(base / "src" / "assets" / name)
+    base = Path(getattr(sys, "_MEIPASS", Path(Path(__file__).parent).parent))
+    return str(base / "assets" / name)
 
 
 # ---------------------------------------------------------------------------
@@ -1094,9 +1103,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Model Inspector")
-        self.setWindowIcon(QIcon(_asset("icon.png")))
+        # self.setWindowIcon(QIcon(_asset("icon.ico")))
+        self.setWindowIcon(QIcon(_asset("icon.ico")))
         self.setMinimumSize(1050, 720)
-        self.resize(1100, 780)
+        self.resize(1200, 790)
         QTimer.singleShot(0, self._center_window)
 
         self._queued_files: list[str] = []
@@ -3109,7 +3119,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setStyleSheet(DARK_STYLE)
-    app.setWindowIcon(QIcon(_asset("icon.png")))
+    app.setWindowIcon(QIcon(_asset("icon.ico")))
 
     window = MainWindow()
     window.show()

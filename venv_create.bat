@@ -8,6 +8,17 @@ echo VENV Installation Script - Helps you create a virtual environment (2026-05-
 echo ------------------------------------------------------------------------------
 echo.
 
+:: Check for virtual environment var file created by install script
+if exist venvars.bat (
+    echo.
+    echo.
+    echo ERROR: venvars.bat found
+    echo Aborting, virtual environment may already exist
+    echo Run venv_delete.bat first or remove venvars.bat and the virtual env folder
+    pause
+    exit 1
+)
+
 :: Temporarily disable delayed expansion to check for "!" in the path
 setlocal disabledelayedexpansion
 echo You are about to create a virtual environment in: %CD%
@@ -19,12 +30,11 @@ if not "%CURRENT_PATH%"=="%MODIFIED_PATH%" (
 endlocal
 setlocal enabledelayedexpansion
 
-
 :: Initialize counter
 set COUNT=0
 
 :: Parse the output of py -0p
-for /f "tokens=1,*" %%a in ('py -0p') do (
+for /f "tokens=1,*" %%a in ('py list --only-managed') do (
     :: Filter lines that start with a dash, indicating a Python version, and capture the path
     echo %%a | findstr /R "^[ ]*-" > nul && (
         set /a COUNT+=1
@@ -33,8 +43,8 @@ for /f "tokens=1,*" %%a in ('py -0p') do (
         set "pythonVersion=!pythonVersion:*V:=!"   :: remove leading -V:
         for /f "tokens=1 delims=[]" %%v in ("!pythonVersion!") do set "pythonVersion=%%v"
 
+        :: set "PYTHON_PATH_!COUNT!=%%b"  :: Store the path in a separate variable
         set "PYTHON_VER_!COUNT!=!pythonVersion!"
-        set "PYTHON_PATH_!COUNT!=%%b"  :: Store the path in a separate variable
     )
 )
 IF %ERRORLEVEL% NEQ 0 (goto errorexit)
@@ -50,8 +60,9 @@ echo --------------
 echo Python Version
 echo --------------
 echo Please choose which of your installed python versions to use:
+    :: echo %%i. -V:!PYTHON_VER_%%i! at !PYTHON_PATH_%%i!
 for /L %%i in (1,1,!COUNT!) do (
-    echo %%i. -V:!PYTHON_VER_%%i! at !PYTHON_PATH_%%i!
+    echo %%i. -V:!PYTHON_VER_%%i!
 )
 echo.
 
@@ -142,12 +153,14 @@ echo ---------------------------------------------
 if exist requirements.txt (
     echo requirements.txt found.
 
-    set /p INSTALL_REQUIREMENTS="Do you wish to run 'uv pip install -r requirements.txt'? (Y/N) (Press Enter for default 'Y'): "
+    set /p INSTALL_REQUIREMENTS="Do you wish to install 'requirements.txt' and 'requirements-dev.txt'? (Y/N) (Press Enter for default 'Y'): "
 
     if not defined INSTALL_REQUIREMENTS (set INSTALL_REQUIREMENTS=Y)
     if /I "!INSTALL_REQUIREMENTS!"=="Y" (
         echo Installing requirements.txt modules...
         uv pip install -r requirements.txt
+        IF %ERRORLEVEL% NEQ 0 (goto errorexit)
+        uv pip install -r requirements-dev.txt
         IF %ERRORLEVEL% NEQ 0 (goto errorexit)
         echo Done.
     ) else (
@@ -178,7 +191,6 @@ echo.
 echo WARINGING: Unexpected error %ERRORLEVEL% occured, aborting.
 pause
 exit %ERRORLEVEL%
-
 
 :exit
 endlocal

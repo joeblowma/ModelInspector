@@ -2,8 +2,6 @@
 
 Inspect `.safetensors` and `.gguf` models from a desktop GUI and CLI.
 
-<img width="2537" height="1283" alt="image" src="https://github.com/user-attachments/assets/27ce9f06-4c5f-4b32-aee9-bda85ff576b0" />
-
 ## What It Does
 
 - Detects architecture families and variants (Flux, SDXL/SD3, Wan, Hunyuan, Qwen, HiDream, LTX, Z-Image, Chroma, and more)
@@ -38,13 +36,13 @@ venv_activate.bat
 3. Run GUI:
 
 ```bat
-py gui.py
+py src/gui.py
 ```
 
 4. Run CLI help:
 
 ```bat
-py inspect_model.py --help
+py src/inspect_model.py --help
 ```
 
 ## CLI Usage
@@ -52,46 +50,46 @@ py inspect_model.py --help
 ### Inspect one or more files
 
 ```bat
-py inspect_model.py path\to\model1.safetensors path\to\model2.safetensors
-py inspect_model.py path\to\model.gguf
+py src/inspect_model.py path/to/model1.safetensors path/to/model2.safetensors
+py src/inspect_model.py path/to/model.gguf
 ```
 
 ### Inspect folders
 
 ```bat
-py inspect_model.py path\to\folder
-py inspect_model.py path\to\folder --recursive
+py src/inspect_model.py path/to/folder
+py src/inspect_model.py path/to/folder --recursive
 ```
 
 ### JSON output
 
 ```bat
-py inspect_model.py path\to\folder --recursive --json
-py inspect_model.py path\to\folder --recursive --threads 4 --json
+py src/inspect_model.py path/to/folder --recursive --json
+py src/inspect_model.py path/to/folder --recursive --threads 4 --json
 ```
 
 ### Write `.modelinfo` files
 
 ```bat
-py inspect_model.py path\to\folder --recursive --write-modelinfo
+py src/inspect_model.py path/to/folder --recursive --write-modelinfo
 ```
 
 ### Write JSON `.modelinfo` files
 
 ```bat
-py inspect_model.py path\to\folder --recursive --write-modelinfo-json
+py src/inspect_model.py path/to/folder --recursive --write-modelinfo-json
 ```
 
 ### Dump key/debug report text to console
 
 ```bat
-py inspect_model.py path\to\folder --recursive --dump-keys
+py src/inspect_model.py path/to/folder --recursive --dump-keys
 ```
 
 ### Optional alias fallback (filename tokens)
 
 ```bat
-py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
+py src/inspect_model.py path/to/folder --recursive --allow-filename-alias-detection
 ```
 
 ## GUI Walkthrough
@@ -119,8 +117,6 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 
 <img width="2526" height="953" alt="image" src="https://github.com/user-attachments/assets/1ef32b95-868a-4407-8569-8207d68eac3a" />
 
-
-
 ### Tab: Data
 
 - Sortable/resizable table
@@ -131,8 +127,6 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 
 <img width="2385" height="257" alt="image" src="https://github.com/user-attachments/assets/1dcd1a23-ca36-433e-8e77-9252cfcc0208" />
 
-
-
 ### Tab: Raw
 
 - Per-model raw `.modelinfo` text view
@@ -141,7 +135,6 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 - `Ctrl+C` copies the selected text, or the full raw content when no selection exists
 
 <img width="2442" height="726" alt="image" src="https://github.com/user-attachments/assets/4c2f9d4d-1476-4348-b872-06c282a80007" />
-
 
 ## Notes
 

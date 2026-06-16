@@ -12,7 +12,7 @@ from pathlib import Path
 
 # for dismissing the Windows exe splash screen
 try:
-    import pyi_splash
+    import pyi_splash # type: ignore
 except ImportError:
     pyi_splash = None
 
@@ -20,7 +20,7 @@ except ImportError:
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QTimer, QSettings, QEvent
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QFont, QKeySequence, QAction, QShortcut, QIcon
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QFont, QKeySequence, QAction, QShortcut, QIcon  # noqa: F401
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFileDialog, QTabWidget, QScrollArea,
@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
     QGridLayout, QSizePolicy, QProgressBar, QListWidget, QListWidgetItem,
     QAbstractItemView, QTextEdit, QComboBox, QCheckBox,
     QToolButton, QMenu, QWidgetAction, QDialog, QDialogButtonBox,
-    QTableWidgetSelectionRange, QGroupBox, QMessageBox,
+    QTableWidgetSelectionRange, QGroupBox, QMessageBox,  # noqa: F401
 )
 
 from inspect_model import (
@@ -1909,7 +1909,7 @@ class MainWindow(QMainWindow):
 
             self._set_cancel_available(False)
             self._set_progress_status(
-                f"Loaded {snapshot_count} cached summar"
+                f"Loaded {snapshot_count} cached summary"
                 f"{'ies' if snapshot_count != 1 else 'y'} and queued {len(queued_paths)} "
                 f"uncached path{'s' if len(queued_paths) != 1 else ''}"
             )

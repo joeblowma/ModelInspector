@@ -1127,11 +1127,11 @@ def detect_moe(keys: list[str], metadata: dict, arch: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def format_size(size_bytes: int) -> str:
+    size_bytes_f = float(size_bytes) / 1024.0
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if size_bytes < 1024:
             return f"{size_bytes:.2f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.2f} PB"
+    return f"{size_bytes_f:.2f} PB"
 
 
 def format_params(count: int) -> str:
@@ -1461,7 +1461,7 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
 
     sep = "=" * 60
     print(f"\n{sep}")
-    print(f"  MODEL INSPECTOR")
+    print("  MODEL INSPECTOR")
     print(sep)
 
     # File info
@@ -1487,7 +1487,7 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
             print(f"  {label + ':':<18}{v}")
 
     # Components
-    print(f"\n  Components detected:")
+    print("\n  Components detected:")
     comp_labels = {
         "unet": "UNet",
         "transformer": "Transformer / DiT",
@@ -1511,10 +1511,10 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
             friendly = _friendly_encoder_name(enc_name)
             print(f"    [x] Text Encoder: {friendly} ({enc_count} tensors)")
     if not any_found:
-        print(f"    (none of the standard components detected)")
+        print("    (none of the standard components detected)")
 
     # Precision
-    print(f"\n  Precision / dtype distribution:")
+    print("\n  Precision / dtype distribution:")
     for dtype, count in dtypes.most_common():
         friendly = DTYPE_FRIENDLY.get(dtype, dtype)
         bits = DTYPE_BITS.get(dtype, "?")
@@ -1534,11 +1534,11 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
                   f" ({dominant_pct:.1f}%, {len(tensor_info) - dominant_count}"
                   f" outlier tensor(s) in other dtype)")
         else:
-            print(f"  >> Mixed precision model")
+            print("  >> Mixed precision model")
 
     # Safetensors metadata
     if metadata:
-        print(f"\n  Embedded metadata:")
+        print("\n  Embedded metadata:")
         for mk, mv in sorted(metadata.items()):
             val_str = str(mv)
             if len(val_str) > 120:
@@ -1546,7 +1546,7 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
             print(f"    {mk}: {val_str}")
 
     # Top-level key prefixes (structural overview)
-    print(f"\n  Top-level key prefixes (first 20):")
+    print("\n  Top-level key prefixes (first 20):")
     prefixes = Counter()
     for k in keys:
         prefix = k.split(".")[0]
@@ -1627,7 +1627,7 @@ def _inspect_and_write_modelinfo(
 def _configure_stdio_encoding():
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
+            stream.reconfigure(encoding="utf-8", errors="replace") # type: ignore
 
 
 def _iter_model_paths(targets: Iterable[str], recursive: bool) -> list[str]:

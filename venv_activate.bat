@@ -1,9 +1,9 @@
 @echo off
 title ModelInspector VENV
 
-echo ---------------------------------
-echo VENV Activate Script (2026-05-04)
-echo ---------------------------------
+echo --------------------
+echo VENV Activate Script
+echo --------------------
 echo.
 
 :: Check for virtual environment var file created by install script

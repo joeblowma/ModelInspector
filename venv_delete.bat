@@ -3,9 +3,9 @@
 @echo off
 title ModelInspector VENV Delete
 
-echo --------------------------------------------------------------------------------
-echo VENV Cleanup Script - Removes virtual environment data if it exists (2026-05-04)
-echo --------------------------------------------------------------------------------
+echo -------------------------------------------------------------------
+echo VENV Cleanup Script - Removes virtual environment data if it exists
+echo -------------------------------------------------------------------
 echo.
 
 :: Check for virtual environment var file created by install script

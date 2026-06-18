@@ -1,8 +1,12 @@
-setuptools
+# necissary for exe package
 pyinstaller>=6.0.0
-pylance
 pillow
+# necissary for wheel building/direct install
+setuptools
+build
+wheel
+# optional, linting in VSCode
+pylance
 pylint
 pytest
-pylance
 pyright

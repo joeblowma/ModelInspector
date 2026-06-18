@@ -36,14 +36,14 @@ echo [INFO] Verifying PyInstaller installation...
 pip show pyinstaller >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo [INFO] PyInstaller not found in venv. Installing...
-    pip install pyinstaller
+    uv pip install pyinstaller
 )
 
 :: Ensure Pillow is installed (needed for PNG -> ICO conversion)
 pip show pillow >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo [INFO] Pillow not found in venv. Installing...
-    pip install pillow
+    uv pip install pillow
 )
 
 :: Convert icon.png to icon.ico (Windows executables require .ico)
@@ -60,7 +60,7 @@ if not exist assets\icon.ico (
 :: Convert splash_base.png to splash.png (Pyinstaller wants 640x480 from 800x600, may need to update this if base is changed)
 if not exist assets\splash.bmp (
     echo [INFO] Converting splash_base.bmp to splash.bmp...
-    python assets\ResizeSplash.py
+    python assets\ResizeSplash.py assets\splash_base.bmp assets\splash.png 400 600
     if %ERRORLEVEL% neq 0 (
         echo [ERROR] Icon conversion failed.
         pause
@@ -92,7 +92,7 @@ if not exist ModelInspector.spec (
         --version-file "version.txt" ^
         --icon "assets/icon.ico" ^
         --add-data "assets/icon.ico:assets" ^
-        --splash "assets/splash.bmp" ^
+        --splash "assets/splash.png" ^
         src/gui.py
     if %ERRORLEVEL% neq 0 (
         echo [ERROR] Generating ModelInspector.spec failed.

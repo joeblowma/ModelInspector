@@ -216,6 +216,8 @@ assets/icon.ico
 # LLM
 .claude
 .codex
+.kilo
+.opencode
 graphify-out/
 
 # Extras
@@ -224,3 +226,4 @@ graphify-out/
 src/.model-inspector
 test/
 /_mockups
+assets/splash.png

@@ -12,7 +12,7 @@ from pathlib import Path
 
 # for dismissing the Windows exe splash screen
 try:
-    import pyi_splash # type: ignore
+    import pyi_splash  # type: ignore
 except ImportError:
     pyi_splash = None
 
@@ -20,19 +20,54 @@ except ImportError:
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QTimer, QSettings, QEvent
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QFont, QKeySequence, QAction, QShortcut, QIcon  # noqa: F401
+from PyQt6.QtGui import (
+    QDragEnterEvent,
+    QDropEvent,
+    # QFont,
+    QKeySequence,
+    QAction,
+    QShortcut,
+    QIcon,
+)
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QFileDialog, QTabWidget, QScrollArea,
-    QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
-    QGridLayout, QSizePolicy, QProgressBar, QListWidget, QListWidgetItem,
-    QAbstractItemView, QTextEdit, QComboBox, QCheckBox,
-    QToolButton, QMenu, QWidgetAction, QDialog, QDialogButtonBox,
-    QTableWidgetSelectionRange, QGroupBox, QMessageBox,  # noqa: F401
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QFileDialog,
+    QTabWidget,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QFrame,
+    QGridLayout,
+    QSizePolicy,
+    QProgressBar,
+    QListWidget,
+    QListWidgetItem,
+    QAbstractItemView,
+    QTextEdit,
+    QComboBox,
+    QCheckBox,
+    QToolButton,
+    QMenu,
+    QWidgetAction,
+    QDialog,
+    QDialogButtonBox,
+    # QTableWidgetSelectionRange,
+    QGroupBox,
+    QMessageBox,
 )
 
 from inspect_model import (
-    inspect_file, generate_modelinfo_dump, write_modelinfo_dump, write_modelinfo_json,
+    inspect_file,
+    generate_modelinfo_dump,
+    write_modelinfo_dump,
+    write_modelinfo_json,
 )
 from model_readers import (
     CHECKPOINT_FORMAT_WARNING,
@@ -57,7 +92,11 @@ MODEL_FORMAT_FILTERS = (".safetensors", ".gguf", ".ckpt", ".pt", ".pth")
 
 def _model_file_filter() -> str:
     patterns = " ".join(f"*{ext}" for ext in SUPPORTED_MODEL_EXTENSIONS)
-    checkpoint_patterns = " ".join(f"*{ext}" for ext in MODEL_FORMAT_FILTERS if ext not in SUPPORTED_MODEL_EXTENSIONS)
+    checkpoint_patterns = " ".join(
+        f"*{ext}"
+        for ext in MODEL_FORMAT_FILTERS
+        if ext not in SUPPORTED_MODEL_EXTENSIONS
+    )
     return (
         f"Supported Model Files ({patterns});;"
         f"Checkpoint Files - unsafe/unsupported ({checkpoint_patterns});;"
@@ -70,15 +109,6 @@ def _settings() -> QSettings:
     path.parent.mkdir(parents=True, exist_ok=True)
     return QSettings(str(path), QSettings.Format.IniFormat)
 
-# [info] base  path: R:\Temp\_MEI73962
-# [info] asset path: R:\Temp\_MEI73962\assets\icon.ico
-# [info] base  path: R:\Temp\_MEI73962
-# [info] asset path: R:\Temp\_MEI73962\assets\icon.ico
-
-# [info] base  path: C:\Users\Joseph\Desktop\SafetensorsModelInspector\src
-# [info] asset path: C:\Users\Joseph\Desktop\SafetensorsModelInspector\src\assets\icon.ico
-# [info] base  path: C:\Users\Joseph\Desktop\SafetensorsModelInspector\src
-# [info] asset path: C:\Users\Joseph\Desktop\SafetensorsModelInspector\src\assets\icon.ico
 
 def _asset(name: str) -> str:
     """Resolve path to a bundled asset; works both in dev and when frozen by PyInstaller."""
@@ -227,10 +257,12 @@ QProgressBar::chunk {
 # Worker thread for analysis
 # ---------------------------------------------------------------------------
 
+
 class AnalysisWorker(QThread):
     """Runs inspect_file() on a list of paths in a background thread."""
-    result_ready = pyqtSignal(dict)        # emitted per file
-    error_occurred = pyqtSignal(str, str)   # filepath, error message
+
+    result_ready = pyqtSignal(dict)  # emitted per file
+    error_occurred = pyqtSignal(str, str)  # filepath, error message
     all_done = pyqtSignal()
 
     def __init__(
@@ -272,8 +304,7 @@ class AnalysisWorker(QThread):
         max_workers = min(self.threads, len(self.filepaths))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_path = {
-                executor.submit(self._inspect_one, fp): fp
-                for fp in self.filepaths
+                executor.submit(self._inspect_one, fp): fp for fp in self.filepaths
             }
             for future in as_completed(future_to_path):
                 fp = future_to_path[future]
@@ -291,6 +322,7 @@ class AnalysisWorker(QThread):
 # ---------------------------------------------------------------------------
 # Drop zone widget
 # ---------------------------------------------------------------------------
+
 
 class DropZone(QFrame):
     files_dropped = pyqtSignal(list)
@@ -316,12 +348,16 @@ class DropZone(QFrame):
 
         icon_label = QLabel("Drop model files here")
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setStyleSheet("color: #6c7086; font-size: 15px; font-weight: bold; border: none; background: transparent;")
+        icon_label.setStyleSheet(
+            "color: #6c7086; font-size: 15px; font-weight: bold; border: none; background: transparent;"
+        )
         layout.addWidget(icon_label)
 
         hint = QLabel("or use Browse button below")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet("color: #45475a; font-size: 11px; border: none; background: transparent;")
+        hint.setStyleSheet(
+            "color: #45475a; font-size: 11px; border: none; background: transparent;"
+        )
         layout.addWidget(hint)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
@@ -390,6 +426,7 @@ class DropZone(QFrame):
 # Settings dialog
 # ---------------------------------------------------------------------------
 
+
 class SettingsDialog(QDialog):
     def __init__(
         self,
@@ -450,49 +487,51 @@ class SettingsDialog(QDialog):
         self.alias_checkbox.setChecked(allow_filename_alias_detection)
         alias_cell = make_general_cell(
             self.alias_checkbox,
-            "Fallback alias matching by filename for special naming cases. Supports ILXL, Illustrious, Illu, PDXL, Pony, Pony7, NAI, and Qwen Edit."
+            "Fallback alias matching by filename for special naming cases. Supports ILXL, Illustrious, Illu, PDXL, Pony, Pony7, NAI, and Qwen Edit.",
         )
 
         self.auto_fold_checkbox = QCheckBox("Auto-minimize top section on Analyze")
         self.auto_fold_checkbox.setChecked(auto_fold_on_analyze)
         fold_cell = make_general_cell(
             self.auto_fold_checkbox,
-            "Collapse top input section automatically when Analyze starts."
+            "Collapse top input section automatically when Analyze starts.",
         )
 
         self.auto_analyze_checkbox = QCheckBox("Auto-analyze when files are added")
         self.auto_analyze_checkbox.setChecked(auto_analyze_on_add)
         analyze_cell = make_general_cell(
             self.auto_analyze_checkbox,
-            "Immediately start analysis after dropping or browsing files."
+            "Immediately start analysis after dropping or browsing files.",
         )
 
         self.dump_json_checkbox = QCheckBox("Also dump JSON .modelinfo")
         self.dump_json_checkbox.setChecked(dump_json_modelinfo)
         dump_json_cell = make_general_cell(
             self.dump_json_checkbox,
-            "When dumping modelinfo, also write a pretty-printed .modelinfo.json file."
+            "When dumping modelinfo, also write a pretty-printed .modelinfo.json file.",
         )
 
         self.auto_load_raw_checkbox = QCheckBox("Auto-load Raw full dump")
         self.auto_load_raw_checkbox.setChecked(auto_load_raw_dump)
         raw_cell = make_general_cell(
             self.auto_load_raw_checkbox,
-            "Automatically generate and cache the full Raw tab dump when the selected model changes."
+            "Automatically generate and cache the full Raw tab dump when the selected model changes.",
         )
 
-        self.cache_full_data_checkbox = QCheckBox("Cache full tensor data during analysis")
+        self.cache_full_data_checkbox = QCheckBox(
+            "Cache full tensor data during analysis"
+        )
         self.cache_full_data_checkbox.setChecked(cache_full_data_on_analyze)
         cache_full_data_cell = make_general_cell(
             self.cache_full_data_checkbox,
-            "Store compact metadata and tensor descriptors while scanning so details remain available without the model file."
+            "Store compact metadata and tensor descriptors while scanning so details remain available without the model file.",
         )
 
         self.default_libraries_checkbox = QCheckBox("Load default libraries on startup")
         self.default_libraries_checkbox.setChecked(load_default_libraries_on_startup)
         default_libraries_cell = make_general_cell(
             self.default_libraries_checkbox,
-            "Load files from cached folder scans when the app starts."
+            "Load files from cached folder scans when the app starts.",
         )
 
         thread_wrap = QWidget()
@@ -510,7 +549,7 @@ class SettingsDialog(QDialog):
         thread_row.addStretch()
         thread_cell = make_general_cell(
             thread_wrap,
-            "Use bounded worker threads for independent file reads. Keep at 1 if the disk is already busy."
+            "Use bounded worker threads for independent file reads. Keep at 1 if the disk is already busy.",
         )
 
         mode_wrap = QWidget()
@@ -528,7 +567,7 @@ class SettingsDialog(QDialog):
         mode_row.addStretch()
         mode_cell = make_general_cell(
             mode_wrap,
-            "Replace clears the current input list before adding new files. Append keeps existing files and adds new ones."
+            "Replace clears the current input list before adding new files. Append keeps existing files and adds new ones.",
         )
 
         tab_wrap = QWidget()
@@ -546,8 +585,7 @@ class SettingsDialog(QDialog):
         tab_row.addWidget(self.default_tab_combo)
         tab_row.addStretch()
         tab_cell = make_general_cell(
-            tab_wrap,
-            "Choose which tab opens by default when the app starts."
+            tab_wrap, "Choose which tab opens by default when the app starts."
         )
 
         g_layout.addWidget(alias_cell, 0, 0)
@@ -661,6 +699,7 @@ class SettingsDialog(QDialog):
 # Architecture filter button
 # ---------------------------------------------------------------------------
 
+
 class CheckFilterButton(QToolButton):
     filter_changed = pyqtSignal(object)
 
@@ -713,16 +752,17 @@ class CheckFilterButton(QToolButton):
         return (2, value.lower())
 
     def _rebuild_item_actions(self):
-        checked_state = {
-            arch: cb.isChecked()
-            for arch, cb in self._arch_checks.items()
-        }
+        checked_state = {arch: cb.isChecked() for arch, cb in self._arch_checks.items()}
         self._clear_item_actions()
         self._arch_checks.clear()
         ordered = sorted(self._counts.keys(), key=self._filter_sort_key)
         inserted_divider = False
         for arch in ordered:
-            if not inserted_divider and arch != "ERROR" and "ERROR" in self._arch_checks:
+            if (
+                not inserted_divider
+                and arch != "ERROR"
+                and "ERROR" in self._arch_checks
+            ):
                 sep = self._menu.addSeparator()
                 self._item_actions.append(sep)
                 inserted_divider = True
@@ -796,7 +836,9 @@ class CheckFilterButton(QToolButton):
 
     def _on_arch_toggled(self, _):
         self._active = {a for a, cb in self._arch_checks.items() if cb.isChecked()}
-        all_checked = len(self._active) == len(self._arch_checks) and len(self._arch_checks) > 0
+        all_checked = (
+            len(self._active) == len(self._arch_checks) and len(self._arch_checks) > 0
+        )
         self._all_cb.blockSignals(True)
         self._all_cb.setChecked(all_checked)
         self._all_cb.blockSignals(False)
@@ -825,6 +867,7 @@ class SortableTableWidgetItem(QTableWidgetItem):
 # ---------------------------------------------------------------------------
 # Model card widget
 # ---------------------------------------------------------------------------
+
 
 class ModelCard(QFrame):
     selection_requested = pyqtSignal(str, object)
@@ -878,7 +921,9 @@ class ModelCard(QFrame):
 
         name_label = QLabel(data["filename"])
         name_label.setWordWrap(True)
-        name_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #f5c2e7; background: transparent; border: none;")
+        name_label.setStyleSheet(
+            "font-size: 14px; font-weight: bold; color: #f5c2e7; background: transparent; border: none;"
+        )
         header_row.addWidget(name_label, stretch=1)
         layout.addLayout(header_row)
 
@@ -886,7 +931,9 @@ class ModelCard(QFrame):
         arch_row = QHBoxLayout()
         file_format = data.get("format")
         if file_format:
-            arch_row.addWidget(self._make_tag(str(file_format).upper(), "#f38ba8", "#1e1e2e"))
+            arch_row.addWidget(
+                self._make_tag(str(file_format).upper(), "#f38ba8", "#1e1e2e")
+            )
         arch_tag = self._make_tag(data["architecture"], "#74c7ec", "#1e1e2e")
         type_tag = self._make_tag(data["model_type"], "#a6e3a1", "#1e1e2e")
         arch_row.addWidget(arch_tag)
@@ -965,11 +1012,15 @@ class ModelCard(QFrame):
                 mini_grid.setSpacing(6)
                 for i, (label, value) in enumerate(simple_stats):
                     lbl = QLabel(label)
-                    lbl.setStyleSheet("color: #6c7086; font-size: 11px; background: transparent; border: none;")
+                    lbl.setStyleSheet(
+                        "color: #6c7086; font-size: 11px; background: transparent; border: none;"
+                    )
                     val = QLabel(value)
                     if "Precision" in label:
                         val.setWordWrap(True)
-                    val.setStyleSheet("color: #cdd6f4; font-size: 13px; font-weight: bold; background: transparent; border: none;")
+                    val.setStyleSheet(
+                        "color: #cdd6f4; font-size: 13px; font-weight: bold; background: transparent; border: none;"
+                    )
                     mini_grid.addWidget(lbl, i // 2, (i % 2) * 2)
                     mini_grid.addWidget(val, i // 2, (i % 2) * 2 + 1)
                 layout.addLayout(mini_grid)
@@ -1013,11 +1064,15 @@ class ModelCard(QFrame):
 
         for i, (label, value) in enumerate(stats):
             lbl = QLabel(label)
-            lbl.setStyleSheet("color: #6c7086; font-size: 11px; background: transparent; border: none;")
+            lbl.setStyleSheet(
+                "color: #6c7086; font-size: 11px; background: transparent; border: none;"
+            )
             val = QLabel(value)
             if "Precision" in label:
                 val.setWordWrap(True)
-            val.setStyleSheet("color: #cdd6f4; font-size: 13px; font-weight: bold; background: transparent; border: none;")
+            val.setStyleSheet(
+                "color: #cdd6f4; font-size: 13px; font-weight: bold; background: transparent; border: none;"
+            )
             grid.addWidget(lbl, i // 2, (i % 2) * 2)
             grid.addWidget(val, i // 2, (i % 2) * 2 + 1)
 
@@ -1039,7 +1094,9 @@ class ModelCard(QFrame):
 
     def contextMenuEvent(self, event):
         if self.filepath:
-            self.context_requested.emit(self.filepath, self._simple_view, event.globalPos())
+            self.context_requested.emit(
+                self.filepath, self._simple_view, event.globalPos()
+            )
             event.accept()
             return
         super().contextMenuEvent(event)
@@ -1098,6 +1155,7 @@ class ModelCard(QFrame):
 # ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -1182,7 +1240,9 @@ class MainWindow(QMainWindow):
         self.drop_zone = DropZone()
         self.drop_zone.setFixedWidth(340)
         self.drop_zone.files_dropped.connect(self._add_files)
-        self.drop_zone.unsupported_files_dropped.connect(self._warn_unsupported_checkpoint_files)
+        self.drop_zone.unsupported_files_dropped.connect(
+            self._warn_unsupported_checkpoint_files
+        )
         top_layout.addWidget(self.drop_zone, 0)
 
         # File list (right)
@@ -1203,7 +1263,9 @@ class MainWindow(QMainWindow):
         fl_layout.addLayout(fl_header)
 
         self.file_list = QListWidget()
-        self.file_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.file_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         fl_layout.addWidget(self.file_list)
 
         # Remove selected button
@@ -1268,7 +1330,9 @@ class MainWindow(QMainWindow):
         self.analyze_btn.clicked.connect(self._analyze_all)
         self.analyze_btn.setStyleSheet("font-weight: 800;")
         self.analyze_btn.setMinimumWidth(260)
-        self.analyze_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.analyze_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         btn_row_1.addWidget(self.analyze_btn, 1)
 
         controls_layout.addLayout(btn_row_1)
@@ -1279,8 +1343,12 @@ class MainWindow(QMainWindow):
         )
         self.progress_label.setVisible(False)
         self.progress_label.setWordWrap(False)
-        self.progress_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.progress_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.progress_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.progress_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         controls_layout.addWidget(self.progress_label)
 
         root.addWidget(controls_container)
@@ -1292,7 +1360,9 @@ class MainWindow(QMainWindow):
         fold_only_layout.setSpacing(0)
         self.fold_only_btn = QPushButton("▼ Restore")
         self.fold_only_btn.clicked.connect(self._toggle_top_fold)
-        self.fold_only_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.fold_only_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         fold_only_layout.addWidget(self.fold_only_btn)
         self.fold_only_bar.setVisible(False)
         root.addWidget(self.fold_only_bar)
@@ -1328,9 +1398,13 @@ class MainWindow(QMainWindow):
         self.simple_cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.simple_cards_scroll.setWidget(self.simple_cards_container)
 
-        self.simple_cards_placeholder = QLabel("No models analyzed yet.\nDrop files above and click Analyze.")
+        self.simple_cards_placeholder = QLabel(
+            "No models analyzed yet.\nDrop files above and click Analyze."
+        )
         self.simple_cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.simple_cards_placeholder.setStyleSheet("color: #45475a; font-size: 14px; padding: 60px;")
+        self.simple_cards_placeholder.setStyleSheet(
+            "color: #45475a; font-size: 14px; padding: 60px;"
+        )
         self.simple_cards_layout.insertWidget(0, self.simple_cards_placeholder)
 
         self.cards_scroll = QScrollArea()
@@ -1342,9 +1416,13 @@ class MainWindow(QMainWindow):
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.cards_scroll.setWidget(self.cards_container)
 
-        self.cards_placeholder = QLabel("No models analyzed yet.\nDrop files above and click Analyze.")
+        self.cards_placeholder = QLabel(
+            "No models analyzed yet.\nDrop files above and click Analyze."
+        )
         self.cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.cards_placeholder.setStyleSheet("color: #45475a; font-size: 14px; padding: 60px;")
+        self.cards_placeholder.setStyleSheet(
+            "color: #45475a; font-size: 14px; padding: 60px;"
+        )
         self.cards_layout.insertWidget(0, self.cards_placeholder)
 
         cards_tab_layout.addWidget(self.cards_scroll)
@@ -1378,13 +1456,35 @@ class MainWindow(QMainWindow):
         self.table.cellClicked.connect(self._on_table_cell_clicked)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
-        self.table.horizontalHeader().sortIndicatorChanged.connect(self._on_table_sort_changed)
+        self.table.horizontalHeader().sortIndicatorChanged.connect(
+            self._on_table_sort_changed
+        )
 
         self._table_columns = [
-            "", "File", "Format", "File Size", "Architecture", "Model Type", "Adapter", "Quantization",
-            "Precision", "UNet Precision", "VAE Precision", "Text Encoder Precision", "Transformer Precision",
-            "Parameters", "Tensors", "LoRA Rank", "MoE", "Experts", "Active Experts",
-            "Software", "Images", "Resolution", "Epochs", "Steps",
+            "",
+            "File",
+            "Format",
+            "File Size",
+            "Architecture",
+            "Model Type",
+            "Adapter",
+            "Quantization",
+            "Precision",
+            "UNet Precision",
+            "VAE Precision",
+            "Text Encoder Precision",
+            "Transformer Precision",
+            "Parameters",
+            "Tensors",
+            "LoRA Rank",
+            "MoE",
+            "Experts",
+            "Active Experts",
+            "Software",
+            "Images",
+            "Resolution",
+            "Epochs",
+            "Steps",
         ]
         self.table.setColumnCount(len(self._table_columns))
         self.table.setHorizontalHeaderLabels(self._table_columns)
@@ -1394,29 +1494,29 @@ class MainWindow(QMainWindow):
         self.table.setColumnWidth(0, 34)
         for i in range(1, len(self._table_columns)):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-        self.table.setColumnWidth(1, 280)   # File
-        self.table.setColumnWidth(2, 70)    # Format
-        self.table.setColumnWidth(3, 90)    # File Size
-        self.table.setColumnWidth(4, 140)   # Architecture
-        self.table.setColumnWidth(5, 100)   # Model Type
-        self.table.setColumnWidth(6, 90)    # Adapter
-        self.table.setColumnWidth(7, 100)   # Quantization
-        self.table.setColumnWidth(8, 100)   # Precision
-        self.table.setColumnWidth(9, 115)   # UNet
+        self.table.setColumnWidth(1, 280)  # File
+        self.table.setColumnWidth(2, 70)  # Format
+        self.table.setColumnWidth(3, 90)  # File Size
+        self.table.setColumnWidth(4, 140)  # Architecture
+        self.table.setColumnWidth(5, 100)  # Model Type
+        self.table.setColumnWidth(6, 90)  # Adapter
+        self.table.setColumnWidth(7, 100)  # Quantization
+        self.table.setColumnWidth(8, 100)  # Precision
+        self.table.setColumnWidth(9, 115)  # UNet
         self.table.setColumnWidth(10, 115)  # VAE
         self.table.setColumnWidth(11, 160)  # Text Encoder
         self.table.setColumnWidth(12, 120)  # Transformer
-        self.table.setColumnWidth(13, 95)   # Parameters
-        self.table.setColumnWidth(14, 70)   # Tensors
-        self.table.setColumnWidth(15, 85)   # LoRA Rank
-        self.table.setColumnWidth(16, 60)   # MoE
-        self.table.setColumnWidth(17, 80)   # Experts
+        self.table.setColumnWidth(13, 95)  # Parameters
+        self.table.setColumnWidth(14, 70)  # Tensors
+        self.table.setColumnWidth(15, 85)  # LoRA Rank
+        self.table.setColumnWidth(16, 60)  # MoE
+        self.table.setColumnWidth(17, 80)  # Experts
         self.table.setColumnWidth(18, 105)  # Active Experts
         self.table.setColumnWidth(19, 150)  # Software
-        self.table.setColumnWidth(20, 70)   # Images
+        self.table.setColumnWidth(20, 70)  # Images
         self.table.setColumnWidth(21, 100)  # Resolution
-        self.table.setColumnWidth(22, 70)   # Epochs
-        self.table.setColumnWidth(23, 80)   # Steps
+        self.table.setColumnWidth(22, 70)  # Epochs
+        self.table.setColumnWidth(23, 80)  # Steps
         self._apply_table_column_visibility()
         data_tab_layout.addWidget(self.table)
         self.tabs.addTab(data_tab, "Data")
@@ -1458,7 +1558,9 @@ class MainWindow(QMainWindow):
             "font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; "
             "border: 1px solid #313244; border-radius: 4px; padding: 8px; }"
         )
-        self.raw_text.setPlaceholderText("Analyze models to see raw tensor key data here.")
+        self.raw_text.setPlaceholderText(
+            "Analyze models to see raw tensor key data here."
+        )
         raw_layout.addWidget(self.raw_text)
 
         self.tabs.addTab(raw_container, "Raw")
@@ -1474,21 +1576,27 @@ class MainWindow(QMainWindow):
         self.arch_filter_btn.filter_changed.connect(self._on_arch_filter_changed)
         self.arch_filter_btn.setMinimumHeight(34)
         self.arch_filter_btn.setMinimumWidth(170)
-        self.arch_filter_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.arch_filter_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         bottom_actions.addWidget(self.arch_filter_btn, 1)
 
         self.tag_filter_btn = CheckFilterButton("Tags")
         self.tag_filter_btn.filter_changed.connect(self._on_tag_filter_changed)
         self.tag_filter_btn.setMinimumHeight(34)
         self.tag_filter_btn.setMinimumWidth(170)
-        self.tag_filter_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.tag_filter_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         bottom_actions.addWidget(self.tag_filter_btn, 1)
 
         self.format_filter_btn = CheckFilterButton("Format")
         self.format_filter_btn.filter_changed.connect(self._on_format_filter_changed)
         self.format_filter_btn.setMinimumHeight(34)
         self.format_filter_btn.setMinimumWidth(150)
-        self.format_filter_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.format_filter_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         bottom_actions.addWidget(self.format_filter_btn, 1)
         self._reset_format_filter_items()
 
@@ -1583,15 +1691,31 @@ class MainWindow(QMainWindow):
 
     def _load_ui_settings(self):
         s = _settings()
-        self._allow_filename_alias_detection = str(s.value("allow_filename_alias_detection", "false")).lower() == "true"
-        self._auto_fold_on_analyze = str(s.value("auto_fold_on_analyze", "false")).lower() == "true"
-        self._auto_analyze_on_add = str(s.value("auto_analyze_on_add", "true")).lower() == "true"
-        self._dump_json_modelinfo = str(s.value("dump_json_modelinfo", "false")).lower() == "true"
-        self._auto_load_raw_dump = str(s.value("auto_load_raw_dump", "false")).lower() == "true"
-        self._load_default_libraries_on_startup = str(s.value("load_default_libraries_on_startup", "false")).lower() == "true"
-        self._cache_full_data_on_analyze = str(s.value("cache_full_data_on_analyze", "false")).lower() == "true"
+        self._allow_filename_alias_detection = (
+            str(s.value("allow_filename_alias_detection", "false")).lower() == "true"
+        )
+        self._auto_fold_on_analyze = (
+            str(s.value("auto_fold_on_analyze", "false")).lower() == "true"
+        )
+        self._auto_analyze_on_add = (
+            str(s.value("auto_analyze_on_add", "true")).lower() == "true"
+        )
+        self._dump_json_modelinfo = (
+            str(s.value("dump_json_modelinfo", "false")).lower() == "true"
+        )
+        self._auto_load_raw_dump = (
+            str(s.value("auto_load_raw_dump", "false")).lower() == "true"
+        )
+        self._load_default_libraries_on_startup = (
+            str(s.value("load_default_libraries_on_startup", "false")).lower() == "true"
+        )
+        self._cache_full_data_on_analyze = (
+            str(s.value("cache_full_data_on_analyze", "false")).lower() == "true"
+        )
         try:
-            self._analysis_threads = max(1, min(8, int(s.value("analysis_threads", "2"))))
+            self._analysis_threads = max(
+                1, min(8, int(s.value("analysis_threads", "2")))
+            )
         except (TypeError, ValueError):
             self._analysis_threads = 2
         self._add_mode = str(s.value("add_mode", "replace")).lower()
@@ -1607,7 +1731,9 @@ class MainWindow(QMainWindow):
             try:
                 obj = json.loads(raw_detailed)
                 if isinstance(obj, dict):
-                    self._card_field_visibility.update({k: bool(v) for k, v in obj.items()})
+                    self._card_field_visibility.update(
+                        {k: bool(v) for k, v in obj.items()}
+                    )
             except Exception:
                 pass
         raw_simple = s.value("simple_card_fields", "")
@@ -1615,7 +1741,9 @@ class MainWindow(QMainWindow):
             try:
                 obj = json.loads(raw_simple)
                 if isinstance(obj, dict):
-                    self._simple_card_field_visibility.update({k: bool(v) for k, v in obj.items()})
+                    self._simple_card_field_visibility.update(
+                        {k: bool(v) for k, v in obj.items()}
+                    )
             except Exception:
                 pass
         raw_cols = s.value("table_columns", "")
@@ -1623,19 +1751,29 @@ class MainWindow(QMainWindow):
             try:
                 obj = json.loads(raw_cols)
                 if isinstance(obj, dict):
-                    self._table_column_visibility_pref = {str(k): bool(v) for k, v in obj.items()}
+                    self._table_column_visibility_pref = {
+                        str(k): bool(v) for k, v in obj.items()
+                    }
             except Exception:
                 pass
 
     def _save_ui_settings(self):
         s = _settings()
-        s.setValue("allow_filename_alias_detection", str(self._allow_filename_alias_detection).lower())
+        s.setValue(
+            "allow_filename_alias_detection",
+            str(self._allow_filename_alias_detection).lower(),
+        )
         s.setValue("auto_fold_on_analyze", str(self._auto_fold_on_analyze).lower())
         s.setValue("auto_analyze_on_add", str(self._auto_analyze_on_add).lower())
         s.setValue("dump_json_modelinfo", str(self._dump_json_modelinfo).lower())
         s.setValue("auto_load_raw_dump", str(self._auto_load_raw_dump).lower())
-        s.setValue("load_default_libraries_on_startup", str(self._load_default_libraries_on_startup).lower())
-        s.setValue("cache_full_data_on_analyze", str(self._cache_full_data_on_analyze).lower())
+        s.setValue(
+            "load_default_libraries_on_startup",
+            str(self._load_default_libraries_on_startup).lower(),
+        )
+        s.setValue(
+            "cache_full_data_on_analyze", str(self._cache_full_data_on_analyze).lower()
+        )
         s.setValue("analysis_threads", str(self._analysis_threads))
         s.setValue("add_mode", self._add_mode)
         s.setValue("default_tab", self._default_tab)
@@ -1790,8 +1928,7 @@ class MainWindow(QMainWindow):
 
     def _browse_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select model files", "",
-            _model_file_filter()
+            self, "Select model files", "", _model_file_filter()
         )
         if not paths:
             return
@@ -1815,7 +1952,9 @@ class MainWindow(QMainWindow):
         )
 
     def _browse_folder_recursive(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select folder to scan recursively")
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select folder to scan recursively"
+        )
         if not folder:
             return
         found = self._discover_model_paths(folder)
@@ -1879,7 +2018,9 @@ class MainWindow(QMainWindow):
                     self.arch_filter_btn.add_item(cached.get("architecture", "Unknown"))
                     for tag in self._filter_tags_for_data(cached):
                         self.tag_filter_btn.add_item(tag)
-                    self.format_filter_btn.add_item(self._format_filter_for_data(cached))
+                    self.format_filter_btn.add_item(
+                        self._format_filter_for_data(cached)
+                    )
                     snapshot_count += 1
                 else:
                     queued_paths.append(path)
@@ -1946,7 +2087,9 @@ class MainWindow(QMainWindow):
             self._auto_analyze_on_add = dlg.auto_analyze_checkbox.isChecked()
             self._dump_json_modelinfo = dlg.dump_json_checkbox.isChecked()
             self._auto_load_raw_dump = dlg.auto_load_raw_checkbox.isChecked()
-            self._load_default_libraries_on_startup = dlg.default_libraries_checkbox.isChecked()
+            self._load_default_libraries_on_startup = (
+                dlg.default_libraries_checkbox.isChecked()
+            )
             self._cache_full_data_on_analyze = dlg.cache_full_data_checkbox.isChecked()
             self._analysis_threads = int(dlg.analysis_threads_combo.currentData() or 1)
             self._add_mode = dlg.add_mode_combo.currentData()
@@ -2133,7 +2276,8 @@ class MainWindow(QMainWindow):
         was_cancelled = bool(self._worker and self._worker.was_cancelled)
         error_text = (
             f" | Errors: {self._analysis_error_count}"
-            if self._analysis_error_count else ""
+            if self._analysis_error_count
+            else ""
         )
         if was_cancelled:
             self._set_progress_status(
@@ -2162,7 +2306,8 @@ class MainWindow(QMainWindow):
         filename = Path(filepath).name if filepath else "-"
         error_text = (
             f" | Errors: {self._analysis_error_count}"
-            if self._analysis_error_count else ""
+            if self._analysis_error_count
+            else ""
         )
         self._set_progress_status(
             f"Parsed: {self._analysis_done_count}/{total} | "
@@ -2213,7 +2358,9 @@ class MainWindow(QMainWindow):
         """Write .modelinfo files for selected models or the current Raw model."""
         targets = self._dump_modelinfo_targets()
         if not targets:
-            self._set_progress_status("Select one or more models to dump, or open a model in Raw.")
+            self._set_progress_status(
+                "Select one or more models to dump, or open a model in Raw."
+            )
             self._clear_progress_status(delay_ms=3500)
             return
         count = 0
@@ -2235,12 +2382,14 @@ class MainWindow(QMainWindow):
                 QApplication.processEvents()
                 outputs = [write_modelinfo_dump(filepath)]
                 if self._dump_json_modelinfo:
-                    outputs.append(write_modelinfo_json(
-                        filepath,
-                        options={
-                            "allow_filename_alias_detection": self._allow_filename_alias_detection
-                        },
-                    ))
+                    outputs.append(
+                        write_modelinfo_json(
+                            filepath,
+                            options={
+                                "allow_filename_alias_detection": self._allow_filename_alias_detection
+                            },
+                        )
+                    )
                 if data:
                     data["modelinfo_outputs"] = outputs
                 output_paths.extend(outputs)
@@ -2266,18 +2415,26 @@ class MainWindow(QMainWindow):
             item = self.cards_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        self.cards_placeholder = QLabel("No models analyzed yet.\nDrop files above and click Analyze.")
+        self.cards_placeholder = QLabel(
+            "No models analyzed yet.\nDrop files above and click Analyze."
+        )
         self.cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.cards_placeholder.setStyleSheet("color: #45475a; font-size: 14px; padding: 60px;")
+        self.cards_placeholder.setStyleSheet(
+            "color: #45475a; font-size: 14px; padding: 60px;"
+        )
         self.cards_layout.insertWidget(0, self.cards_placeholder)
 
         while self.simple_cards_layout.count():
             item = self.simple_cards_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        self.simple_cards_placeholder = QLabel("No models analyzed yet.\nDrop files above and click Analyze.")
+        self.simple_cards_placeholder = QLabel(
+            "No models analyzed yet.\nDrop files above and click Analyze."
+        )
         self.simple_cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.simple_cards_placeholder.setStyleSheet("color: #45475a; font-size: 14px; padding: 60px;")
+        self.simple_cards_placeholder.setStyleSheet(
+            "color: #45475a; font-size: 14px; padding: 60px;"
+        )
         self.simple_cards_layout.insertWidget(0, self.simple_cards_placeholder)
         self._refresh_card_layout_geometry()
 
@@ -2286,7 +2443,9 @@ class MainWindow(QMainWindow):
         self._apply_cards_view_mode()
 
     def _apply_cards_view_mode(self):
-        if not hasattr(self, "cards_scroll") or not hasattr(self, "simple_cards_scroll"):
+        if not hasattr(self, "cards_scroll") or not hasattr(
+            self, "simple_cards_scroll"
+        ):
             return
         self.cards_scroll.setVisible(not self._simple_cards_view)
         self.simple_cards_scroll.setVisible(self._simple_cards_view)
@@ -2350,13 +2509,19 @@ class MainWindow(QMainWindow):
         filepath = data.get("filepath", "")
 
         # UNet column
-        unet_str = component_precisions.get("unet") or ("Yes" if comps.get("unet") else "-")
+        unet_str = component_precisions.get("unet") or (
+            "Yes" if comps.get("unet") else "-"
+        )
 
         # Transformer column
-        trans_str = component_precisions.get("transformer") or ("Yes" if comps.get("transformer") else "-")
+        trans_str = component_precisions.get("transformer") or (
+            "Yes" if comps.get("transformer") else "-"
+        )
 
         # VAE column
-        vae_str = component_precisions.get("vae") or ("Yes" if comps.get("vae") else "-")
+        vae_str = component_precisions.get("vae") or (
+            "Yes" if comps.get("vae") else "-"
+        )
 
         # Text encoder column - precision labels for TE1/TE2 where available.
         text_enc_parts = []
@@ -2386,7 +2551,9 @@ class MainWindow(QMainWindow):
         expert_used_count = data.get("expert_used_count")
         moe_str = "Yes" if is_moe else "-"
         expert_count_str = str(expert_count) if expert_count is not None else "-"
-        expert_used_count_str = str(expert_used_count) if expert_used_count is not None else "-"
+        expert_used_count_str = (
+            str(expert_used_count) if expert_used_count is not None else "-"
+        )
 
         values = [
             data["filename"],
@@ -2415,7 +2582,9 @@ class MainWindow(QMainWindow):
         ]
 
         cb = QCheckBox()
-        cb.clicked.connect(lambda checked, fp=filepath: self._on_table_checkbox_toggled(fp, checked))
+        cb.clicked.connect(
+            lambda checked, fp=filepath: self._on_table_checkbox_toggled(fp, checked)
+        )
         self.table.setCellWidget(row, 0, cb)
 
         for col, val in enumerate(values, start=1):
@@ -2657,10 +2826,14 @@ class MainWindow(QMainWindow):
         ctrl = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
         shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
 
-        if shift and self._last_selected_card_index >= 0 and self._last_selected_card_index < len(visible):
+        if (
+            shift
+            and self._last_selected_card_index >= 0
+            and self._last_selected_card_index < len(visible)
+        ):
             lo = min(self._last_selected_card_index, idx)
             hi = max(self._last_selected_card_index, idx)
-            for fp in visible[lo:hi + 1]:
+            for fp in visible[lo : hi + 1]:
                 self._selected_paths.add(fp)
         elif ctrl:
             if filepath in self._selected_paths:
@@ -2712,7 +2885,11 @@ class MainWindow(QMainWindow):
         if comp_on:
             lines.append("Tags: " + ", ".join(comp_on))
 
-        fields = self._simple_card_field_visibility if simple_view else self._card_field_visibility
+        fields = (
+            self._simple_card_field_visibility
+            if simple_view
+            else self._card_field_visibility
+        )
         if fields.get("parameters", True):
             lines.append(f"Parameters: {data.get('total_params_friendly', '-')}")
         if fields.get("precision", True):
@@ -2766,7 +2943,9 @@ class MainWindow(QMainWindow):
                 continue
             blocks.append(self._build_card_info_text(d, simple_view))
         if blocks:
-            QApplication.clipboard().setText(("\n\n" + ("-" * 50) + "\n\n").join(blocks))
+            QApplication.clipboard().setText(
+                ("\n\n" + ("-" * 50) + "\n\n").join(blocks)
+            )
 
     def _on_card_context_menu(self, filepath: str, simple_view: bool, global_pos):
         data = self._find_result_by_path(filepath)
@@ -2779,12 +2958,16 @@ class MainWindow(QMainWindow):
         visible = set(self._visible_paths())
         selected_visible = [p for p in self._selected_paths if p in visible]
         if filepath in self._selected_paths and len(selected_visible) > 1:
-            copy_selected = menu.addAction(f"Copy Info from selected files [{len(selected_visible)}]")
+            copy_selected = menu.addAction(
+                f"Copy Info from selected files [{len(selected_visible)}]"
+            )
         chosen = menu.exec(global_pos)
         if chosen == view_raw:
             self._show_raw_for_filepath(filepath)
         elif chosen == copy_info:
-            QApplication.clipboard().setText(self._build_card_info_text(data, simple_view))
+            QApplication.clipboard().setText(
+                self._build_card_info_text(data, simple_view)
+            )
         elif copy_selected is not None and chosen == copy_selected:
             self._copy_selected_cards_info(simple_view)
 
@@ -2816,10 +2999,14 @@ class MainWindow(QMainWindow):
         if filepath not in visible:
             return
         idx = visible.index(filepath)
-        if shift and self._last_selected_row >= 0 and self._last_selected_row < len(visible):
+        if (
+            shift
+            and self._last_selected_row >= 0
+            and self._last_selected_row < len(visible)
+        ):
             lo = min(self._last_selected_row, idx)
             hi = max(self._last_selected_row, idx)
-            for fp in visible[lo:hi + 1]:
+            for fp in visible[lo : hi + 1]:
                 self._selected_paths.add(fp)
         elif ctrl:
             if filepath in self._selected_paths:
@@ -2917,6 +3104,7 @@ class MainWindow(QMainWindow):
             return
         mime = QMimeData()
         from PyQt6.QtCore import QUrl
+
         urls = [QUrl.fromLocalFile(p) for p in selected]
         mime.setUrls(urls)
         QApplication.clipboard().setMimeData(mime)
@@ -2929,6 +3117,7 @@ class MainWindow(QMainWindow):
         if not target:
             return
         import shutil
+
         moved = set()
         for src in selected:
             try:
@@ -2994,7 +3183,11 @@ class MainWindow(QMainWindow):
                 item.setText(Path(fp).name if fp else item.text())
 
     def _copy_selected_table_cells(self):
-        indexes = [i for i in self.table.selectedIndexes() if not self.table.isRowHidden(i.row())]
+        indexes = [
+            i
+            for i in self.table.selectedIndexes()
+            if not self.table.isRowHidden(i.row())
+        ]
         if not indexes:
             return
         indexes.sort(key=lambda x: (x.row(), x.column()))
@@ -3010,7 +3203,9 @@ class MainWindow(QMainWindow):
             for c in cols:
                 if c == 0:
                     cb = self.table.cellWidget(row, c)
-                    vals.append("1" if isinstance(cb, QCheckBox) and cb.isChecked() else "0")
+                    vals.append(
+                        "1" if isinstance(cb, QCheckBox) and cb.isChecked() else "0"
+                    )
                 else:
                     it = self.table.item(row, c)
                     vals.append(it.text() if it else "")
@@ -3046,7 +3241,9 @@ class MainWindow(QMainWindow):
     def _show_raw_summary(self, filepath: str):
         data = self._result_for_filepath(filepath)
         if not data:
-            self.raw_text.setPlainText("No inspection summary is available for this model.")
+            self.raw_text.setPlainText(
+                "No inspection summary is available for this model."
+            )
             self._raw_loaded_filepath = None
             return
         lines = [
@@ -3056,17 +3253,19 @@ class MainWindow(QMainWindow):
         resolved = data.get("resolved_filepath")
         if resolved and resolved != filepath:
             lines.append(f"Resolved path: {resolved}")
-        lines.extend([
-            f"Architecture: {data.get('architecture', 'Unknown')}",
-            f"Model type: {data.get('model_type', 'Unknown')}",
-            f"Size: {data.get('file_size_friendly', '-')}",
-            f"Parameters: {data.get('total_params_friendly', '-')}",
-            f"Tensors: {data.get('tensor_count', 0)}",
-            f"Precision: {data.get('precision_display') or data.get('precision_summary', '-')}",
-            "",
-            "Full tensor key dump is not loaded automatically for large files.",
-            "Click Load Full Dump to generate it.",
-        ])
+        lines.extend(
+            [
+                f"Architecture: {data.get('architecture', 'Unknown')}",
+                f"Model type: {data.get('model_type', 'Unknown')}",
+                f"Size: {data.get('file_size_friendly', '-')}",
+                f"Parameters: {data.get('total_params_friendly', '-')}",
+                f"Tensors: {data.get('tensor_count', 0)}",
+                f"Precision: {data.get('precision_display') or data.get('precision_summary', '-')}",
+                "",
+                "Full tensor key dump is not loaded automatically for large files.",
+                "Click Load Full Dump to generate it.",
+            ]
+        )
         self.raw_text.setPlainText("\n".join(lines))
         self._raw_loaded_filepath = None
 
@@ -3115,6 +3314,7 @@ class MainWindow(QMainWindow):
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -3127,6 +3327,6 @@ def main():
         pyi_splash.close()
     sys.exit(app.exec())
 
+
 if __name__ == "__main__":
     main()
-

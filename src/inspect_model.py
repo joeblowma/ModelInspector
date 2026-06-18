@@ -33,29 +33,72 @@ def _resolve_display_path(filepath: str) -> str:
     except OSError:
         return str(Path(filepath).absolute())
 
+
 DTYPE_BITS = {
-    "F64": 64, "F32": 32, "F16": 16, "BF16": 16,
-    "I64": 64, "I32": 32, "I16": 16, "I8": 8, "U8": 8,
-    "F8_E4M3": 8, "F8_E5M2": 8,
+    "F64": 64,
+    "F32": 32,
+    "F16": 16,
+    "BF16": 16,
+    "I64": 64,
+    "I32": 32,
+    "I16": 16,
+    "I8": 8,
+    "U8": 8,
+    "F8_E4M3": 8,
+    "F8_E5M2": 8,
 }
 
 DTYPE_FRIENDLY = {
-    "F64": "float64", "F32": "float32", "F16": "float16", "BF16": "bfloat16",
-    "I64": "int64", "I32": "int32", "I16": "int16", "I8": "int8", "U8": "uint8",
-    "F8_E4M3": "float8 (E4M3)", "F8_E5M2": "float8 (E5M2)",
+    "F64": "float64",
+    "F32": "float32",
+    "F16": "float16",
+    "BF16": "bfloat16",
+    "I64": "int64",
+    "I32": "int32",
+    "I16": "int16",
+    "I8": "int8",
+    "U8": "uint8",
+    "F8_E4M3": "float8 (E4M3)",
+    "F8_E5M2": "float8 (E5M2)",
 }
 
 FINGERPRINTS = [
-    "distilled_guidance_layer", "individual_token_refiner",
-    "double_stream_modulation", "joint_blocks", "context_block",
-    "x_block", "caption_projection", "txt_norm", "mlp_t5",
-    "cap_embedder", "head.modulation", "head_modulation",
-    "adaln_single", "patchify_proj", "double_blocks", "single_blocks",
-    "img_attn", "txt_attn", "input_blocks", "output_blocks",
-    "middle_block", "label_emb", "conditioner", "diffusion_model",
-    "lora_te_", "lora_te1_", "lora_te2_", "lora_unet_",
-    "cross_attn", "self_attn", "blocks", "model.layers",
-    "embed_tokens", "guidance_in", "attn2", "noise_refiner",
+    "distilled_guidance_layer",
+    "individual_token_refiner",
+    "double_stream_modulation",
+    "joint_blocks",
+    "context_block",
+    "x_block",
+    "caption_projection",
+    "txt_norm",
+    "mlp_t5",
+    "cap_embedder",
+    "head.modulation",
+    "head_modulation",
+    "adaln_single",
+    "patchify_proj",
+    "double_blocks",
+    "single_blocks",
+    "img_attn",
+    "txt_attn",
+    "input_blocks",
+    "output_blocks",
+    "middle_block",
+    "label_emb",
+    "conditioner",
+    "diffusion_model",
+    "lora_te_",
+    "lora_te1_",
+    "lora_te2_",
+    "lora_unet_",
+    "cross_attn",
+    "self_attn",
+    "blocks",
+    "model.layers",
+    "embed_tokens",
+    "guidance_in",
+    "attn2",
+    "noise_refiner",
     "transformer_blocks",
 ]
 
@@ -63,6 +106,7 @@ FINGERPRINTS = [
 # ---------------------------------------------------------------------------
 # Component detection
 # ---------------------------------------------------------------------------
+
 
 def detect_components(keys: list[str]):
     components = {
@@ -78,20 +122,29 @@ def detect_components(keys: list[str]):
     for k in keys:
         if k.startswith("model.diffusion_model."):
             components["unet"] = True
-        if ("double_blocks." in k or "single_blocks." in k or
-                "single_transformer_blocks." in k or k.startswith("transformer.") or
-                k.startswith("model.double_layers.") or
-                k.startswith("model.single_layers.")):
+        if (
+            "double_blocks." in k
+            or "single_blocks." in k
+            or "single_transformer_blocks." in k
+            or k.startswith("transformer.")
+            or k.startswith("model.double_layers.")
+            or k.startswith("model.single_layers.")
+        ):
             components["transformer"] = True
         if k.startswith("first_stage_model."):
             components["vae"] = True
-        if (k.startswith("vae.") or
-            (k.startswith("encoder.") and "text" not in k) or
-            (k.startswith("decoder.") and "text" not in k)):
+        if (
+            k.startswith("vae.")
+            or (k.startswith("encoder.") and "text" not in k)
+            or (k.startswith("decoder.") and "text" not in k)
+        ):
             components["vae"] = True
         # Standard text encoder prefixes
-        if (k.startswith("cond_stage_model.") or k.startswith("text_encoder.") or
-                k.startswith("conditioner.embedders.")):
+        if (
+            k.startswith("cond_stage_model.")
+            or k.startswith("text_encoder.")
+            or k.startswith("conditioner.embedders.")
+        ):
             components["text_encoder"] = True
         if k.startswith("text_encoder_2."):
             components["text_encoder_2"] = True
@@ -101,15 +154,28 @@ def detect_components(keys: list[str]):
             parts = k.split(".")
             if len(parts) >= 2:
                 enc_name = parts[1]
-                components["text_encoders"][enc_name] = \
+                components["text_encoders"][enc_name] = (
                     components["text_encoders"].get(enc_name, 0) + 1
+                )
                 components["text_encoder"] = True
-        if ("lora_up" in k or "lora_down" in k or "lora_A" in k or
-                "lora_B" in k or ".lora." in k or k.startswith("lora_")):
+        if (
+            "lora_up" in k
+            or "lora_down" in k
+            or "lora_A" in k
+            or "lora_B" in k
+            or ".lora." in k
+            or k.startswith("lora_")
+        ):
             components["lora"] = True
         # LyCORIS family adapters may not use lora_up/lora_down keys.
-        if (k.startswith("lycoris_") or "lokr_" in k or "loha_" in k or
-                "hada_" in k or "dora_" in k or "glora" in k):
+        if (
+            k.startswith("lycoris_")
+            or "lokr_" in k
+            or "loha_" in k
+            or "hada_" in k
+            or "dora_" in k
+            or "glora" in k
+        ):
             components["lora"] = True
 
     return components
@@ -119,21 +185,31 @@ def _tensor_component_bucket(key: str) -> str | None:
     """Map a tensor key to a high-level model component bucket."""
     if key.startswith("model.diffusion_model."):
         return "unet"
-    if ("double_blocks." in key or "single_blocks." in key or
-            "single_transformer_blocks." in key or key.startswith("transformer.") or
-            key.startswith("model.double_layers.") or
-            key.startswith("model.single_layers.")):
+    if (
+        "double_blocks." in key
+        or "single_blocks." in key
+        or "single_transformer_blocks." in key
+        or key.startswith("transformer.")
+        or key.startswith("model.double_layers.")
+        or key.startswith("model.single_layers.")
+    ):
         return "transformer"
     if key.startswith("first_stage_model."):
         return "vae"
-    if (key.startswith("vae.") or
-            (key.startswith("encoder.") and "text" not in key) or
-            (key.startswith("decoder.") and "text" not in key)):
+    if (
+        key.startswith("vae.")
+        or (key.startswith("encoder.") and "text" not in key)
+        or (key.startswith("decoder.") and "text" not in key)
+    ):
         return "vae"
     if key.startswith("text_encoder_2."):
         return "text_encoder_2"
-    if (key.startswith("cond_stage_model.") or key.startswith("text_encoder.") or
-            key.startswith("conditioner.embedders.") or key.startswith("text_encoders.")):
+    if (
+        key.startswith("cond_stage_model.")
+        or key.startswith("text_encoder.")
+        or key.startswith("conditioner.embedders.")
+        or key.startswith("text_encoders.")
+    ):
         return "text_encoder"
     return None
 
@@ -150,9 +226,11 @@ def _summarize_dtype_mix(dtype_counts: Counter, total_tensors: int) -> str:
     dominant_pct = dominant_count / total_tensors * 100
     if dominant_pct >= 99.0:
         return DTYPE_FRIENDLY.get(dominant_dtype, dominant_dtype)
-    return "Mixed (" + ", ".join(
-        DTYPE_FRIENDLY.get(d, d) for d, _ in dtype_counts.most_common()
-    ) + ")"
+    return (
+        "Mixed ("
+        + ", ".join(DTYPE_FRIENDLY.get(d, d) for d, _ in dtype_counts.most_common())
+        + ")"
+    )
 
 
 def analyze_component_precisions(tensor_info: dict) -> dict[str, Counter]:
@@ -188,7 +266,9 @@ def build_component_precision_summary(component_dtypes: dict[str, Counter]) -> s
     return " | ".join(parts)
 
 
-def build_component_precision_map(component_dtypes: dict[str, Counter]) -> dict[str, str]:
+def build_component_precision_map(
+    component_dtypes: dict[str, Counter],
+) -> dict[str, str]:
     """Return per-component precision summaries keyed by component id."""
     ordered_keys = [
         "unet",
@@ -277,32 +357,53 @@ def detect_adapter_type(keys: list[str], metadata: dict) -> str | None:
     lyco_cfg = str(metadata.get("lycoris_config", "")).lower()
     ss_network_module = str(metadata.get("ss_network_module", "")).lower()
     ss_network_args = str(metadata.get("ss_network_args", "")).lower()
-    algo_lokr = bool(re.search(r'"algo"\s*:\s*"lokr"', lyco_cfg + " " + ss_network_args))
-    algo_loha = bool(re.search(r'"algo"\s*:\s*"loha"', lyco_cfg + " " + ss_network_args))
-    algo_dora = bool(re.search(r'"algo"\s*:\s*"dora"', lyco_cfg + " " + ss_network_args))
-    algo_glora = bool(re.search(r'"algo"\s*:\s*"glora"', lyco_cfg + " " + ss_network_args))
+    algo_lokr = bool(
+        re.search(r'"algo"\s*:\s*"lokr"', lyco_cfg + " " + ss_network_args)
+    )
+    algo_loha = bool(
+        re.search(r'"algo"\s*:\s*"loha"', lyco_cfg + " " + ss_network_args)
+    )
+    algo_dora = bool(
+        re.search(r'"algo"\s*:\s*"dora"', lyco_cfg + " " + ss_network_args)
+    )
+    algo_glora = bool(
+        re.search(r'"algo"\s*:\s*"glora"', lyco_cfg + " " + ss_network_args)
+    )
 
     # Specific algorithms first
-    if ("lokr_w1" in key_blob or "lokr_w2" in key_blob or algo_lokr):
+    if "lokr_w1" in key_blob or "lokr_w2" in key_blob or algo_lokr:
         return "LoKr"
-    if ("hada_w1_a" in key_blob or "hada_w1_b" in key_blob or
-            "hada_w2_a" in key_blob or "hada_w2_b" in key_blob or algo_loha):
+    if (
+        "hada_w1_a" in key_blob
+        or "hada_w1_b" in key_blob
+        or "hada_w2_a" in key_blob
+        or "hada_w2_b" in key_blob
+        or algo_loha
+    ):
         return "LoHa"
     if "dora_scale" in key_blob or algo_dora:
         return "DoRA"
     # GLoRA commonly stores factorized weights as a1/a2/b1/b2 and algo in ss_network_args.
     has_glora_factorized = all(tok in key_blob for tok in (".a1", ".a2", ".b1", ".b2"))
-    if ("glora" in key_blob or algo_glora or has_glora_factorized):
+    if "glora" in key_blob or algo_glora or has_glora_factorized:
         return "GLoRA"
 
     # Generic LyCORIS container (non-LoRA variants, unknown exact algo)
-    if ("lycoris_" in key_blob or "lycoris" in lyco_cfg or
-            "lycoris" in ss_network_module):
+    if (
+        "lycoris_" in key_blob
+        or "lycoris" in lyco_cfg
+        or "lycoris" in ss_network_module
+    ):
         return "LyCORIS"
 
     # Standard LoRA formats
-    if ("lora_up" in key_blob or "lora_down" in key_blob or
-            "lora_a" in key_blob or "lora_b" in key_blob or ".lora." in key_blob):
+    if (
+        "lora_up" in key_blob
+        or "lora_down" in key_blob
+        or "lora_a" in key_blob
+        or "lora_b" in key_blob
+        or ".lora." in key_blob
+    ):
         return "LoRA"
 
     return None
@@ -312,8 +413,10 @@ def detect_adapter_type(keys: list[str], metadata: dict) -> str | None:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def detect_architecture(keys: list[str], shapes: dict, total_params: int,
-                        components: dict, metadata: dict):
+
+def detect_architecture(
+    keys: list[str], shapes: dict, total_params: int, components: dict, metadata: dict
+):
     """Detect model architecture. Returns (arch_name, details_dict)."""
     details = {}
 
@@ -351,6 +454,7 @@ def detect_architecture(keys: list[str], shapes: dict, total_params: int,
 # Metadata-based detection
 # ---------------------------------------------------------------------------
 
+
 def _build_metadata_blob(metadata: dict):
     """Build normalized metadata text plus key fields for variant detection."""
     spec = metadata.get("modelspec.architecture", "").lower()
@@ -363,7 +467,9 @@ def _build_metadata_blob(metadata: dict):
     sd_model = metadata.get("ss_sd_model_name", "").lower()
 
     # Also scan all short metadata values for clues.
-    all_meta = f"{spec} {gguf_arch} {gguf_name} {ss} {title} {desc} {output_name} {sd_model}"
+    all_meta = (
+        f"{spec} {gguf_arch} {gguf_name} {ss} {title} {desc} {output_name} {sd_model}"
+    )
     for _, mv in metadata.items():
         v = str(mv).lower()
         if len(v) < 200:  # skip huge JSON blobs
@@ -482,13 +588,22 @@ def _detect_from_metadata(metadata: dict):
         return gguf_arch
 
     # SD3 variants (check 3.5 before 3)
-    if ("sd3.5" in all_meta or "sd35" in all_meta or
-            "stable-diffusion-3.5" in all_meta or "stable_diffusion_3_5" in all_meta or
-            "3-5-large" in all_meta or "3-5-medium" in all_meta or
-            "stable-diffusion-3-3-5" in all_meta):
+    if (
+        "sd3.5" in all_meta
+        or "sd35" in all_meta
+        or "stable-diffusion-3.5" in all_meta
+        or "stable_diffusion_3_5" in all_meta
+        or "3-5-large" in all_meta
+        or "3-5-medium" in all_meta
+        or "stable-diffusion-3-3-5" in all_meta
+    ):
         return "SD3.5"
-    if ("sd3" in all_meta or "stable-diffusion-v3" in all_meta or
-            "stable_diffusion_3" in all_meta or "stable-diffusion-3" in all_meta):
+    if (
+        "sd3" in all_meta
+        or "stable-diffusion-v3" in all_meta
+        or "stable_diffusion_3" in all_meta
+        or "stable-diffusion-3" in all_meta
+    ):
         # Make sure we don't false-match on "stable-diffusion-3-3-5" (already caught above)
         return "SD3"
 
@@ -496,8 +611,11 @@ def _detect_from_metadata(metadata: dict):
     # NAI: check sshs_meta for "illustrious" from training checkpoint name
     if "noob" in all_meta or "nai" in all_meta.split():
         return "NAI"
-    if (("pony" in all_meta and "v7" in all_meta) or
-            "ponyv7" in all_meta or "pony v7" in all_meta):
+    if (
+        ("pony" in all_meta and "v7" in all_meta)
+        or "ponyv7" in all_meta
+        or "pony v7" in all_meta
+    ):
         return "Pony7"
     if "pony" in all_meta or "pdxl" in all_meta:
         return "PDXL"
@@ -508,9 +626,14 @@ def _detect_from_metadata(metadata: dict):
         return "ILXL"
     if "sdxl" in all_meta or "sd_xl" in all_meta:
         return "SDXL"
-    if ("v1-5" in all_meta or "v1_5" in all_meta or
-            "stable-diffusion-v1" in all_meta or ss == "sd_1.5" or
-            "sd 1.5" in all_meta or "sd1.5" in all_meta):
+    if (
+        "v1-5" in all_meta
+        or "v1_5" in all_meta
+        or "stable-diffusion-v1" in all_meta
+        or ss == "sd_1.5"
+        or "sd 1.5" in all_meta
+        or "sd1.5" in all_meta
+    ):
         return "SD 1.5"
 
     # Wan: check before Hunyuan because Wan metadata can include
@@ -545,8 +668,12 @@ def _detect_from_metadata(metadata: dict):
 
     # Qwen
     if "qwen" in all_meta:
-        if ("edit" in all_meta or "qwen_edit" in all_meta or
-                "qwen-edit" in all_meta or "image_edit" in all_meta):
+        if (
+            "edit" in all_meta
+            or "qwen_edit" in all_meta
+            or "qwen-edit" in all_meta
+            or "image_edit" in all_meta
+        ):
             return "Qwen Edit"
         return None
 
@@ -557,6 +684,7 @@ def _detect_from_metadata(metadata: dict):
 # Key-pattern detection  (ordered most-specific → least-specific)
 # ---------------------------------------------------------------------------
 
+
 def _zimage_label(metadata=None, key_blob=""):
     """Return canonical Z-Image label from behavior hints (CFG vs no-CFG)."""
     all_hints = key_blob.lower()
@@ -566,14 +694,18 @@ def _zimage_label(metadata=None, key_blob=""):
 
     # Variant logic intentionally avoids model-name matching.
     # Official behavior split: Turbo uses no CFG, Base uses CFG.
-    has_cfg_true = bool(re.search(
-        r'(?:use_cfg|do_cfg|classifier[_ ]?free[_ ]?guidance)\s*["=: ]+\s*true',
-        all_hints,
-    ))
-    has_cfg_false = bool(re.search(
-        r'(?:use_cfg|do_cfg|classifier[_ ]?free[_ ]?guidance)\s*["=: ]+\s*false',
-        all_hints,
-    ))
+    has_cfg_true = bool(
+        re.search(
+            r'(?:use_cfg|do_cfg|classifier[_ ]?free[_ ]?guidance)\s*["=: ]+\s*true',
+            all_hints,
+        )
+    )
+    has_cfg_false = bool(
+        re.search(
+            r'(?:use_cfg|do_cfg|classifier[_ ]?free[_ ]?guidance)\s*["=: ]+\s*false',
+            all_hints,
+        )
+    )
 
     # Prefer Turbo when there is any explicit no-CFG signal.
     if has_cfg_false:
@@ -585,7 +717,9 @@ def _zimage_label(metadata=None, key_blob=""):
     return "Z-Image Turbo"
 
 
-def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata, details):
+def _detect_from_keys(
+    keys, key_blob, shapes, total_params, components, metadata, details
+):
 
     # ── Chroma (Flux-based, unique distilled_guidance_layer) ──────────
     if "distilled_guidance_layer" in key_blob:
@@ -610,7 +744,9 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
 
     # ── SD3 / SD3.5 (joint_blocks + context_block / x_block) ─────────
     #    Also matches kohya format: lora_unet_joint_blocks_*_context_block_*
-    if "joint_blocks" in key_blob and ("context_block" in key_blob or "x_block" in key_blob):
+    if "joint_blocks" in key_blob and (
+        "context_block" in key_blob or "x_block" in key_blob
+    ):
         if "x_block" in key_blob and "attn2" in key_blob:
             return "SD3.5", details
         return "SD3", details
@@ -625,15 +761,19 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
         return "LTX", details
 
     # ── Aura Flow (checkpoint key layout: model.single_layers/double_layers)
-    if ("model.single_layers." in key_blob and
-            "model.double_layers." in key_blob and
-            "model.cond_seq_linear" in key_blob):
+    if (
+        "model.single_layers." in key_blob
+        and "model.double_layers." in key_blob
+        and "model.cond_seq_linear" in key_blob
+    ):
         return "Aura Flow", details
 
     # ── HiDream (unique caption_projection) ───────────────────────────
-    if ("caption_projection" in key_blob and
-            "adaln_single" not in key_blob and
-            "patchify_proj" not in key_blob):
+    if (
+        "caption_projection" in key_blob
+        and "adaln_single" not in key_blob
+        and "patchify_proj" not in key_blob
+    ):
         return "HiDream", details
 
     # ── Qwen Image / Qwen Edit (unique add_k_proj / add_q_proj) ─────
@@ -641,20 +781,29 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
     #    is unique — no other architecture uses these key names.
     if "add_k_proj" in key_blob or "add_q_proj" in key_blob:
         meta_blob = _build_metadata_blob(metadata)["all_meta"]
-        if ("qwen_edit" in meta_blob or "qwen-edit" in meta_blob or
-                "image_edit" in meta_blob or " edit " in f" {meta_blob} "):
+        if (
+            "qwen_edit" in meta_blob
+            or "qwen-edit" in meta_blob
+            or "image_edit" in meta_blob
+            or " edit " in f" {meta_blob} "
+        ):
             return "Qwen Edit", details
         # Full merged checkpoints with qwen text encoder + VAE are edit models.
-        if (not components.get("lora") and
-                "model.diffusion_model." in key_blob and
-                "text_encoders.qwen" in key_blob and
-                "vae." in key_blob):
+        if (
+            not components.get("lora")
+            and "model.diffusion_model." in key_blob
+            and "text_encoders.qwen" in key_blob
+            and "vae." in key_blob
+        ):
             return "Qwen Edit", details
         if "img_mod." not in key_blob and "txt_mod." not in key_blob:
             return "Qwen Edit", details
         # Edit adapters are commonly saved under transformer.transformer_blocks
         # (without diffusion_model prefix) and mixed lora.down/lora.up keys.
-        if "transformer.transformer_blocks" in key_blob and "diffusion_model" not in key_blob:
+        if (
+            "transformer.transformer_blocks" in key_blob
+            and "diffusion_model" not in key_blob
+        ):
             return "Qwen Edit", details
         return "Qwen Image", details
     # Also check for top-level txt_norm (full Qwen checkpoints)
@@ -701,9 +850,9 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
     if "double_blocks" in key_blob or "single_blocks" in key_blob:
         has_video_dims = any(len(shapes.get(k, [])) == 5 for k in keys)
         has_hunyuanvideo_lora_layout = (
-            "transformer.double_blocks." in key_blob and
-            ("img_attn_qkv" in key_blob or "txt_attn_qkv" in key_blob) and
-            ("img_mod.linear" in key_blob or "txt_mod.linear" in key_blob)
+            "transformer.double_blocks." in key_blob
+            and ("img_attn_qkv" in key_blob or "txt_attn_qkv" in key_blob)
+            and ("img_mod.linear" in key_blob or "txt_mod.linear" in key_blob)
         )
         if has_video_dims or has_hunyuanvideo_lora_layout:
             return "HunyuanVideo", details
@@ -714,10 +863,12 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
     #    (note: "single_transformer_blocks" not "single_blocks")
     if "single_transformer_blocks" in key_blob:
         return _detect_flux_variant(keys, key_blob, shapes, total_params, details)
-    if ("transformer.transformer_blocks" in key_blob and
-            "double_blocks" not in key_blob and
-            "joint_blocks" not in key_blob and
-            "add_k_proj" not in key_blob):
+    if (
+        "transformer.transformer_blocks" in key_blob
+        and "double_blocks" not in key_blob
+        and "joint_blocks" not in key_blob
+        and "add_k_proj" not in key_blob
+    ):
         # Diffusers-format Flux LoRA (transformer.transformer_blocks = double_blocks equivalent)
         return _detect_flux_variant(keys, key_blob, shapes, total_params, details)
 
@@ -731,36 +882,47 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
     if "transformer_blocks" in key_blob:
         # If no input_blocks/output_blocks/diffusion_model, this is likely
         # a transformer-based model (LTX, PixArt, etc), not SD.
-        if ("input_blocks" not in key_blob and "output_blocks" not in key_blob
-                and "diffusion_model" not in key_blob
-                # Avoid false positives for SD/SDXL LoRA + LyCORIS formats.
-                and "lora_unet_" not in key_blob
-                and "lora_te_" not in key_blob
-                and "lora_te1_" not in key_blob
-                and "lora_te2_" not in key_blob
-                and "down_blocks" not in key_blob
-                and "up_blocks" not in key_blob
-                and "mid_block" not in key_blob
-                and "lycoris" not in key_blob):
+        if (
+            "input_blocks" not in key_blob
+            and "output_blocks" not in key_blob
+            and "diffusion_model" not in key_blob
+            # Avoid false positives for SD/SDXL LoRA + LyCORIS formats.
+            and "lora_unet_" not in key_blob
+            and "lora_te_" not in key_blob
+            and "lora_te1_" not in key_blob
+            and "lora_te2_" not in key_blob
+            and "down_blocks" not in key_blob
+            and "up_blocks" not in key_blob
+            and "mid_block" not in key_blob
+            and "lycoris" not in key_blob
+        ):
             return "LTX", details
 
     # ── SD 1.5 / SDXL (input_blocks / diffusion_model) ───────────────
-    if ("input_blocks" in key_blob or "output_blocks" in key_blob or
-            "middle_block" in key_blob):
+    if (
+        "input_blocks" in key_blob
+        or "output_blocks" in key_blob
+        or "middle_block" in key_blob
+    ):
         return _detect_sd_variant(
             keys, key_blob, shapes, total_params, components, metadata, details
         )
     # Diffusers UNet checkpoints
-    if ("down_blocks" in key_blob and "up_blocks" in key_blob and
-            ("mid_block" in key_blob or "conv_in" in key_blob)):
+    if (
+        "down_blocks" in key_blob
+        and "up_blocks" in key_blob
+        and ("mid_block" in key_blob or "conv_in" in key_blob)
+    ):
         return _detect_sd_variant(
             keys, key_blob, shapes, total_params, components, metadata, details
         )
     # diffusion_model prefix — but NOT diffusion_model.transformer_blocks
     # (already caught as LTX) and NOT diffusion_model.layers (Z-Image)
     if "diffusion_model" in key_blob:
-        if ("diffusion_model.transformer_blocks" not in key_blob and
-                "diffusion_model.layers." not in key_blob):
+        if (
+            "diffusion_model.transformer_blocks" not in key_blob
+            and "diffusion_model.layers." not in key_blob
+        ):
             return _detect_sd_variant(
                 keys, key_blob, shapes, total_params, components, metadata, details
             )
@@ -776,8 +938,7 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
         return "SD 1.5", details
 
     # ── Wan LoRA fallback (blocks + cross_attn + self_attn) ──────────
-    if ("cross_attn" in key_blob and "self_attn" in key_blob and
-            "blocks" in key_blob):
+    if "cross_attn" in key_blob and "self_attn" in key_blob and "blocks" in key_blob:
         return _detect_wan_variant(keys, shapes, total_params, metadata, details)
 
     # ── Ambiguous blocks.{N} — use dimension analysis ────────────────
@@ -785,25 +946,40 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
         return _detect_from_dims(keys, shapes, total_params, metadata, details)
 
     # ── Qwen LLM (standalone text encoder: model.layers + embed_tokens)
-    if ("model.layers" in key_blob and "self_attn" in key_blob and
-            "embed_tokens" in key_blob):
+    if (
+        "model.layers" in key_blob
+        and "self_attn" in key_blob
+        and "embed_tokens" in key_blob
+    ):
         return "Qwen (text encoder)", details
 
     if components.get("unet"):
-        if ("conditioner." in key_blob or
-                "conditioner.embedders.1" in key_blob or
-                "text_encoder_2" in key_blob or
-                "clip_g" in key_blob):
+        if (
+            "conditioner." in key_blob
+            or "conditioner.embedders.1" in key_blob
+            or "text_encoder_2" in key_blob
+            or "clip_g" in key_blob
+        ):
             return _detect_sdxl_pony_ilxl(keys, metadata, details), details
         return "SD 1.5", details
 
     # ── Standalone components ─────────────────────────────────────────
-    if components.get("vae") and not components.get("unet") and not components.get("transformer"):
+    if (
+        components.get("vae")
+        and not components.get("unet")
+        and not components.get("transformer")
+    ):
         vae_prefixes = ("first_stage_model.", "vae.", "encoder.", "decoder.")
-        non_vae = [k for k in keys if not any(k.startswith(pref) for pref in vae_prefixes)]
+        non_vae = [
+            k for k in keys if not any(k.startswith(pref) for pref in vae_prefixes)
+        ]
         if len(non_vae) <= max(8, len(keys) // 50):
             return "VAE (standalone)", details
-    if components.get("text_encoder") and not components.get("unet") and not components.get("transformer"):
+    if (
+        components.get("text_encoder")
+        and not components.get("unet")
+        and not components.get("transformer")
+    ):
         return "Text Encoder (standalone)", details
 
     return "Unknown", details
@@ -812,6 +988,7 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
 # ---------------------------------------------------------------------------
 # Architecture-specific sub-detectors
 # ---------------------------------------------------------------------------
+
 
 def _detect_flux_variant(keys, key_blob, shapes, total_params, details):
     """Distinguish Flux.1 Dev / Schnell / Kontext and count blocks."""
@@ -860,10 +1037,16 @@ def _detect_flux_variant(keys, key_blob, shapes, total_params, details):
     return "Flux.1 Dev", details
 
 
-def _detect_sd_variant(keys, key_blob, shapes, total_params, components, metadata, details):
+def _detect_sd_variant(
+    keys, key_blob, shapes, total_params, components, metadata, details
+):
     """Distinguish SD 1.5 vs SDXL (full checkpoints and LoRAs)."""
-    is_sdxl = ("label_emb" in key_blob or "conditioner" in key_blob or
-               "lora_te2_" in key_blob or "lora_te1_" in key_blob)
+    is_sdxl = (
+        "label_emb" in key_blob
+        or "conditioner" in key_blob
+        or "lora_te2_" in key_blob
+        or "lora_te1_" in key_blob
+    )
 
     if not is_sdxl:
         # Dimension check: SDXL cross-attn context_dim = 2048
@@ -896,8 +1079,11 @@ def _detect_sdxl_pony_ilxl(keys, metadata, details):
     _detect_from_metadata.  If we reach here there was no metadata match,
     so return plain SDXL."""
     meta_blob = _build_metadata_blob(metadata)["all_meta"]
-    if (("pony" in meta_blob and "v7" in meta_blob) or
-            "ponyv7" in meta_blob or "pony v7" in meta_blob):
+    if (
+        ("pony" in meta_blob and "v7" in meta_blob)
+        or "ponyv7" in meta_blob
+        or "pony v7" in meta_blob
+    ):
         return "Pony7"
     if "pony" in meta_blob or "pdxl" in meta_blob:
         return "PDXL"
@@ -1017,11 +1203,8 @@ def _detect_wan_variant(keys, shapes, total_params, metadata, details):
     has_i2v = (
         "img_emb" in key_blob or " i2v " in f" {all_meta} " or "image2video" in all_meta
     )
-    has_t2v = (" t2v " in f" {all_meta} " or "text2video" in all_meta)
-    is_lora = any(
-        ("lora_" in k or ".lora." in k or "lycoris_" in k)
-        for k in keys
-    )
+    has_t2v = " t2v " in f" {all_meta} " or "text2video" in all_meta
+    is_lora = any(("lora_" in k or ".lora." in k or "lycoris_" in k) for k in keys)
     if has_i2v:
         return f"{wan_ver} I2V", details
     if has_t2v or not is_lora:
@@ -1060,13 +1243,16 @@ def _detect_from_dims(keys, shapes, total_params, metadata, details):
 # Model type classification
 # ---------------------------------------------------------------------------
 
+
 def classify_model_type(components: dict, arch: str):
     """Classify: checkpoint, single component, or LoRA."""
     if components["lora"]:
         return "LoRA"
 
     has_backbone = components["unet"] or components["transformer"]
-    has_aux = components["vae"] or components["text_encoder"] or components["text_encoder_2"]
+    has_aux = (
+        components["vae"] or components["text_encoder"] or components["text_encoder_2"]
+    )
 
     if has_backbone and has_aux:
         return "Checkpoint"
@@ -1074,7 +1260,9 @@ def classify_model_type(components: dict, arch: str):
         return "Backbone"
     if components["vae"] and not has_backbone:
         return "VAE"
-    if (components["text_encoder"] or components["text_encoder_2"]) and not has_backbone:
+    if (
+        components["text_encoder"] or components["text_encoder_2"]
+    ) and not has_backbone:
         return "Text Encoder"
 
     return "Unknown"
@@ -1097,9 +1285,17 @@ def detect_moe(keys: list[str], metadata: dict, arch: str) -> dict:
 
     for key, value in metadata.items():
         lk = str(key).lower()
-        if lk.endswith(".expert_count") or lk.endswith(".num_experts") or lk.endswith(".n_experts"):
+        if (
+            lk.endswith(".expert_count")
+            or lk.endswith(".num_experts")
+            or lk.endswith(".n_experts")
+        ):
             expert_count = intish(value) or expert_count
-        elif lk.endswith(".expert_used_count") or lk.endswith(".num_experts_per_tok") or lk.endswith(".experts_per_token"):
+        elif (
+            lk.endswith(".expert_used_count")
+            or lk.endswith(".num_experts_per_tok")
+            or lk.endswith(".experts_per_token")
+        ):
             expert_used_count = intish(value) or expert_used_count
         if "expert" in lk or "moe" in lk:
             moe = True
@@ -1125,6 +1321,7 @@ def detect_moe(keys: list[str], metadata: dict, arch: str) -> dict:
 # ---------------------------------------------------------------------------
 # Report formatting
 # ---------------------------------------------------------------------------
+
 
 def format_size(size_bytes: int) -> str:
     size_bytes_f = float(size_bytes) / 1024.0
@@ -1187,11 +1384,14 @@ def _extract_training_meta(metadata: dict) -> dict:
     if train_images is None:
         ds_dirs = _safe_json_loads(metadata.get("ss_dataset_dirs"))
         if isinstance(ds_dirs, dict):
-            train_images = sum(
-                int(v.get("img_count", 0))
-                for v in ds_dirs.values()
-                if isinstance(v, dict)
-            ) or None
+            train_images = (
+                sum(
+                    int(v.get("img_count", 0))
+                    for v in ds_dirs.values()
+                    if isinstance(v, dict)
+                )
+                or None
+            )
     if train_images is not None:
         meta["train_images"] = str(train_images)
 
@@ -1280,19 +1480,15 @@ def _apply_filename_alias_detection(arch: str, filepath: str) -> str:
         return all(v in tokens for v in values)
 
     # These aliases are opt-in and only used as fallback when enabled.
-    if ("ilxl" in collapsed or
-            "illustrious" in collapsed or
-            has_token("illu")):
+    if "ilxl" in collapsed or "illustrious" in collapsed or has_token("illu"):
         return "ILXL"
-    if ("pony7" in collapsed or "ponyv7" in collapsed or
-            has_all("pony", "v7")):
+    if "pony7" in collapsed or "ponyv7" in collapsed or has_all("pony", "v7"):
         return "Pony7"
     if "pdxl" in collapsed or has_token("pony"):
         return "PDXL"
     if has_token("nai"):
         return "NAI"
-    if ("qwenedit" in collapsed or "editqwen" in collapsed or
-            has_all("qwen", "edit")):
+    if "qwenedit" in collapsed or "editqwen" in collapsed or has_all("qwen", "edit"):
         return "Qwen Edit"
     return arch
 
@@ -1324,15 +1520,21 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         metadata = cached.get("metadata") or {}
         file_type = metadata.get("general.file_type")
         quantization = str(cached.get("quantization") or "")
-        if (not quantization or quantization.startswith("FILE_TYPE_")) and isinstance(file_type, int):
-            cached["quantization"] = LLAMA_FILE_TYPE_NAMES.get(file_type, f"FILE_TYPE_{file_type}")
+        if (not quantization or quantization.startswith("FILE_TYPE_")) and isinstance(
+            file_type, int
+        ):
+            cached["quantization"] = LLAMA_FILE_TYPE_NAMES.get(
+                file_type, f"FILE_TYPE_{file_type}"
+            )
         if "is_moe" not in cached:
             metadata = cached.get("metadata") or {}
             moe_info = detect_moe([], metadata, str(cached.get("architecture") or ""))
             cached.update(moe_info)
         return cached
 
-    allow_filename_alias_detection = bool(options.get("allow_filename_alias_detection", False))
+    allow_filename_alias_detection = bool(
+        options.get("allow_filename_alias_detection", False)
+    )
 
     metadata, tensor_info, file_size = read_model_header(filepath)
     if options.get("cache_full_data", False):
@@ -1343,7 +1545,9 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     keys = sorted(tensor_info.keys())
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
-    arch, arch_details = detect_architecture(keys, shapes, total_params, components, metadata)
+    arch, arch_details = detect_architecture(
+        keys, shapes, total_params, components, metadata
+    )
     if allow_filename_alias_detection:
         arch = _apply_filename_alias_detection(arch, filepath)
     model_type = classify_model_type(components, arch)
@@ -1355,13 +1559,15 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     # Build dtype list
     dtype_list = []
     for dtype, count in dtypes.most_common():
-        dtype_list.append({
-            "dtype": dtype,
-            "friendly": DTYPE_FRIENDLY.get(dtype, dtype),
-            "bits": DTYPE_BITS.get(dtype, 0),
-            "count": count,
-            "pct": round(count / len(tensor_info) * 100, 1),
-        })
+        dtype_list.append(
+            {
+                "dtype": dtype,
+                "friendly": DTYPE_FRIENDLY.get(dtype, dtype),
+                "bits": DTYPE_BITS.get(dtype, 0),
+                "count": count,
+                "pct": round(count / len(tensor_info) * 100, 1),
+            }
+        )
 
     # Precision summary
     precision_summary = _summarize_dtype_mix(dtypes, len(tensor_info))
@@ -1456,7 +1662,9 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
     keys = sorted(tensor_info.keys())
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
-    arch, arch_details = detect_architecture(keys, shapes, total_params, components, metadata)
+    arch, arch_details = detect_architecture(
+        keys, shapes, total_params, components, metadata
+    )
     model_type = classify_model_type(components, arch)
 
     sep = "=" * 60
@@ -1471,7 +1679,9 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
     if resolved_filepath != filepath:
         print(f"  Resolved path:  {resolved_filepath}")
     print(f"  File size:      {format_size(file_size)}")
-    print(f"  Format:         {metadata.get('smi.format') or model_format_for_path(filepath)}")
+    print(
+        f"  Format:         {metadata.get('smi.format') or model_format_for_path(filepath)}"
+    )
     if metadata.get("smi.quantization"):
         print(f"  Quantization:   {metadata['smi.quantization']}")
     print(f"  Tensor count:   {len(tensor_info)}")
@@ -1530,9 +1740,11 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
         dominant_dtype = dtypes.most_common(1)[0][0]
         dominant_pct = dominant_count / len(tensor_info) * 100
         if dominant_pct >= 99.0:
-            print(f"  >> Effectively {DTYPE_FRIENDLY.get(dominant_dtype, dominant_dtype)}"
-                  f" ({dominant_pct:.1f}%, {len(tensor_info) - dominant_count}"
-                  f" outlier tensor(s) in other dtype)")
+            print(
+                f"  >> Effectively {DTYPE_FRIENDLY.get(dominant_dtype, dominant_dtype)}"
+                f" ({dominant_pct:.1f}%, {len(tensor_info) - dominant_count}"
+                f" outlier tensor(s) in other dtype)"
+            )
         else:
             print("  >> Mixed precision model")
 
@@ -1605,16 +1817,20 @@ def _inspect_and_write_modelinfo(
     info = inspect_file(filepath, options=options)
     outputs = []
     if write_text:
-        outputs.append(write_modelinfo_dump(
-            filepath,
-            resolve_output_path=resolve_output_path,
-        ))
+        outputs.append(
+            write_modelinfo_dump(
+                filepath,
+                resolve_output_path=resolve_output_path,
+            )
+        )
     if write_json:
-        outputs.append(write_modelinfo_json(
-            filepath,
-            options=options,
-            resolve_output_path=resolve_output_path,
-        ))
+        outputs.append(
+            write_modelinfo_json(
+                filepath,
+                options=options,
+                resolve_output_path=resolve_output_path,
+            )
+        )
     if outputs:
         info["modelinfo_outputs"] = outputs
     return info
@@ -1624,10 +1840,11 @@ def _inspect_and_write_modelinfo(
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def _configure_stdio_encoding():
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace") # type: ignore
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore
 
 
 def _iter_model_paths(targets: Iterable[str], recursive: bool) -> list[str]:
@@ -1706,7 +1923,10 @@ def main(argv=None):
         )
     if not paths:
         formats = ", ".join(SUPPORTED_MODEL_EXTENSIONS)
-        print(f"No supported model files found ({formats}) in provided targets.", file=sys.stderr)
+        print(
+            f"No supported model files found ({formats}) in provided targets.",
+            file=sys.stderr,
+        )
         return 1
 
     if args.dump_keys:
@@ -1753,11 +1973,7 @@ def main(argv=None):
                     results_by_input_path[fp] = future.result()
                 except Exception as e:
                     print(f"[ERROR] {fp}: {e}", file=sys.stderr)
-    results = [
-        results_by_input_path[fp]
-        for fp in paths
-        if fp in results_by_input_path
-    ]
+    results = [results_by_input_path[fp] for fp in paths if fp in results_by_input_path]
 
     if not results:
         return 1

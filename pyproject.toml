@@ -1,0 +1,33 @@
+[build-system]
+requires = [
+    "wheel",
+    "setuptools",
+    "build"
+]
+build-backend = "uv_build"
+
+[project]
+name = "modelinspector"
+version = "0.1.0"
+description = "Index, explore and organize LLM/Diffusion models"
+keywords = ["safetensors", "gguf", ""]
+
+authors = [
+    { name = "[cOz]", email = "2877235+joeblowma@users.noreply.github.com" }
+]
+requires-python = ">=3.11"
+dependencies = ['PyQt6', 'gguf', 'numpy']
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+repository = "https://github.com/ggml-org/llama.cpp"
+
+[project.scripts]
+modelinspector-gui = "src.gui:main"
+modelinspector = "src.inspect_model:main"
+
+[project.optional-dependencies]
+winbuild = ['pyinstaller>=6.0.0', 'setuptools', 'pillow', ]

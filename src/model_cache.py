@@ -49,9 +49,13 @@ def _cache_key(filepath: str, options: dict | None) -> str:
     except OSError:
         resolved = str(Path(filepath).absolute()).lower()
     relevant_options = {
-        "allow_filename_alias_detection": bool((options or {}).get("allow_filename_alias_detection", False)),
+        "allow_filename_alias_detection": bool(
+            (options or {}).get("allow_filename_alias_detection", False)
+        ),
     }
-    return json.dumps([resolved, relevant_options], sort_keys=True, separators=(",", ":"))
+    return json.dumps(
+        [resolved, relevant_options], sort_keys=True, separators=(",", ":")
+    )
 
 
 def _entry_id(key: str) -> str:
@@ -78,7 +82,9 @@ def _load_legacy_cache(path: Path) -> dict:
             cache = json.load(f)
     except Exception:
         return {"version": CACHE_VERSION, "entries": {}}
-    if cache.get("version") != CACHE_VERSION or not isinstance(cache.get("entries"), dict):
+    if cache.get("version") != CACHE_VERSION or not isinstance(
+        cache.get("entries"), dict
+    ):
         return {"version": CACHE_VERSION, "entries": {}}
     return cache
 
@@ -89,7 +95,9 @@ def _load_index() -> dict:
             index = json.load(f)
     except Exception:
         return {"version": CACHE_VERSION, "entries": {}}
-    if index.get("version") != CACHE_VERSION or not isinstance(index.get("entries"), dict):
+    if index.get("version") != CACHE_VERSION or not isinstance(
+        index.get("entries"), dict
+    ):
         return {"version": CACHE_VERSION, "entries": {}}
     return index
 
@@ -112,7 +120,9 @@ def _load_directory_scan_index() -> dict:
             index = json.load(f)
     except Exception:
         return {"version": CACHE_VERSION, "directories": {}}
-    if index.get("version") != CACHE_VERSION or not isinstance(index.get("directories"), dict):
+    if index.get("version") != CACHE_VERSION or not isinstance(
+        index.get("directories"), dict
+    ):
         return {"version": CACHE_VERSION, "directories": {}}
     return index
 
@@ -160,7 +170,9 @@ def _write_entry(entry_id: str, entry: dict):
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(entry, f, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            json.dump(
+                entry, f, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
         os.replace(tmp_path, path)
     except Exception:
         pass
@@ -181,7 +193,9 @@ def _write_data_entry(entry_id: str, entry: dict):
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(entry, f, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            json.dump(
+                entry, f, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
         os.replace(tmp_path, path)
     except Exception:
         pass
@@ -271,7 +285,9 @@ def get_cached_inspection_snapshots(filepaths: list[str]) -> dict[str, dict]:
 
     snapshots = {}
     for entry in _iter_cached_entries():
-        identity = entry.get("identity") if isinstance(entry.get("identity"), dict) else {}
+        identity = (
+            entry.get("identity") if isinstance(entry.get("identity"), dict) else {}
+        )
         data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
         if not data:
             continue
@@ -315,10 +331,12 @@ def store_cached_inspection(filepath: str, data: dict, options: dict | None = No
         _write_entry(entry_id, entry)
         index = _load_index()
         index_entry = dict(index["entries"].get(entry_id) or {})
-        index_entry.update({
-            "identity": entry["identity"],
-            "data_file": f"entries/{entry_id}.json",
-        })
+        index_entry.update(
+            {
+                "identity": entry["identity"],
+                "data_file": f"entries/{entry_id}.json",
+            }
+        )
         index["entries"][entry_id] = index_entry
         _save_index(index)
 
@@ -343,7 +361,9 @@ def store_model_data(
     with _CACHE_LOCK:
         _write_data_entry(entry_id, entry)
         index = _load_index()
-        index["entries"].setdefault(entry_id, {})["data_cache_file"] = f"data/{entry_id}.json"
+        index["entries"].setdefault(entry_id, {})["data_cache_file"] = (
+            f"data/{entry_id}.json"
+        )
         _save_index(index)
 
 
@@ -418,7 +438,9 @@ def _load_raw_dump_index() -> dict:
             index = json.load(f)
     except Exception:
         return {"version": CACHE_VERSION, "entries": []}
-    if index.get("version") != CACHE_VERSION or not isinstance(index.get("entries"), list):
+    if index.get("version") != CACHE_VERSION or not isinstance(
+        index.get("entries"), list
+    ):
         return {"version": CACHE_VERSION, "entries": []}
     return index
 

@@ -30,7 +30,7 @@ def get_git_version():
             
         # Return tuple of INTS, dot-separated STRING, and the RAW alphanumeric git string
         return tuple(int_parts), f"{'.'.join(string_parts)}", git_version
-    except Exception as e:
+    except Exception:
         # Fallback if Git is missing
         return (1, 0, 0, 0), '1.0.0.0', '1.0.0-unknown'
 

@@ -2,10 +2,11 @@
 :: Version 1.6
 @echo off
 title ModelInspector VENV Install
+set USE_PYTHON_VER=3.11
 
-echo ------------------------------------------------------------------------------
-echo VENV Installation Script - Helps you create a virtual environment (2026-05-04)
-echo ------------------------------------------------------------------------------
+echo ------------------------
+echo VENV Installation Script
+echo ------------------------
 echo.
 
 :: Check for virtual environment var file created by install script
@@ -15,9 +16,28 @@ if exist venvars.bat (
     echo ERROR: venvars.bat found
     echo Aborting, virtual environment may already exist
     echo Run venv_delete.bat first or remove venvars.bat and the virtual env folder
+    echo and try again.
     pause
     exit 1
 )
+
+uv.exe --version >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo.
+    echo ERROR: uv not found! Aborting!
+    echo.
+    echo Run one of the following:
+    echo - powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    echo - pip install uv
+    echo - pipx install uv
+    echo or go to https://github.com/astral-sh/uv for more ways to install
+    echo.
+    echo then try venv_create.bat again.
+    pause
+    exit 1
+)
+
 
 :: Temporarily disable delayed expansion to check for "!" in the path
 setlocal disabledelayedexpansion
@@ -30,52 +50,6 @@ if not "%CURRENT_PATH%"=="%MODIFIED_PATH%" (
 endlocal
 setlocal enabledelayedexpansion
 
-:: Initialize counter
-set COUNT=0
-
-:: Parse the output of py -0p
-for /f "tokens=1,*" %%a in ('py list --only-managed') do (
-    :: Filter lines that start with a dash, indicating a Python version, and capture the path
-    echo %%a | findstr /R "^[ ]*-" > nul && (
-        set /a COUNT+=1
-        set "pythonVersion=%%a"
-
-        set "pythonVersion=!pythonVersion:*V:=!"   :: remove leading -V:
-        for /f "tokens=1 delims=[]" %%v in ("!pythonVersion!") do set "pythonVersion=%%v"
-
-        :: set "PYTHON_PATH_!COUNT!=%%b"  :: Store the path in a separate variable
-        set "PYTHON_VER_!COUNT!=!pythonVersion!"
-    )
-)
-IF %ERRORLEVEL% NEQ 0 (goto errorexit)
-
-:: Make sure at least one Python version was found
-if !COUNT! == 0 (
-    echo No Python installations found via Python Launcher. Exiting.
-    goto exit
-)
-
-echo.
-echo --------------
-echo Python Version
-echo --------------
-echo Please choose which of your installed python versions to use:
-    :: echo %%i. -V:!PYTHON_VER_%%i! at !PYTHON_PATH_%%i!
-for /L %%i in (1,1,!COUNT!) do (
-    echo %%i. -V:!PYTHON_VER_%%i!
-)
-echo.
-
-:: Prompt user to select a Python version (default is 1)
-set /p PYTHON_SELECTION="Select a Python version by number (Press Enter for default = '1'): "
-if "!PYTHON_SELECTION!"=="" set PYTHON_SELECTION=1
-
-:: Extract the selected Python version tag and parse the version number more accurately
-set "SELECTED_PYTHON_VER=!PYTHON_VER_%PYTHON_SELECTION%!"
-
-echo Using Python version !SELECTED_PYTHON_VER!
-echo.
-
 :: Prompt for virtual environment name with default 'venv'
 echo ------------------------
 echo Virtual Environment Name
@@ -87,10 +61,10 @@ if "!VENV_NAME!"=="" set VENV_NAME=%CD%\.venv
 set VENV_PATHED=%CD%\!VENV_NAME!
 echo.
 
-:: Create the virtual environment using the selected Python version
-echo Creating virtual environment '!VENV_NAME!' at:
+:: Create the virtual environment
+echo Creating virtual environment '!VENV_NAME!' with python v%USE_PYTHON_VER% at:
 echo !VENV_PATHED!
-py -!SELECTED_PYTHON_VER! -m venv !VENV_PATHED!
+uv venv --relocatable --prompt !VENV_NAME! --python %USE_PYTHON_VER% --python-preference only-managed !VENV_NAME!
 IF %ERRORLEVEL% NEQ 0 (goto errorexit)
 echo Done.
 echo.
@@ -119,57 +93,75 @@ IF %ERRORLEVEL% NEQ 0 (goto errorexit)
 echo Done.
 echo.
 
-:: Activate the virtual environment and upgrade pip
-echo ---------------------
-echo Upgrading pip install
-echo ---------------------
-echo Activating virtual environment...
+:: Activate the virtual environment
+echo ----------------------------
+echo Activate virtual environment
+echo ----------------------------
 call "!VENV_PATHED!\Scripts\activate"
 IF %ERRORLEVEL% NEQ 0 (goto errorexit)
 echo Done.
 echo.
-echo Upgrading pip...
-"!VENV_PATHED!\Scripts\python.exe" -m pip install --upgrade pip
-IF %ERRORLEVEL% NEQ 0 (goto errorexit)
-echo Done.
-echo.
 
-:: uv pip package installer
-echo ------------------------
-echo uv pip package installer
-echo ------------------------
-echo Installing 'uv' package...
-pip install uv
+:: Install pip
+echo -----------
+echo Install pip
+echo -----------
+echo Installing pip...
+uv pip install pip
 IF %ERRORLEVEL% NEQ 0 (goto errorexit)
 echo Done.
 echo.
 
 :: Check if requirements.txt exists and handle installation
-echo.
-echo ---------------------------------------------
-echo Installing dependencies from requirements.txt
-echo ---------------------------------------------
-:: Prompt the user for installation of requirements.txt
 if exist requirements.txt (
-    echo requirements.txt found.
-
-    set /p INSTALL_REQUIREMENTS="Do you wish to install 'requirements.txt' and 'requirements-dev.txt'? (Y/N) (Press Enter for default 'Y'): "
+    echo.
+    echo -----------------------------------------
+    echo Installing dependencies from requirements
+    echo -----------------------------------------
+    :: Prompt the user for installation of requirements.txt
+    set /p INSTALL_REQUIREMENTS="Do you wish to install modules in 'requirements.txt'? (Y/N) (Press Enter for default 'Y'): "
 
     if not defined INSTALL_REQUIREMENTS (set INSTALL_REQUIREMENTS=Y)
     if /I "!INSTALL_REQUIREMENTS!"=="Y" (
         echo Installing requirements.txt modules...
         uv pip install -r requirements.txt
         IF %ERRORLEVEL% NEQ 0 (goto errorexit)
+        echo Done.
+    ) else (
+        echo Skipping requirements.txt installation.
+        goto skipreqs
+    )
+) else (
+    echo requirements.txt not found. Skipping requirements installation.
+    goto skipreqs
+)
+echo.
+
+:: Check if requirements-dev.txt exists and handle installation
+if exist requirements-dev.txt (
+    echo.
+    echo --------------------------------------------
+    echo Installing dependencies for requirements-dev
+    echo --------------------------------------------
+    :: Prompt the user for installation of requirements-dev.txt
+    set /p INSTALL_REQUIREMENTS="Do you wish to install modules in 'requirements-dev.txt'? (Y/N) (Press Enter for default 'Y'): "
+
+    if not defined INSTALL_REQUIREMENTS (set INSTALL_REQUIREMENTS=Y)
+    if /I "!INSTALL_REQUIREMENTS!"=="Y" (
+        echo Installing requirements-dev.txt modules...
         uv pip install -r requirements-dev.txt
         IF %ERRORLEVEL% NEQ 0 (goto errorexit)
         echo Done.
     ) else (
-        echo Skipping requirements installation.
+        echo Skipping requirements-dev installation.
     )
 ) else (
-    echo requirements.txt not found. Skipping requirements installation.
+    echo requirements-dev.txt not found. Skipping requirements-dev installation.
 )
+
+:skipreqs
 echo.
+
 
 :: List installed packages
 echo Listing installed packages...

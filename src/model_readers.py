@@ -117,7 +117,9 @@ def _add_common_metadata(metadata: dict, filepath: str):
     metadata.setdefault("smi.format", model_format_for_path(filepath))
     file_type = metadata.get("general.file_type")
     if isinstance(file_type, int):
-        metadata["smi.quantization"] = LLAMA_FILE_TYPE_NAMES.get(file_type, f"FILE_TYPE_{file_type}")
+        metadata["smi.quantization"] = LLAMA_FILE_TYPE_NAMES.get(
+            file_type, f"FILE_TYPE_{file_type}"
+        )
 
 
 def _infer_quantization_from_tensor_dtypes(tensor_info: dict) -> str | None:
@@ -177,7 +179,10 @@ def _read_gguf_header_with_library(filepath: str):
             "dtype": tensor.tensor_type.name,
             "shape": [int(dim) for dim in tensor.shape.tolist()],
             "n_bytes": int(tensor.n_bytes),
-            "data_offsets": [int(tensor.data_offset), int(tensor.data_offset + tensor.n_bytes)],
+            "data_offsets": [
+                int(tensor.data_offset),
+                int(tensor.data_offset + tensor.n_bytes),
+            ],
         }
 
     return metadata, tensor_info, os.path.getsize(filepath)
@@ -200,14 +205,14 @@ def _read_u64(f) -> int:
 
 def _read_scalar(f, value_type: int):
     scalar_formats = {
-        0: ("<B", 1),   # UINT8
-        1: ("<b", 1),   # INT8
-        2: ("<H", 2),   # UINT16
-        3: ("<h", 2),   # INT16
-        4: ("<I", 4),   # UINT32
-        5: ("<i", 4),   # INT32
-        6: ("<f", 4),   # FLOAT32
-        7: ("<?", 1),   # BOOL
+        0: ("<B", 1),  # UINT8
+        1: ("<b", 1),  # INT8
+        2: ("<H", 2),  # UINT16
+        3: ("<h", 2),  # INT16
+        4: ("<I", 4),  # UINT32
+        5: ("<i", 4),  # INT32
+        6: ("<f", 4),  # FLOAT32
+        7: ("<?", 1),  # BOOL
         10: ("<Q", 8),  # UINT64
         11: ("<q", 8),  # INT64
         12: ("<d", 8),  # FLOAT64
@@ -226,8 +231,17 @@ def _read_string(f) -> str:
 
 def _skip_scalar(f, value_type: int, count: int):
     scalar_sizes = {
-        0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1,
-        10: 8, 11: 8, 12: 8,
+        0: 1,
+        1: 1,
+        2: 2,
+        3: 2,
+        4: 4,
+        5: 4,
+        6: 4,
+        7: 1,
+        10: 8,
+        11: 8,
+        12: 8,
     }
     size = scalar_sizes.get(value_type)
     if not size:
@@ -331,11 +345,13 @@ def _read_gguf_header_fast(filepath: str):
             "data_offsets": [int(start), int(start + n_bytes)],
         }
 
-    obsolete_dtype_names = sorted({
-        GGML_QUANT_NAMES[raw_dtype]
-        for _, _, raw_dtype, _ in tensor_records
-        if raw_dtype in OBSOLETE_GGML_QUANT_IDS
-    })
+    obsolete_dtype_names = sorted(
+        {
+            GGML_QUANT_NAMES[raw_dtype]
+            for _, _, raw_dtype, _ in tensor_records
+            if raw_dtype in OBSOLETE_GGML_QUANT_IDS
+        }
+    )
     if obsolete_dtype_names:
         metadata["smi.warnings"] = [
             "File contains obsolete or removed GGML quantization type(s): "

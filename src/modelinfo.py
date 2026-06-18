@@ -55,7 +55,9 @@ def generate_modelinfo_dump(filepath: str) -> str:
     resolved_filepath = _resolve_display_path(filepath)
     if resolved_filepath != filepath:
         lines.append(f"  Resolved path: {resolved_filepath}")
-    lines.append(f"  Keys: {len(keys)}    Params: {total_params:,}    Size: {file_size:,} bytes")
+    lines.append(
+        f"  Keys: {len(keys)}    Params: {total_params:,}    Size: {file_size:,} bytes"
+    )
     lines.append(sep)
 
     if metadata:
@@ -113,12 +115,14 @@ def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dic
         params = 1
         for dim in shape:
             params *= dim
-        tensors.append({
-            "name": name,
-            "shape": shape,
-            "dtype": tensor_info[name].get("dtype"),
-            "parameters": params,
-        })
+        tensors.append(
+            {
+                "name": name,
+                "shape": shape,
+                "dtype": tensor_info[name].get("dtype"),
+                "parameters": params,
+            }
+        )
 
     warnings = list(summary.get("warnings") or [])
     return {

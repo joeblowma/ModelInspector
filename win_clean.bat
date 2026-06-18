@@ -9,7 +9,7 @@ echo -------------------------------------------
 echo.
 
 if not exist ModelInspector.spec (
-        echo [ERROR] Cannot clean without ModelInspector.spec!
+        echo [ERROR] Cannot clean, no ModelInspector.spec!
         pause
         exit 1
 )
@@ -75,6 +75,7 @@ for %%P in (
 for %%P in (
     "ModelInspector.spec"
     "version.txt"
+    ".\assets\splash.bmp"
     ".\assets\splash.png"
     ".\assets\icon.ico"
 ) do (

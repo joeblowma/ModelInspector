@@ -67,6 +67,8 @@ from PyQt6.QtWidgets import (
 
 from inspect_model import (
     inspect_file,
+    format_params,
+    format_size,
     generate_modelinfo_dump,
     write_modelinfo_dump,
     write_modelinfo_json,
@@ -2249,6 +2251,16 @@ class MainWindow(QMainWindow):
         arch = str(data.get("architecture") or "Unknown")
         if arch.startswith("GGUF "):
             data["architecture"] = arch[5:]
+        try:
+            data["file_size_friendly"] = format_size(int(data.get("file_size") or 0))
+        except (TypeError, ValueError):
+            data.setdefault("file_size_friendly", "-")
+        try:
+            data["total_params_friendly"] = format_params(
+                int(data.get("total_params") or 0)
+            )
+        except (TypeError, ValueError):
+            data.setdefault("total_params_friendly", "-")
         if not data.get("format"):
             suffix = Path(str(data.get("filepath") or "")).suffix.lower().lstrip(".")
             data["format"] = suffix.upper() if suffix else "UNKNOWN"
@@ -2534,18 +2546,36 @@ class MainWindow(QMainWindow):
                 val = filepath
             item = SortableTableWidgetItem(val)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            column_name = self._table_columns[col]
             if col == 1:
                 item.setToolTip(filepath)
                 item.setData(Qt.ItemDataRole.UserRole, filepath)
             else:
                 item.setToolTip(str(val))
-            column_name = self._table_columns[col]
-            if column_name == "MoE":
+            if column_name == "File Size":
+                item.setData(Qt.ItemDataRole.UserRole, int(data.get("file_size") or 0))
+            elif column_name == "Parameters":
+                item.setData(
+                    Qt.ItemDataRole.UserRole, int(data.get("total_params") or 0)
+                )
+            elif column_name == "Tensors":
+                item.setData(
+                    Qt.ItemDataRole.UserRole, int(data.get("tensor_count") or 0)
+                )
+            elif column_name == "LoRA Rank":
+                item.setData(Qt.ItemDataRole.UserRole, int(lora_rank or 0))
+            elif column_name == "MoE":
                 item.setData(Qt.ItemDataRole.UserRole, 1 if is_moe else 0)
             elif column_name == "Experts":
                 item.setData(Qt.ItemDataRole.UserRole, int(expert_count or 0))
             elif column_name == "Active Experts":
                 item.setData(Qt.ItemDataRole.UserRole, int(expert_used_count or 0))
+            elif column_name in ("Images", "Epochs", "Steps"):
+                try:
+                    numeric_value = int(str(val).replace(",", ""))
+                except (TypeError, ValueError):
+                    numeric_value = 0
+                item.setData(Qt.ItemDataRole.UserRole, numeric_value)
             self.table.setItem(row, col, item)
 
         if filepath:

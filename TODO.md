@@ -5,14 +5,14 @@ Actionable integration plan for repository organization, additional model format
 
 ## 1. Reorganize Project Layout
 
-- Move executable Python source files from the repository root into `src/`, for example `src/gui.py` and `src/inspect_model.py`.
-- Move icons and bundled assets out of `src/assets/` into a dedicated resource directory, for example `resources/icons/`.
-- Update all imports after the move; prefer explicit module imports over path hacks.
-- Update asset lookup helpers so development and PyInstaller-frozen runs resolve `resources/icons/icon.png` consistently.
-- Update `compile.bat` paths for the new GUI entry point and icon location.
-- Update `SafetensorsModelInspector.spec` `Analysis`, `datas`, and `icon` paths.
+- [x] Move executable Python source files from the repository root into `src/`, for example `src/gui.py` and `src/inspect_model.py`.
+- [x] Move icons and bundled assets out of `src/assets/` into a dedicated resource directory, for example `resources/icons/`.
+- [x] Update all imports after the move; prefer explicit module imports over path hacks.
+- [x] Update asset lookup helpers so development and PyInstaller-frozen runs resolve `resources/icons/icon.png` consistently.
+- [x] Update `compile.bat` paths for the new GUI entry point and icon location.
+- [x] Update `ModelInspector.spec` `Analysis`, `datas`, and `icon` paths.
 - Update `README.md` and `AGENTS.md` command examples after the layout change.
-- Run `py src/gui.py`, `py src/inspect_model.py --help`, and `compile.bat` after the move.
+- [x] Run `py src/gui.py`, `py src/inspect_model.py --help`, and `compile.bat` after the move.
 
 ## 2. Explorer Filtering & Progress UX
 

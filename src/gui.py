@@ -23,7 +23,6 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QTimer, QSettings, 
 from PyQt6.QtGui import (
     QContextMenuEvent,
     QDragEnterEvent,
-    QDragLeaveEvent,
     QDropEvent,
     # QFont,
     QKeyEvent,
@@ -52,8 +51,6 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QSizePolicy,
     QProgressBar,
-    QListWidget,
-    QListWidgetItem,
     QAbstractItemView,
     QTextEdit,
     QComboBox,
@@ -79,7 +76,6 @@ from model_readers import (
     SUPPORTED_MODEL_EXTENSIONS,
     is_checkpoint_model_path,
     is_supported_model_path,
-    iter_model_paths,
 )
 from model_cache import (
     clear_inspection_cache,
@@ -170,7 +166,7 @@ QPushButton {
     background-color: #45475a;
     color: #cdd6f4;
     border: 1px solid #585b70;
-    padding: 8px 20px;
+    padding: 8px 10px;
     border-radius: 6px;
     font-weight: bold;
 }
@@ -197,7 +193,23 @@ QPushButton#clearBtn {
 QPushButton#clearBtn:hover {
     background-color: #f5a8be;
 }
-
+QToolButton#openBtn {
+    background-color: #45475a;
+    padding: 0px 10px;
+    min-height: 31px;
+    max-height: 31px;
+    color: #cdd6f4;
+    border: 1px solid #585b70;
+    border-radius: 6px;
+    font-weight: bold;
+}
+QToolButton#openBtn:hover {
+    background-color: #585b70;
+    border-color: #f5c2e7;
+}
+QToolButton#openBtn:pressed {
+    background-color: #6c7086;
+}
 QTableWidget {
     background-color: #181825;
     alternate-background-color: #1e1e2e;
@@ -237,21 +249,6 @@ QScrollBar::handle:vertical:hover {
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0;
-}
-
-QListWidget {
-    background-color: #181825;
-    border: 1px solid #45475a;
-    border-radius: 4px;
-    padding: 4px;
-}
-QListWidget::item {
-    color: #cdd6f4;
-    padding: 4px 8px;
-    border-radius: 3px;
-}
-QListWidget::item:selected {
-    background-color: #45475a;
 }
 
 QProgressBar {
@@ -335,122 +332,6 @@ class AnalysisWorker(QThread):
 
 
 # ---------------------------------------------------------------------------
-# Drop zone widget
-# ---------------------------------------------------------------------------
-
-
-class DropZone(QFrame):
-    files_dropped = pyqtSignal(list)
-    unsupported_files_dropped = pyqtSignal(list)
-
-    def __init__(self):
-        super().__init__()
-        self.setAcceptDrops(True)
-        self.setMinimumHeight(100)
-        self.setStyleSheet("""
-            DropZone {
-                border: 2px dashed #585b70;
-                border-radius: 12px;
-                background-color: #181825;
-            }
-            DropZone:hover {
-                border-color: #74c7ec;
-                background-color: #1e1e30;
-            }
-        """)
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        icon_label = QLabel("Drop model files here")
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setStyleSheet(
-            "color: #6c7086; font-size: 15px; font-weight: bold; border: none; background: transparent;"
-        )
-        layout.addWidget(icon_label)
-
-        hint = QLabel("or use Browse button below")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet(
-            "color: #45475a; font-size: 11px; border: none; background: transparent;"
-        )
-        layout.addWidget(hint)
-
-    def dragEnterEvent(self, a0: QDragEnterEvent | None):
-        if a0 is None:
-            return
-        event = a0
-        mime_data = event.mimeData()
-        if mime_data is not None and mime_data.hasUrls():
-            event.acceptProposedAction()
-            self.setStyleSheet("""
-                DropZone {
-                    border: 2px solid #74c7ec;
-                    border-radius: 12px;
-                    background-color: #1e1e38;
-                }
-            """)
-
-    def dragLeaveEvent(self, a0: QDragLeaveEvent | None):
-        if a0 is None:
-            return
-        self.setStyleSheet("""
-            DropZone {
-                border: 2px dashed #585b70;
-                border-radius: 12px;
-                background-color: #181825;
-            }
-            DropZone:hover {
-                border-color: #74c7ec;
-                background-color: #1e1e30;
-            }
-        """)
-        super().dragLeaveEvent(a0)
-
-    def dropEvent(self, a0: QDropEvent | None):
-        if a0 is None:
-            return
-        event = a0
-        self.setStyleSheet("""
-            DropZone {
-                border: 2px dashed #585b70;
-                border-radius: 12px;
-                background-color: #181825;
-            }
-            DropZone:hover {
-                border-color: #74c7ec;
-                background-color: #1e1e30;
-            }
-        """)
-        paths = []
-        unsupported = []
-        mime_data = event.mimeData()
-        if mime_data is None:
-            return
-        for url in mime_data.urls():
-            fp = url.toLocalFile()
-            if not fp:
-                continue
-            p = Path(fp)
-            if p.is_dir():
-                paths.extend(iter_model_paths([fp], recursive=True))
-            elif is_supported_model_path(fp):
-                paths.append(fp)
-            elif is_checkpoint_model_path(fp):
-                unsupported.append(fp)
-        if unsupported:
-            self.unsupported_files_dropped.emit(unsupported)
-        if paths:
-            # Deduplicate while preserving order
-            seen = set()
-            dedup = []
-            for p in paths:
-                if p not in seen:
-                    seen.add(p)
-                    dedup.append(p)
-            self.files_dropped.emit(dedup)
-
-
-# ---------------------------------------------------------------------------
 # Settings dialog
 # ---------------------------------------------------------------------------
 
@@ -460,7 +341,6 @@ class SettingsDialog(QDialog):
         self,
         parent=None,
         allow_filename_alias_detection=False,
-        auto_fold_on_analyze=False,
         auto_analyze_on_add=True,
         dump_json_modelinfo=False,
         auto_load_raw_dump=False,
@@ -516,13 +396,6 @@ class SettingsDialog(QDialog):
         alias_cell = make_general_cell(
             self.alias_checkbox,
             "Fallback alias matching by filename for special naming cases. Supports ILXL, Illustrious, Illu, PDXL, Pony, Pony7, NAI, and Qwen Edit.",
-        )
-
-        self.auto_fold_checkbox = QCheckBox("Auto-minimize top section on Analyze")
-        self.auto_fold_checkbox.setChecked(auto_fold_on_analyze)
-        fold_cell = make_general_cell(
-            self.auto_fold_checkbox,
-            "Collapse top input section automatically when Analyze starts.",
         )
 
         self.auto_analyze_checkbox = QCheckBox("Auto-analyze when files are added")
@@ -586,8 +459,8 @@ class SettingsDialog(QDialog):
         mode_row.setSpacing(6)
         mode_row.addWidget(QLabel("File add behavior:"))
         self.add_mode_combo = QComboBox()
-        self.add_mode_combo.addItem("Replace current input list", "replace")
-        self.add_mode_combo.addItem("Append to current input list", "additive")
+        self.add_mode_combo.addItem("Replace current model queue", "replace")
+        self.add_mode_combo.addItem("Append to current model queue", "additive")
         idx = self.add_mode_combo.findData(add_mode)
         if idx >= 0:
             self.add_mode_combo.setCurrentIndex(idx)
@@ -595,7 +468,7 @@ class SettingsDialog(QDialog):
         mode_row.addStretch()
         mode_cell = make_general_cell(
             mode_wrap,
-            "Replace clears the current input list before adding new files. Append keeps existing files and adds new ones.",
+            "Replace clears the current model queue before adding new files. Append keeps existing files and adds new ones.",
         )
 
         tab_wrap = QWidget()
@@ -617,8 +490,7 @@ class SettingsDialog(QDialog):
         )
 
         g_layout.addWidget(alias_cell, 0, 0)
-        g_layout.addWidget(fold_cell, 0, 1)
-        g_layout.addWidget(analyze_cell, 0, 2)
+        g_layout.addWidget(analyze_cell, 0, 1)
         g_layout.addWidget(mode_cell, 1, 0)
         g_layout.addWidget(tab_cell, 1, 1)
         g_layout.addWidget(dump_json_cell, 1, 2)
@@ -1225,13 +1097,12 @@ class MainWindow(QMainWindow):
         self._progress_status_generation = 0
         self._allow_filename_alias_detection = False
         self._show_full_paths = False
-        self._top_folded = False
-        self._auto_fold_on_analyze = False
         self._auto_analyze_on_add = True
         self._dump_json_modelinfo = False
         self._auto_load_raw_dump = False
         self._load_default_libraries_on_startup = False
         self._cache_full_data_on_analyze = False
+        self._selected_action = "copy_files"
         self._analysis_threads = 2
         self._add_mode = "replace"  # replace | additive
         self._default_tab = "cards"  # cards | data | raw
@@ -1259,59 +1130,10 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         self.setCentralWidget(central)
+        self.setAcceptDrops(True)
         root = QVBoxLayout(central)
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
-
-        # --- Top: drop zone + file list ------------------------------------
-        top_row = QWidget()
-        self.top_row = top_row
-        top_layout = QHBoxLayout(top_row)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(16)
-        top_row.setFixedHeight(190)
-
-        # Drop zone (left, fixed width)
-        self.drop_zone = DropZone()
-        self.drop_zone.setFixedWidth(340)
-        self.drop_zone.files_dropped.connect(self._add_files)
-        self.drop_zone.unsupported_files_dropped.connect(
-            self._warn_unsupported_checkpoint_files
-        )
-        top_layout.addWidget(self.drop_zone, 0)
-
-        # File list (right)
-        file_list_container = QWidget()
-        fl_layout = QVBoxLayout(file_list_container)
-        fl_layout.setContentsMargins(0, 0, 0, 0)
-        fl_layout.setSpacing(4)
-
-        fl_header = QHBoxLayout()
-        fl_label = QLabel("Input Files")
-        fl_label.setStyleSheet("font-weight: bold; color: #f5c2e7; font-size: 13px;")
-        fl_header.addWidget(fl_label)
-
-        self.file_count_label = QLabel("0 files")
-        self.file_count_label.setStyleSheet("color: #6c7086; font-size: 11px;")
-        fl_header.addStretch()
-        fl_header.addWidget(self.file_count_label)
-        fl_layout.addLayout(fl_header)
-
-        self.file_list = QListWidget()
-        self.file_list.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
-        )
-        fl_layout.addWidget(self.file_list)
-
-        # Remove selected button
-        remove_btn = QPushButton("Remove Selected")
-        remove_btn.setFixedHeight(28)
-        remove_btn.setStyleSheet("font-size: 11px; padding: 4px 12px;")
-        remove_btn.clicked.connect(self._remove_selected_files)
-        fl_layout.addWidget(remove_btn)
-
-        top_layout.addWidget(file_list_container, 1)
-        root.addWidget(top_row)
 
         # --- Top controls row -----------------------------------------------
         controls_container = QWidget()
@@ -1323,36 +1145,24 @@ class MainWindow(QMainWindow):
         btn_row_1 = QHBoxLayout()
         btn_row_1.setSpacing(10)
 
+        button_height = 35
         settings_btn = QPushButton("Settings")
         settings_btn.setToolTip("Settings")
+        settings_btn.setFixedHeight(35)
         settings_btn.clicked.connect(self._open_settings)
         btn_row_1.addWidget(settings_btn)
 
-        browse_btn = QPushButton("Browse...")
-        browse_btn.clicked.connect(self._browse_files)
-        btn_row_1.addWidget(browse_btn)
-
-        browse_folder_btn = QPushButton("Browse Folder...")
-        browse_folder_btn.clicked.connect(self._browse_folder_recursive)
-        browse_folder_btn.setFixedWidth(150)
-        btn_row_1.addWidget(browse_folder_btn)
-
-        self.fold_toggle_btn = QPushButton("▲ Minimize")
-        self.fold_toggle_btn.setFixedWidth(150)
-        self.fold_toggle_btn.clicked.connect(self._toggle_top_fold)
-        btn_row_1.addWidget(self.fold_toggle_btn)
-
-        self.clear_btn = QPushButton("Clear")
-        self.clear_btn.setObjectName("clearBtn")
-        self.clear_btn.clicked.connect(self._clear_all)
-        btn_row_1.addWidget(self.clear_btn)
+        self.open_btn = QToolButton()
+        self.open_btn.setObjectName("openBtn")
+        self.open_btn.setText("Open ▼")
+        self.open_btn.setToolTip("Open model files or scan a folder")
+        self.open_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.open_btn.setMenu(self._build_open_menu())
+        self.open_btn.setMinimumWidth(130)
+        self.open_btn.setFixedHeight(button_height)
+        btn_row_1.addWidget(self.open_btn)
 
         btn_row_1.addStretch()
-
-        self.progress = QProgressBar()
-        self.progress.setFixedWidth(200)
-        self.progress.setVisible(False)
-        btn_row_1.addWidget(self.progress)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setEnabled(False)
@@ -1360,47 +1170,45 @@ class MainWindow(QMainWindow):
         self.cancel_btn.clicked.connect(self._cancel_current_operation)
         btn_row_1.addWidget(self.cancel_btn)
 
+        self.progress_label = QLabel("")
+        self.progress_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        self.progress_label.setWordWrap(False)
+        self.progress_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.progress_label.setMinimumHeight(22)
+        self.progress_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        btn_row_1.addWidget(self.progress_label, 1)
+
         self.analyze_btn = QPushButton("Analyze")
         self.analyze_btn.setObjectName("analyzeBtn")
         self.analyze_btn.clicked.connect(self._analyze_all)
         self.analyze_btn.setStyleSheet("font-weight: 800;")
         self.analyze_btn.setMinimumWidth(260)
         self.analyze_btn.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
-        btn_row_1.addWidget(self.analyze_btn, 1)
+
+        self.progress = QProgressBar()
+        self.progress.setFixedSize(260, 28)
+        self.progress.setVisible(False)
+
+        self.action_slot = QWidget()
+        self.action_slot.setFixedWidth(260)
+        action_slot_layout = QVBoxLayout(self.action_slot)
+        action_slot_layout.setContentsMargins(0, 0, 0, 0)
+        action_slot_layout.setSpacing(0)
+        action_slot_layout.addWidget(self.analyze_btn)
+        action_slot_layout.addWidget(self.progress)
+        btn_row_1.addWidget(self.action_slot)
 
         controls_layout.addLayout(btn_row_1)
-
-        self.progress_label = QLabel("")
-        self.progress_label.setStyleSheet(
-            "color: #a6adc8; font-size: 11px; padding-left: 2px;"
-        )
-        self.progress_label.setVisible(False)
-        self.progress_label.setWordWrap(False)
-        self.progress_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
-        self.progress_label.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        controls_layout.addWidget(self.progress_label)
+        self._set_idle_status()
+        self._update_analyze_slot()
 
         root.addWidget(controls_container)
-
-        # Folded-only bar (single full-width toggle button)
-        self.fold_only_bar = QWidget()
-        fold_only_layout = QHBoxLayout(self.fold_only_bar)
-        fold_only_layout.setContentsMargins(0, 0, 0, 0)
-        fold_only_layout.setSpacing(0)
-        self.fold_only_btn = QPushButton("▼ Restore")
-        self.fold_only_btn.clicked.connect(self._toggle_top_fold)
-        self.fold_only_btn.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        fold_only_layout.addWidget(self.fold_only_btn)
-        self.fold_only_bar.setVisible(False)
-        root.addWidget(self.fold_only_bar)
 
         # --- Tab widget (Cards / Data) -------------------------------------
         self.tabs = QTabWidget()
@@ -1434,7 +1242,7 @@ class MainWindow(QMainWindow):
         self.simple_cards_scroll.setWidget(self.simple_cards_container)
 
         self.simple_cards_placeholder = QLabel(
-            "No models analyzed yet.\nDrop files above and click Analyze."
+            "No models analyzed yet.\nDrop files anywhere or click Open."
         )
         self.simple_cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.simple_cards_placeholder.setStyleSheet(
@@ -1452,7 +1260,7 @@ class MainWindow(QMainWindow):
         self.cards_scroll.setWidget(self.cards_container)
 
         self.cards_placeholder = QLabel(
-            "No models analyzed yet.\nDrop files above and click Analyze."
+            "No models analyzed yet.\nDrop files anywhere or click Open."
         )
         self.cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cards_placeholder.setStyleSheet(
@@ -1622,7 +1430,7 @@ class MainWindow(QMainWindow):
         self.tag_filter_btn = CheckFilterButton("Tags")
         self.tag_filter_btn.filter_changed.connect(self._on_tag_filter_changed)
         self.tag_filter_btn.setMinimumHeight(34)
-        self.tag_filter_btn.setMinimumWidth(170)
+        self.tag_filter_btn.setMinimumWidth(150)
         self.tag_filter_btn.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
@@ -1638,29 +1446,25 @@ class MainWindow(QMainWindow):
         bottom_actions.addWidget(self.format_filter_btn, 1)
         self._reset_format_filter_items()
 
-        self.copy_files_btn = QPushButton("Copy Files")
-        self.copy_files_btn.setEnabled(False)
-        self.copy_files_btn.clicked.connect(self._copy_selected_files_to_clipboard)
-        bottom_actions.addWidget(self.copy_files_btn)
+        self.selected_action_btn = QPushButton()
+        self.selected_action_btn.setEnabled(False)
+        self.selected_action_btn.clicked.connect(self._run_selected_action)
+        bottom_actions.addWidget(self.selected_action_btn)
 
-        self.move_files_btn = QPushButton("Move Files")
-        self.move_files_btn.setEnabled(False)
-        self.move_files_btn.clicked.connect(self._move_selected_files)
-        bottom_actions.addWidget(self.move_files_btn)
+        self.selected_action_menu_btn = QToolButton()
+        self.selected_action_menu_btn.setText("▼")
+        self.selected_action_menu_btn.setToolTip("Selected model actions")
+        self.selected_action_menu_btn.setPopupMode(
+            QToolButton.ToolButtonPopupMode.InstantPopup
+        )
+        self.selected_action_menu_btn.setMenu(self._build_selected_action_menu())
+        bottom_actions.addWidget(self.selected_action_menu_btn)
 
-        self.copy_names_btn = QPushButton("Copy Names")
-        self.copy_names_btn.setEnabled(False)
-        self.copy_names_btn.clicked.connect(self._copy_selected_names)
-        bottom_actions.addWidget(self.copy_names_btn)
-
-        self.copy_paths_btn = QPushButton("Copy Paths")
-        self.copy_paths_btn.setEnabled(False)
-        self.copy_paths_btn.clicked.connect(self._copy_selected_paths)
-        bottom_actions.addWidget(self.copy_paths_btn)
-
-        self.dump_btn = QPushButton("Dump .modelinfo")
-        self.dump_btn.clicked.connect(self._dump_all)
-        bottom_actions.addWidget(self.dump_btn)
+        self.clear_results_btn = QPushButton("Clear All")
+        self.clear_results_btn.setObjectName("clearBtn")
+        self.clear_results_btn.clicked.connect(self._clear_all)
+        bottom_actions.addWidget(self.clear_results_btn)
+        self._refresh_selected_action_button()
         root.addLayout(bottom_actions)
 
         self.copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self)
@@ -1676,20 +1480,60 @@ class MainWindow(QMainWindow):
         frame.moveCenter(geo.center())
         self.move(frame.topLeft())
 
-    def _toggle_top_fold(self):
-        self._top_folded = not self._top_folded
-        if self._top_folded:
-            self.top_row.setVisible(False)
-            self.controls_container.setVisible(False)
-            self.fold_only_bar.setVisible(True)
-            self.fold_toggle_btn.setText("▼ Restore")
-            self.fold_only_btn.setText("▼ Restore")
-        else:
-            self.top_row.setVisible(True)
-            self.controls_container.setVisible(True)
-            self.fold_only_bar.setVisible(False)
-            self.fold_toggle_btn.setText("▲ Minimize")
-            self.fold_only_btn.setText("▲ Minimize")
+    def _add_menu_action(self, menu: QMenu, text: str, callback) -> QAction | None:
+        action = menu.addAction(text)
+        if action is not None:
+            action.triggered.connect(callback)
+        return action
+
+    def _build_open_menu(self) -> QMenu:
+        menu = QMenu(self)
+        self._add_menu_action(menu, "Open Files", self._browse_files)
+        self._add_menu_action(menu, "Open Folder", self._browse_folder_recursive)
+        return menu
+
+    def _selected_actions(self):
+        return {
+            "copy_files": ("Copy Files", self._copy_selected_files_to_clipboard),
+            "move_files": ("Move Files", self._move_selected_files),
+            "copy_names": ("Copy Names", self._copy_selected_names),
+            "copy_paths": ("Copy Paths", self._copy_selected_paths),
+            "dump_modelinfo": ("Dump .modelinfo", self._dump_all),
+            "remove_selected": ("Remove Selected", self._remove_selected_results),
+        }
+
+    def _build_selected_action_menu(self) -> QMenu:
+        menu = QMenu(self)
+        for key, (label, _) in self._selected_actions().items():
+            self._add_menu_action(
+                menu,
+                label,
+                lambda checked=False, action_key=key: self._select_selected_action(
+                    action_key
+                ),
+            )
+        return menu
+
+    def _select_selected_action(self, action_key: str):
+        if action_key not in self._selected_actions():
+            return
+        self._selected_action = action_key
+        self._refresh_selected_action_button()
+
+    def _refresh_selected_action_button(self):
+        label, _ = self._selected_actions().get(
+            self._selected_action, self._selected_actions()["copy_files"]
+        )
+        self.selected_action_btn.setText(label)
+        self.selected_action_btn.setToolTip(
+            "Run the selected action on visible selected models"
+        )
+
+    def _run_selected_action(self):
+        _, callback = self._selected_actions().get(
+            self._selected_action, self._selected_actions()["copy_files"]
+        )
+        callback()
 
     def _on_copy_shortcut(self):
         tab = self.tabs.currentIndex()
@@ -1725,6 +1569,38 @@ class MainWindow(QMainWindow):
                 return True
         return super().eventFilter(a0, a1)
 
+    def dragEnterEvent(self, a0: QDragEnterEvent | None):
+        if a0 is None:
+            return
+        mime_data = a0.mimeData()
+        if mime_data is not None and mime_data.hasUrls():
+            a0.acceptProposedAction()
+
+    def dropEvent(self, a0: QDropEvent | None):
+        if a0 is None:
+            return
+        mime_data = a0.mimeData()
+        if mime_data is None:
+            return
+        paths = []
+        unsupported = []
+        for url in mime_data.urls():
+            fp = url.toLocalFile()
+            if not fp:
+                continue
+            path = Path(fp)
+            if path.is_dir():
+                paths.extend(self._discover_model_paths(fp))
+            elif is_supported_model_path(fp):
+                paths.append(fp)
+            elif is_checkpoint_model_path(fp):
+                unsupported.append(fp)
+        if unsupported:
+            self._warn_unsupported_checkpoint_files(unsupported)
+        if paths:
+            self._add_files(paths)
+            a0.acceptProposedAction()
+
     def _on_tab_changed(self, index):
         if index == 2:
             self._refresh_raw_combo_filtered()
@@ -1733,9 +1609,6 @@ class MainWindow(QMainWindow):
         s = _settings()
         self._allow_filename_alias_detection = (
             str(s.value("allow_filename_alias_detection", "false")).lower() == "true"
-        )
-        self._auto_fold_on_analyze = (
-            str(s.value("auto_fold_on_analyze", "false")).lower() == "true"
         )
         self._auto_analyze_on_add = (
             str(s.value("auto_analyze_on_add", "true")).lower() == "true"
@@ -1803,7 +1676,6 @@ class MainWindow(QMainWindow):
             "allow_filename_alias_detection",
             str(self._allow_filename_alias_detection).lower(),
         )
-        s.setValue("auto_fold_on_analyze", str(self._auto_fold_on_analyze).lower())
         s.setValue("auto_analyze_on_add", str(self._auto_analyze_on_add).lower())
         s.setValue("dump_json_modelinfo", str(self._dump_json_modelinfo).lower())
         s.setValue("auto_load_raw_dump", str(self._auto_load_raw_dump).lower())
@@ -1846,13 +1718,44 @@ class MainWindow(QMainWindow):
 
     def _set_progress_status(self, text: str):
         self._progress_status_generation += 1
-        self.progress_label.setText(text)
-        self.progress_label.setToolTip(text)
-        self.progress_label.setVisible(bool(text))
+        self.progress_label.setText(text or self._idle_status_text())
+        self.progress_label.setToolTip(text or "")
+
+    def _idle_status_text(self) -> str:
+        result_count = len(self._results)
+        if result_count:
+            return f"{result_count} model{'s' if result_count != 1 else ''} analyzed"
+        queued_count = len(self._queued_files)
+        if queued_count:
+            return f"{queued_count} model{'s' if queued_count != 1 else ''} queued"
+        return "Drop models anywhere or choose Open"
+
+    def _set_idle_status(self):
+        self._set_progress_status("")
+
+    def _has_unanalyzed_queue(self) -> bool:
+        result_paths = {
+            str(data.get("filepath") or "")
+            for data in self._results
+            if data.get("filepath")
+        }
+        return any(path not in result_paths for path in self._queued_files)
+
+    def _update_analyze_slot(self):
+        busy = (
+            bool(self._worker and self._worker.isRunning())
+            or self.progress.isVisible()
+        )
+        self.progress.setVisible(busy)
+        self.analyze_btn.setVisible(
+            not busy and (not self._auto_analyze_on_add or self._has_unanalyzed_queue())
+        )
+        self.action_slot.setVisible(True)
 
     def _set_cancel_available(self, available: bool):
         self.cancel_btn.setEnabled(available)
         self.cancel_btn.setVisible(available)
+        self._update_analyze_slot()
 
     def _cancel_current_operation(self):
         self._scan_cancel_requested = True
@@ -1869,10 +1772,10 @@ class MainWindow(QMainWindow):
             if delay_ms and generation != self._progress_status_generation:
                 return
             self.progress.setVisible(False)
-            self.progress_label.clear()
             self.progress_label.setToolTip("")
-            self.progress_label.setVisible(False)
+            self.progress_label.setText(self._idle_status_text())
             self._set_cancel_available(False)
+            self._update_analyze_slot()
 
         if delay_ms:
             QTimer.singleShot(delay_ms, clear)
@@ -1941,30 +1844,18 @@ class MainWindow(QMainWindow):
             return
         if self._add_mode == "replace":
             self._queued_files.clear()
-            self.file_list.clear()
 
         for p in paths:
             if p not in self._queued_files:
                 self._queued_files.append(p)
-                item = QListWidgetItem(Path(p).name)
-                item.setData(Qt.ItemDataRole.UserRole, p)
-                item.setToolTip(p)
-                self.file_list.addItem(item)
         self._update_file_count()
         if self._auto_analyze_on_add:
             self._analyze_all()
 
-    def _remove_selected_files(self):
-        for item in self.file_list.selectedItems():
-            fp = item.data(Qt.ItemDataRole.UserRole)
-            if fp in self._queued_files:
-                self._queued_files.remove(fp)
-            self.file_list.takeItem(self.file_list.row(item))
-        self._update_file_count()
-
     def _update_file_count(self):
-        n = len(self._queued_files)
-        self.file_count_label.setText(f"{n} file{'s' if n != 1 else ''}")
+        if not self.progress.isVisible():
+            self._set_idle_status()
+        self._update_analyze_slot()
 
     def _browse_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -2107,7 +1998,6 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(
             self,
             allow_filename_alias_detection=self._allow_filename_alias_detection,
-            auto_fold_on_analyze=self._auto_fold_on_analyze,
             auto_analyze_on_add=self._auto_analyze_on_add,
             dump_json_modelinfo=self._dump_json_modelinfo,
             auto_load_raw_dump=self._auto_load_raw_dump,
@@ -2123,7 +2013,6 @@ class MainWindow(QMainWindow):
         dlg.clear_cache_btn.clicked.connect(self._clear_inspection_cache_from_settings)
         if dlg.exec():
             self._allow_filename_alias_detection = dlg.alias_checkbox.isChecked()
-            self._auto_fold_on_analyze = dlg.auto_fold_checkbox.isChecked()
             self._auto_analyze_on_add = dlg.auto_analyze_checkbox.isChecked()
             self._dump_json_modelinfo = dlg.dump_json_checkbox.isChecked()
             self._auto_load_raw_dump = dlg.auto_load_raw_checkbox.isChecked()
@@ -2148,6 +2037,7 @@ class MainWindow(QMainWindow):
             self._save_ui_settings()
             self._rebuild_views_from_results()
             self._update_raw_controls()
+            self._update_analyze_slot()
             self._apply_default_tab()
 
     def _clear_inspection_cache_from_settings(self):
@@ -2186,7 +2076,6 @@ class MainWindow(QMainWindow):
         self._active_arch_filter = None
         self._active_tag_filter = None
         self._active_format_filter = None
-        self.file_list.clear()
         self._update_file_count()
         self._clear_cards()
         self.arch_filter_btn.clear_items()
@@ -2206,8 +2095,6 @@ class MainWindow(QMainWindow):
             return
         if self._worker and self._worker.isRunning():
             return
-        if self._auto_fold_on_analyze and not self._top_folded:
-            self._toggle_top_fold()
 
         self.analyze_btn.setEnabled(False)
         self.progress.setVisible(True)
@@ -2219,7 +2106,7 @@ class MainWindow(QMainWindow):
         self._analysis_error_count = 0
         self._analysis_bytes_scanned = 0
         self._set_progress_status(
-            f"Parsed: 0/{len(self._queued_files)} | Bytes scanned: 0 B"
+            f"Scanning 0/{len(self._queued_files)} | Bytes scanned: 0 B"
         )
 
         # Clear previous results
@@ -2329,7 +2216,7 @@ class MainWindow(QMainWindow):
             )
         else:
             self._set_progress_status(
-                f"Parsed: {self._analysis_done_count}/{len(self._queued_files)} | "
+                f"Scanned {self._analysis_done_count}/{len(self._queued_files)} | "
                 f"Bytes scanned: {self._format_bytes(self._analysis_bytes_scanned)}{error_text}"
             )
         self._clear_progress_status(delay_ms=4000)
@@ -2353,9 +2240,9 @@ class MainWindow(QMainWindow):
             else ""
         )
         self._set_progress_status(
-            f"Parsed: {self._analysis_done_count}/{total} | "
+            f"Scanning {self._analysis_done_count}/{total} | "
             f"Bytes scanned: {self._format_bytes(self._analysis_bytes_scanned)} | "
-            f"Current file: {filename}{error_text}"
+            f"{filepath or filename}{error_text}"
         )
 
     def _normalize_result_data(self, data: dict):
@@ -2440,16 +2327,18 @@ class MainWindow(QMainWindow):
                 self.progress.setValue(count)
             except Exception:
                 pass
-        self.dump_btn.setText(f"Dumped {count} file(s)")
+        if self._selected_action == "dump_modelinfo":
+            self.selected_action_btn.setText(f"Dumped {count} file(s)")
         self._set_progress_status(f"Wrote .modelinfo for {count}/{total} file(s)")
         self._clear_progress_status(delay_ms=4000)
         if output_paths:
             preview = "\n".join(output_paths[:20])
             if len(output_paths) > 20:
                 preview += f"\n...and {len(output_paths) - 20} more"
-            self.dump_btn.setToolTip(f"Last .modelinfo output paths:\n{preview}")
-        # Reset label after 3 seconds
-        QTimer.singleShot(3000, lambda: self.dump_btn.setText("Dump .modelinfo"))
+            self.selected_action_btn.setToolTip(
+                f"Last .modelinfo output paths:\n{preview}"
+            )
+        QTimer.singleShot(3000, self._refresh_selected_action_button)
 
     # -- Cards view --------------------------------------------------------
 
@@ -2462,7 +2351,7 @@ class MainWindow(QMainWindow):
             if widget is not None:
                 widget.deleteLater()
         self.cards_placeholder = QLabel(
-            "No models analyzed yet.\nDrop files above and click Analyze."
+            "No models analyzed yet.\nDrop files anywhere or click Open."
         )
         self.cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cards_placeholder.setStyleSheet(
@@ -2478,7 +2367,7 @@ class MainWindow(QMainWindow):
             if widget is not None:
                 widget.deleteLater()
         self.simple_cards_placeholder = QLabel(
-            "No models analyzed yet.\nDrop files above and click Analyze."
+            "No models analyzed yet.\nDrop files anywhere or click Open."
         )
         self.simple_cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.simple_cards_placeholder.setStyleSheet(
@@ -3134,10 +3023,8 @@ class MainWindow(QMainWindow):
                 f"{visible_selected_count} selected ({hidden_count} hidden)"
             )
         enabled = visible_selected_count > 0
-        self.copy_files_btn.setEnabled(enabled)
-        self.move_files_btn.setEnabled(enabled)
-        self.copy_names_btn.setEnabled(enabled)
-        self.copy_paths_btn.setEnabled(enabled)
+        self.selected_action_btn.setEnabled(enabled)
+        self.selected_action_menu_btn.setEnabled(True)
 
         if visible:
             all_selected = visible.issubset(self._selected_paths)
@@ -3185,6 +3072,17 @@ class MainWindow(QMainWindow):
             self._results = [r for r in self._results if r.get("filepath") not in moved]
             self._selected_paths -= moved
             self._rebuild_views_from_results()
+            self._update_file_count()
+
+    def _remove_selected_results(self):
+        selected = set(self._visible_selected_paths())
+        if not selected:
+            return
+        self._queued_files = [p for p in self._queued_files if p not in selected]
+        self._results = [r for r in self._results if r.get("filepath") not in selected]
+        self._selected_paths -= selected
+        self._rebuild_views_from_results()
+        self._update_file_count()
 
     def _copy_selected_names(self):
         selected = self._visible_selected_paths()

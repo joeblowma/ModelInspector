@@ -1324,11 +1324,12 @@ def detect_moe(keys: list[str], metadata: dict, arch: str) -> dict:
 
 
 def format_size(size_bytes: int) -> str:
-    size_bytes_f = float(size_bytes) / 1024.0
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if size_bytes < 1024:
-            return f"{size_bytes:.2f} {unit}"
-    return f"{size_bytes_f:.2f} PB"
+    size = float(size_bytes)
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
+        if size < 1024.0 or unit == "PB":
+            return f"{size:.2f} {unit}"
+        size /= 1024.0
+    return f"{size:.2f} PB"
 
 
 def format_params(count: int) -> str:

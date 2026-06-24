@@ -11,6 +11,8 @@ This is a small Python desktop/CLI utility for inspecting various language and d
   - `model_cache.py` Persistent inspection-result cache
   - `model_readers.py` Read-only model file readers and discovery helpers
   - `modelinfo.py` Model-info dump helpers for Model Inspector
+  - `front/` Sub-module for GUI support functionality
+  - `back/` Sub-module for backend/command line callable inspect_model.py
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
@@ -26,11 +28,12 @@ This is a small Python desktop/CLI utility for inspecting various language and d
 - `py src/inspect_model.py --help` checks CLI argument wiring.
 - `py src/inspect_model.py path\to\model.safetensors` inspects one file from the CLI.
 - `py src/inspect_model.py path\to\folder --recursive --json` runs a recursive CLI smoke test with JSON output.
-- `compile.bat` builds the distributable with PyInstaller.
+- `win_compile.bat` builds a distributable with PyInstaller.
+- `win_clean.bat` cleans up stray bits from compile and direct python execution
 
 ## Coding Style & Naming Conventions
 
-Use standard Python style with 4-space indentation, `snake_case` for functions and variables, `PascalCase` for Qt widget classes, and uppercase constants where appropriate. Keep GUI-only behavior in `gui.py`; keep model parsing, detection heuristics, and report formatting in `inspect_model.py`. Prefer small helper functions for architecture detection and avoid loading full tensor data unless required.
+Use standard Python style with 4-space indentation, `snake_case` for functions and variables, `PascalCase` for Qt widget classes, and uppercase constants where appropriate. Keep GUI-only behavior in `gui.py` and GUI functionality in `front/` submodule; keep model parsing, detection heuristics, and report formatting in `inspect_model.py` and the related `back/` submodule. Prefer small helper functions for architecture detection and avoid loading full tensor data unless required.
 
 ## Testing Guidelines
 

@@ -11,14 +11,6 @@ Inspect `.safetensors` and `.gguf` models from a desktop GUI and CLI.
 - Supports `.modelinfo` key dumps for debugging and sharing
 - Supports read-only `.gguf` metadata/tensor inspection
 
-## Repository Layout
-
-- `gui.py`: GUI only
-- `inspect_model.py`: model parsing, detection logic, data extraction, CLI
-- `requirements.txt`: dependencies
-- `venv_create.bat`: virtual environment bootstrap helper
-- `venv_activate.bat`: activate helper
-
 ## Setup
 
 1. Create the virtual environment:
@@ -36,13 +28,13 @@ venv_activate.bat
 3. Run GUI:
 
 ```bat
-py src/gui.py
+python src/gui.py
 ```
 
 4. Run CLI help:
 
 ```bat
-py src/inspect_model.py --help
+python src/inspect_model.py --help
 ```
 
 ## CLI Usage
@@ -50,46 +42,46 @@ py src/inspect_model.py --help
 ### Inspect one or more files
 
 ```bat
-py src/inspect_model.py path/to/model1.safetensors path/to/model2.safetensors
-py src/inspect_model.py path/to/model.gguf
+python src/inspect_model.py path/to/model1.safetensors path/to/model2.safetensors
+python src/inspect_model.py path/to/model.gguf
 ```
 
 ### Inspect folders
 
 ```bat
-py src/inspect_model.py path/to/folder
-py src/inspect_model.py path/to/folder --recursive
+python src/inspect_model.py path/to/folder
+python src/inspect_model.py path/to/folder --recursive
 ```
 
 ### JSON output
 
 ```bat
-py src/inspect_model.py path/to/folder --recursive --json
-py src/inspect_model.py path/to/folder --recursive --threads 4 --json
+python src/inspect_model.py path/to/folder --recursive --json
+python src/inspect_model.py path/to/folder --recursive --threads 4 --json
 ```
 
 ### Write `.modelinfo` files
 
 ```bat
-py src/inspect_model.py path/to/folder --recursive --write-modelinfo
+python src/inspect_model.py path/to/folder --recursive --write-modelinfo
 ```
 
 ### Write JSON `.modelinfo` files
 
 ```bat
-py src/inspect_model.py path/to/folder --recursive --write-modelinfo-json
+python src/inspect_model.py path/to/folder --recursive --write-modelinfo-json
 ```
 
 ### Dump key/debug report text to console
 
 ```bat
-py src/inspect_model.py path/to/folder --recursive --dump-keys
+python src/inspect_model.py path/to/folder --recursive --dump-keys
 ```
 
 ### Optional alias fallback (filename tokens)
 
 ```bat
-py src/inspect_model.py path/to/folder --recursive --allow-filename-alias-detection
+python src/inspect_model.py path/to/folder --recursive --allow-filename-alias-detection
 ```
 
 ## GUI Walkthrough
@@ -139,7 +131,7 @@ py src/inspect_model.py path/to/folder --recursive --allow-filename-alias-detect
 ## Notes
 
 - Folder drag/drop and folder browse both support recursive discovery of `.safetensors` and `.gguf`.
-- `.ckpt`, `.pt`, and `.pth` are treated as unsafe/unsupported for now because PyTorch checkpoint loading may require pickle deserialization. The app warns and ignores them until an explicit safe-loading mode exists.
+- `.onnx`, `.ckpt`, `.pt`, and `.pth` are treated as unsafe/unsupported for now because PyTorch checkpoint loading may require pickle deserialization. The app warns and ignores them until an explicit safe-loading mode exists.
 - Parsed model summaries are cached by resolved path, file size, and modified time to speed up repeat inspections.
 - If `Cache full tensor data during analysis` is enabled, compact tensor descriptors are stored under `cache/data/` beside the summary cache and can be used for Raw/modelinfo output even when the model file is unavailable.
 - Successful folder scans are cached immediately. The `Load default libraries on startup` setting restores cached scan results on launch and keeps cached summaries even when files are missing or temporarily unreachable.

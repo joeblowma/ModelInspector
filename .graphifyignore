@@ -1,0 +1,20 @@
+# .graphifyignore
+.gitignore
+.pylintrc
+LICENSE
+splash_base.bmp
+*.bat
+settings.ini
+.graphifyignore
+.model-inspector/
+__pycache__/
+assets/
+_mockups/
+.venv/
+requirements.txt
+requirements-dev.txt
+pyproject.toml
+TODO.md
+README.md
+DONE.md
+AGENTS.md

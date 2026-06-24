@@ -2,15 +2,15 @@
 requires = [
     "wheel",
     "setuptools",
-    "build"
+    "build",
 ]
 build-backend = "uv_build"
 
 [project]
 name = "modelinspector"
 version = "0.1.0"
-description = "Index, explore and organize LLM/Diffusion models"
-keywords = ["safetensors", "gguf", ""]
+description = "Index, explore, and organize LLM/Diffusion models"
+keywords = ["safetensors", "gguf", "onnx"]
 
 authors = [
     { name = "[cOz]", email = "2877235+joeblowma@users.noreply.github.com" }

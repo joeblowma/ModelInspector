@@ -7,7 +7,6 @@ Dark-mode interface with drag-and-drop, card view, and data table view.
 import sys
 import os
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # for dismissing the Windows exe splash screen
@@ -19,7 +18,7 @@ except ImportError:
 # Suppress Qt DPI awareness warning on Windows
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QTimer, QSettings, QEvent
+from PyQt6.QtCore import Qt, pyqtSignal, QMimeData, QTimer, QSettings, QEvent
 from PyQt6.QtGui import (
     QContextMenuEvent,
     QDragEnterEvent,
@@ -66,7 +65,6 @@ from PyQt6.QtWidgets import (
 )
 
 from inspect_model import (
-    inspect_file,
     format_params,
     format_size,
     generate_modelinfo_dump,
@@ -88,8 +86,9 @@ from model_cache import (
     store_directory_scan,
 )
 from app_paths import settings_path
+from background_tasks import AnalysisWorker
 
-MODEL_FORMAT_FILTERS = (".safetensors", ".gguf", ".ckpt", ".pt", ".pth")
+MODEL_FORMAT_FILTERS = (".safetensors", ".gguf", ".ckpt", ".onnx", ".pt", ".pth")
 
 
 def _clipboard() -> QClipboard:
@@ -264,72 +263,6 @@ QProgressBar::chunk {
     border-radius: 4px;
 }
 """
-
-
-# ---------------------------------------------------------------------------
-# Worker thread for analysis
-# ---------------------------------------------------------------------------
-
-
-class AnalysisWorker(QThread):
-    """Runs inspect_file() on a list of paths in a background thread."""
-
-    result_ready = pyqtSignal(dict)  # emitted per file
-    error_occurred = pyqtSignal(str, str)  # filepath, error message
-    all_done = pyqtSignal()
-
-    def __init__(
-        self,
-        filepaths: list[str],
-        inspect_options: dict | None = None,
-        threads: int = 1,
-    ):
-        super().__init__()
-        self.filepaths = filepaths
-        self.inspect_options = inspect_options or {}
-        self.threads = max(1, int(threads or 1))
-        self._cancel_requested = False
-        self.was_cancelled = False
-
-    def cancel(self):
-        self._cancel_requested = True
-        self.requestInterruption()
-
-    def run(self):
-        if self.threads > 1:
-            self._run_parallel()
-            return
-        for fp in self.filepaths:
-            if self._cancel_requested or self.isInterruptionRequested():
-                self.was_cancelled = True
-                break
-            try:
-                result = inspect_file(fp, options=self.inspect_options)
-                self.result_ready.emit(result)
-            except Exception as e:
-                self.error_occurred.emit(fp, str(e))
-        self.all_done.emit()
-
-    def _inspect_one(self, fp: str):
-        return inspect_file(fp, options=self.inspect_options)
-
-    def _run_parallel(self):
-        max_workers = min(self.threads, len(self.filepaths))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_path = {
-                executor.submit(self._inspect_one, fp): fp for fp in self.filepaths
-            }
-            for future in as_completed(future_to_path):
-                fp = future_to_path[future]
-                if self._cancel_requested or self.isInterruptionRequested():
-                    self.was_cancelled = True
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    break
-                try:
-                    self.result_ready.emit(future.result())
-                except Exception as e:
-                    self.error_occurred.emit(fp, str(e))
-        self.all_done.emit()
 
 
 # ---------------------------------------------------------------------------

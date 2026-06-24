@@ -308,6 +308,33 @@ def get_cached_inspection_snapshots(filepaths: list[str]) -> dict[str, dict]:
     return snapshots
 
 
+def list_cached_inspection_paths() -> list[str]:
+    """Return paths that have cached inspection summaries."""
+    paths = []
+    seen = set()
+    for entry in _iter_cached_entries():
+        raw_identity = entry.get("identity")
+        identity = raw_identity if isinstance(raw_identity, dict) else {}
+        raw_data = entry.get("data")
+        data = raw_data if isinstance(raw_data, dict) else {}
+        candidates = [
+            data.get("filepath"),
+            data.get("resolved_filepath"),
+            identity.get("resolved_filepath"),
+        ]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            path = str(candidate)
+            key = path.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            paths.append(path)
+            break
+    return paths
+
+
 def store_cached_inspection(filepath: str, data: dict, options: dict | None = None):
     key = _cache_key(filepath, options)
     entry_id = _entry_id(key)

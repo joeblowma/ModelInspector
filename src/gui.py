@@ -81,10 +81,9 @@ from model_readers import (
 )
 from model_cache import (
     clear_inspection_cache,
-    get_cached_directory_scan,
     get_cached_inspection_snapshots,
     get_cached_raw_dump,
-    list_cached_directories,
+    list_cached_inspection_paths,
     store_raw_dump,
     store_directory_scan,
 )
@@ -434,7 +433,7 @@ class SettingsDialog(QDialog):
         self.default_libraries_checkbox.setChecked(load_default_libraries_on_startup)
         default_libraries_cell = make_general_cell(
             self.default_libraries_checkbox,
-            "Load files from cached folder scans when the app starts.",
+            "Load cached model summaries and cached folder scans when the app starts.",
         )
 
         thread_wrap = QWidget()
@@ -1093,6 +1092,7 @@ class MainWindow(QMainWindow):
         self._active_format_filter: set[str] | None = None
         self._analysis_done_count = 0
         self._analysis_error_count = 0
+        self._analysis_total_count = 0
         self._analysis_bytes_scanned = 0
         self._scan_cancel_requested = False
         self._startup_cache_load_cancelled = False
@@ -1841,16 +1841,24 @@ class MainWindow(QMainWindow):
         self._set_cancel_available(False)
         return found
 
-    def _add_files(self, paths: list[str]):
+    def _queue_files(self, paths: list[str]) -> list[str]:
         if not paths:
-            return
+            return []
+        added = []
         if self._add_mode == "replace":
             self._queued_files.clear()
 
         for p in paths:
             if p not in self._queued_files:
                 self._queued_files.append(p)
+                added.append(p)
         self._update_file_count()
+        return added
+
+    def _add_files(self, paths: list[str]):
+        added = self._queue_files(paths)
+        if not added:
+            return
         if self._auto_analyze_on_add:
             self._analyze_all()
 
@@ -1903,23 +1911,19 @@ class MainWindow(QMainWindow):
     def _load_default_libraries_from_cache_on_startup(self):
         if not self._load_default_libraries_on_startup:
             return
-        folders = list_cached_directories()
-        if not folders:
-            return
 
         cached_paths = []
         seen = set()
-        for folder in folders:
-            for path in get_cached_directory_scan(folder):
-                if path in seen:
-                    continue
-                seen.add(path)
-                cached_paths.append(path)
+        for path in list_cached_inspection_paths():
+            key = path.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            cached_paths.append(path)
         if not cached_paths:
             return
 
         self._startup_cache_load_cancelled = False
-        queued_paths = []
         snapshot_count = 0
         snapshots = get_cached_inspection_snapshots(cached_paths)
         total = len(cached_paths)
@@ -1945,6 +1949,8 @@ class MainWindow(QMainWindow):
                     cached["filepath"] = path
                     cached["filename"] = Path(path).name
                     self._normalize_result_data(cached)
+                    if path not in self._queued_files:
+                        self._queued_files.append(path)
                     self._results.append(cached)
                     self._add_card(cached)
                     self._add_table_row(cached)
@@ -1955,8 +1961,6 @@ class MainWindow(QMainWindow):
                         self._format_filter_for_data(cached)
                     )
                     snapshot_count += 1
-                else:
-                    queued_paths.append(path)
 
             self.progress.setValue(end_index)
             self._set_progress_status(
@@ -1973,19 +1977,10 @@ class MainWindow(QMainWindow):
                 self._refresh_raw_combo_filtered()
                 self._sync_selection_visuals()
 
-            if queued_paths:
-                previous_auto_analyze = self._auto_analyze_on_add
-                self._auto_analyze_on_add = False
-                try:
-                    self._add_files(queued_paths)
-                finally:
-                    self._auto_analyze_on_add = previous_auto_analyze
-
             self._set_cancel_available(False)
             self._set_progress_status(
                 f"Loaded {snapshot_count} cached summary"
-                f"{'ies' if snapshot_count != 1 else 'y'} and queued {len(queued_paths)} "
-                f"uncached path{'s' if len(queued_paths) != 1 else ''}"
+                f"{'ies' if snapshot_count != 1 else 'y'}"
             )
             self._clear_progress_status(delay_ms=5000)
 
@@ -2095,45 +2090,51 @@ class MainWindow(QMainWindow):
     def _analyze_all(self):
         if not self._queued_files:
             return
+        self._start_analysis(list(self._queued_files), clear_existing=True)
+
+    def _start_analysis(self, paths: list[str], clear_existing: bool):
+        if not paths:
+            return
         if self._worker and self._worker.isRunning():
             return
 
         self.analyze_btn.setEnabled(False)
         self.progress.setVisible(True)
-        self.progress.setRange(0, len(self._queued_files))
-        self.progress.setMaximum(len(self._queued_files))
+        self.progress.setRange(0, len(paths))
+        self.progress.setMaximum(len(paths))
         self.progress.setValue(0)
         self._set_cancel_available(True)
         self._analysis_done_count = 0
         self._analysis_error_count = 0
+        self._analysis_total_count = len(paths)
         self._analysis_bytes_scanned = 0
         self._set_progress_status(
-            f"Scanning 0/{len(self._queued_files)} | Bytes scanned: 0 B"
+            f"Scanning 0/{self._analysis_total_count} | Bytes scanned: 0 B"
         )
 
-        # Clear previous results
-        self._results.clear()
-        self._cards.clear()
-        self._path_to_card.clear()
-        self._path_to_simple_card.clear()
-        self._path_to_row.clear()
-        self._selected_paths.clear()
-        self._active_arch_filter = None
-        self._active_tag_filter = None
-        self._active_format_filter = None
-        self._clear_cards()
-        self.arch_filter_btn.clear_items()
-        self.tag_filter_btn.clear_items()
-        self._reset_format_filter_items()
-        self.table.setRowCount(0)
-        self.raw_combo.clear()
-        self.raw_text.clear()
-        self._raw_loaded_filepath = None
-        self._update_raw_controls()
-        self._update_selection_ui_state()
+        if clear_existing:
+            self._results.clear()
+            self._cards.clear()
+            self._path_to_card.clear()
+            self._path_to_simple_card.clear()
+            self._path_to_row.clear()
+            self._selected_paths.clear()
+            self._active_arch_filter = None
+            self._active_tag_filter = None
+            self._active_format_filter = None
+            self._clear_cards()
+            self.arch_filter_btn.clear_items()
+            self.tag_filter_btn.clear_items()
+            self._reset_format_filter_items()
+            self.table.setRowCount(0)
+            self.raw_combo.clear()
+            self.raw_text.clear()
+            self._raw_loaded_filepath = None
+            self._update_raw_controls()
+            self._update_selection_ui_state()
 
         self._worker = AnalysisWorker(
-            list(self._queued_files),
+            list(paths),
             inspect_options={
                 "allow_filename_alias_detection": self._allow_filename_alias_detection,
                 "cache_full_data": self._cache_full_data_on_analyze,
@@ -2213,12 +2214,12 @@ class MainWindow(QMainWindow):
         )
         if was_cancelled:
             self._set_progress_status(
-                f"Analysis cancelled: {self._analysis_done_count}/{len(self._queued_files)} "
+                f"Analysis cancelled: {self._analysis_done_count}/{self._analysis_total_count} "
                 f"parsed | Partial results remain visible{error_text}"
             )
         else:
             self._set_progress_status(
-                f"Scanned {self._analysis_done_count}/{len(self._queued_files)} | "
+                f"Scanned {self._analysis_done_count}/{self._analysis_total_count} | "
                 f"Bytes scanned: {self._format_bytes(self._analysis_bytes_scanned)}{error_text}"
             )
         self._clear_progress_status(delay_ms=4000)
@@ -2233,7 +2234,7 @@ class MainWindow(QMainWindow):
             self.format_filter_btn.blockSignals(False)
 
     def _update_analysis_progress(self, filepath: str):
-        total = len(self._queued_files)
+        total = self._analysis_total_count
         self.progress.setValue(self._analysis_done_count)
         filename = Path(filepath).name if filepath else "-"
         error_text = (

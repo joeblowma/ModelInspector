@@ -9,10 +9,7 @@ from pathlib import Path
 def app_base_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
-    source_dir = Path(__file__).resolve().parent
-    if source_dir.name == "src":
-        return source_dir.parent
-    return source_dir
+    return Path(__file__).resolve().parent
 
 
 def app_data_dir() -> Path:

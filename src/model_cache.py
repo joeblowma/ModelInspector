@@ -233,8 +233,10 @@ def _iter_cached_entries():
 
 def _entry_matches_path(entry: dict, filepath: str) -> bool:
     wanted = _path_match_values(filepath)
-    identity = entry.get("identity") if isinstance(entry.get("identity"), dict) else {}
-    data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+    raw_identity = entry.get("identity")
+    identity = raw_identity if isinstance(raw_identity, dict) else {}
+    raw_data = entry.get("data")
+    data = raw_data if isinstance(raw_data, dict) else {}
     candidates = {
         str(identity.get("resolved_filepath") or "").lower(),
         str(data.get("filepath") or "").lower(),
@@ -285,10 +287,10 @@ def get_cached_inspection_snapshots(filepaths: list[str]) -> dict[str, dict]:
 
     snapshots = {}
     for entry in _iter_cached_entries():
-        identity = (
-            entry.get("identity") if isinstance(entry.get("identity"), dict) else {}
-        )
-        data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+        raw_identity = entry.get("identity")
+        identity = raw_identity if isinstance(raw_identity, dict) else {}
+        raw_data = entry.get("data")
+        data = raw_data if isinstance(raw_data, dict) else {}
         if not data:
             continue
         candidates = {

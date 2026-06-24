@@ -214,7 +214,7 @@ def _tensor_component_bucket(key: str) -> str | None:
     return None
 
 
-def _summarize_dtype_mix(dtype_counts: Counter, total_tensors: int) -> str:
+def _summarize_dtype_mix(dtype_counts: Counter[str], total_tensors: int) -> str:
     """Summarize a dtype counter using the same outlier tolerance as global precision."""
     if not dtype_counts or total_tensors <= 0:
         return "-"
@@ -233,9 +233,9 @@ def _summarize_dtype_mix(dtype_counts: Counter, total_tensors: int) -> str:
     )
 
 
-def analyze_component_precisions(tensor_info: dict) -> dict[str, Counter]:
+def analyze_component_precisions(tensor_info: dict) -> dict[str, Counter[str]]:
     """Build per-component dtype counters from tensor keys."""
-    component_dtypes: dict[str, Counter] = {}
+    component_dtypes: dict[str, Counter[str]] = {}
     for name, info in tensor_info.items():
         bucket = _tensor_component_bucket(name)
         if not bucket:

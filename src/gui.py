@@ -21,13 +21,18 @@ os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QTimer, QSettings, QEvent
 from PyQt6.QtGui import (
+    QContextMenuEvent,
     QDragEnterEvent,
+    QDragLeaveEvent,
     QDropEvent,
     # QFont,
+    QKeyEvent,
     QKeySequence,
+    QMouseEvent,
     QAction,
     QShortcut,
     QIcon,
+    QClipboard,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -88,6 +93,16 @@ from model_cache import (
 from app_paths import settings_path
 
 MODEL_FORMAT_FILTERS = (".safetensors", ".gguf", ".ckpt", ".pt", ".pth")
+
+
+def _clipboard() -> QClipboard:
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+    return clipboard
+
+
+def _combo_data_str(value) -> str | None:
+    return str(value) if value else None
 
 
 def _model_file_filter() -> str:
@@ -360,8 +375,12 @@ class DropZone(QFrame):
         )
         layout.addWidget(hint)
 
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
+    def dragEnterEvent(self, a0: QDragEnterEvent | None):
+        if a0 is None:
+            return
+        event = a0
+        mime_data = event.mimeData()
+        if mime_data is not None and mime_data.hasUrls():
             event.acceptProposedAction()
             self.setStyleSheet("""
                 DropZone {
@@ -371,7 +390,9 @@ class DropZone(QFrame):
                 }
             """)
 
-    def dragLeaveEvent(self, event):
+    def dragLeaveEvent(self, a0: QDragLeaveEvent | None):
+        if a0 is None:
+            return
         self.setStyleSheet("""
             DropZone {
                 border: 2px dashed #585b70;
@@ -383,8 +404,12 @@ class DropZone(QFrame):
                 background-color: #1e1e30;
             }
         """)
+        super().dragLeaveEvent(a0)
 
-    def dropEvent(self, event: QDropEvent):
+    def dropEvent(self, a0: QDropEvent | None):
+        if a0 is None:
+            return
+        event = a0
         self.setStyleSheet("""
             DropZone {
                 border: 2px dashed #585b70;
@@ -398,7 +423,10 @@ class DropZone(QFrame):
         """)
         paths = []
         unsupported = []
-        for url in event.mimeData().urls():
+        mime_data = event.mimeData()
+        if mime_data is None:
+            return
+        for url in mime_data.urls():
             fp = url.toLocalFile()
             if not fp:
                 continue
@@ -764,7 +792,8 @@ class CheckFilterButton(QToolButton):
                 and "ERROR" in self._arch_checks
             ):
                 sep = self._menu.addSeparator()
-                self._item_actions.append(sep)
+                if sep is not None:
+                    self._item_actions.append(sep)
                 inserted_divider = True
             checked = checked_state.get(arch, arch in self._active)
             cb = QCheckBox(f"{arch} ({self._counts.get(arch, 0)})")
@@ -1080,7 +1109,10 @@ class ModelCard(QFrame):
 
         # no bottom tags; tags are intentionally kept at top
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, a0: QMouseEvent | None):
+        if a0 is None:
+            return
+        event = a0
         if event.button() == Qt.MouseButton.LeftButton and self.filepath:
             self.selection_requested.emit(self.filepath, event.modifiers())
             event.accept()
@@ -1092,7 +1124,10 @@ class ModelCard(QFrame):
             self.drag_over_requested.emit(self.filepath)
         super().enterEvent(event)
 
-    def contextMenuEvent(self, event):
+    def contextMenuEvent(self, a0: QContextMenuEvent | None):
+        if a0 is None:
+            return
+        event = a0
         if self.filepath:
             self.context_requested.emit(
                 self.filepath, self._simple_view, event.globalPos()
@@ -1451,14 +1486,16 @@ class MainWindow(QMainWindow):
         self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.table.verticalHeader().setVisible(False)
+        vertical_header = self.table.verticalHeader()
+        assert vertical_header is not None
+        vertical_header.setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_table_item_selection_changed)
         self.table.cellClicked.connect(self._on_table_cell_clicked)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
-        self.table.horizontalHeader().sortIndicatorChanged.connect(
-            self._on_table_sort_changed
-        )
+        horizontal_header = self.table.horizontalHeader()
+        assert horizontal_header is not None
+        horizontal_header.sortIndicatorChanged.connect(self._on_table_sort_changed)
 
         self._table_columns = [
             "",
@@ -1490,6 +1527,7 @@ class MainWindow(QMainWindow):
         self.table.setHorizontalHeaderLabels(self._table_columns)
 
         header = self.table.horizontalHeader()
+        assert header is not None
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(0, 34)
         for i in range(1, len(self._table_columns)):
@@ -1665,11 +1703,13 @@ class MainWindow(QMainWindow):
             if self.raw_text.textCursor().hasSelection():
                 self.raw_text.copy()
             else:
-                QApplication.clipboard().setText(self.raw_text.toPlainText())
+                _clipboard().setText(self.raw_text.toPlainText())
             return
 
-    def eventFilter(self, obj, event):
-        if obj is self.raw_combo and event.type() == QEvent.Type.KeyPress:
+    def eventFilter(self, a0, a1: QEvent | None):
+        obj = a0
+        event = a1
+        if obj is self.raw_combo and isinstance(event, QKeyEvent):
             key = event.key()
             if key == Qt.Key.Key_Up:
                 self._step_raw_selection(-1)
@@ -1683,7 +1723,7 @@ class MainWindow(QMainWindow):
             if key == Qt.Key.Key_PageDown:
                 self._step_raw_selection(10)
                 return True
-        return super().eventFilter(obj, event)
+        return super().eventFilter(a0, a1)
 
     def _on_tab_changed(self, index):
         if index == 2:
@@ -2091,9 +2131,12 @@ class MainWindow(QMainWindow):
                 dlg.default_libraries_checkbox.isChecked()
             )
             self._cache_full_data_on_analyze = dlg.cache_full_data_checkbox.isChecked()
-            self._analysis_threads = int(dlg.analysis_threads_combo.currentData() or 1)
-            self._add_mode = dlg.add_mode_combo.currentData()
-            self._default_tab = str(dlg.default_tab_combo.currentData() or "cards")
+            threads = _combo_data_str(dlg.analysis_threads_combo.currentData())
+            self._analysis_threads = int(threads or 1)
+            self._add_mode = _combo_data_str(dlg.add_mode_combo.currentData()) or "replace"
+            self._default_tab = (
+                _combo_data_str(dlg.default_tab_combo.currentData()) or "cards"
+            )
             for key, cb in dlg.card_field_checks.items():
                 self._card_field_visibility[key] = cb.isChecked()
             for key, cb in dlg.simple_card_field_checks.items():
@@ -2349,7 +2392,7 @@ class MainWindow(QMainWindow):
         if selected:
             return selected
         if self.tabs.currentIndex() == 2:
-            current = self.raw_combo.currentData()
+            current = _combo_data_str(self.raw_combo.currentData())
             if current:
                 return [current]
         return []
@@ -2413,8 +2456,11 @@ class MainWindow(QMainWindow):
     def _clear_cards(self):
         while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
         self.cards_placeholder = QLabel(
             "No models analyzed yet.\nDrop files above and click Analyze."
         )
@@ -2426,8 +2472,11 @@ class MainWindow(QMainWindow):
 
         while self.simple_cards_layout.count():
             item = self.simple_cards_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
         self.simple_cards_placeholder = QLabel(
             "No models analyzed yet.\nDrop files above and click Analyze."
         )
@@ -2493,8 +2542,12 @@ class MainWindow(QMainWindow):
         self.simple_cards_container.adjustSize()
         self.cards_container.updateGeometry()
         self.simple_cards_container.updateGeometry()
-        self.cards_scroll.viewport().update()
-        self.simple_cards_scroll.viewport().update()
+        cards_viewport = self.cards_scroll.viewport()
+        simple_cards_viewport = self.simple_cards_scroll.viewport()
+        assert cards_viewport is not None
+        assert simple_cards_viewport is not None
+        cards_viewport.update()
+        simple_cards_viewport.update()
 
     # -- Data table view ---------------------------------------------------
 
@@ -2680,7 +2733,9 @@ class MainWindow(QMainWindow):
         active_tags = self._active_tag_filter
         active_formats = self._active_format_filter
         for data in self._results:
-            fp = data.get("filepath")
+            fp = str(data.get("filepath") or "")
+            if not fp:
+                continue
             arch = data.get("architecture", "")
             tags = set(self._filter_tags_for_data(data))
             file_format = self._format_filter_for_data(data)
@@ -2732,7 +2787,7 @@ class MainWindow(QMainWindow):
         return "." + file_format
 
     def _refresh_raw_combo_filtered(self):
-        prev_fp = self.raw_combo.currentData()
+        prev_fp = _combo_data_str(self.raw_combo.currentData())
         self.raw_combo.blockSignals(True)
         self.raw_combo.clear()
         for fp in self._visible_paths():
@@ -2750,9 +2805,10 @@ class MainWindow(QMainWindow):
         elif self.raw_combo.currentIndex() < 0:
             self.raw_combo.setCurrentIndex(0)
         else:
-            current_fp = self.raw_combo.currentData()
+            current_fp = _combo_data_str(self.raw_combo.currentData())
             if current_fp != self._raw_loaded_filepath:
-                self._show_raw_for_current_setting(current_fp)
+                if current_fp is not None:
+                    self._show_raw_for_current_setting(current_fp)
         self._update_raw_controls()
 
     def _show_raw_for_filepath(self, filepath: str):
@@ -2943,9 +2999,7 @@ class MainWindow(QMainWindow):
                 continue
             blocks.append(self._build_card_info_text(d, simple_view))
         if blocks:
-            QApplication.clipboard().setText(
-                ("\n\n" + ("-" * 50) + "\n\n").join(blocks)
-            )
+            _clipboard().setText(("\n\n" + ("-" * 50) + "\n\n").join(blocks))
 
     def _on_card_context_menu(self, filepath: str, simple_view: bool, global_pos):
         data = self._find_result_by_path(filepath)
@@ -2965,9 +3019,7 @@ class MainWindow(QMainWindow):
         if chosen == view_raw:
             self._show_raw_for_filepath(filepath)
         elif chosen == copy_info:
-            QApplication.clipboard().setText(
-                self._build_card_info_text(data, simple_view)
-            )
+            _clipboard().setText(self._build_card_info_text(data, simple_view))
         elif copy_selected is not None and chosen == copy_selected:
             self._copy_selected_cards_info(simple_view)
 
@@ -3039,11 +3091,13 @@ class MainWindow(QMainWindow):
         view_raw = menu.addAction("View Raw")
         copy_folder_path = menu.addAction("Copy Folder Path")
         copy_sel = menu.addAction("Copy Selected Entries")
-        chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+        viewport = self.table.viewport()
+        assert viewport is not None
+        chosen = menu.exec(viewport.mapToGlobal(pos))
         if chosen == view_raw and filepath:
             self._show_raw_for_filepath(filepath)
         elif chosen == copy_folder_path and filepath:
-            QApplication.clipboard().setText(str(Path(filepath).parent))
+            _clipboard().setText(str(Path(filepath).parent))
         elif chosen == copy_sel:
             self._copy_selected_table_cells()
 
@@ -3107,7 +3161,7 @@ class MainWindow(QMainWindow):
 
         urls = [QUrl.fromLocalFile(p) for p in selected]
         mime.setUrls(urls)
-        QApplication.clipboard().setMimeData(mime)
+        _clipboard().setMimeData(mime)
 
     def _move_selected_files(self):
         selected = self._visible_selected_paths()
@@ -3137,14 +3191,14 @@ class MainWindow(QMainWindow):
         if not selected:
             return
         text = "\n".join(Path(p).name for p in selected)
-        QApplication.clipboard().setText(text)
+        _clipboard().setText(text)
 
     def _copy_selected_paths(self):
         selected = self._visible_selected_paths()
         if not selected:
             return
         text = "\n".join(selected)
-        QApplication.clipboard().setText(text)
+        _clipboard().setText(text)
 
     def _rebuild_views_from_results(self):
         current_results = list(self._results)
@@ -3210,7 +3264,7 @@ class MainWindow(QMainWindow):
                     it = self.table.item(row, c)
                     vals.append(it.text() if it else "")
             lines.append("\t".join(vals))
-        QApplication.clipboard().setText("\n".join(lines))
+        _clipboard().setText("\n".join(lines))
 
     # -- Raw data view -----------------------------------------------------
 
@@ -3219,7 +3273,7 @@ class MainWindow(QMainWindow):
             self.raw_text.clear()
             self._raw_loaded_filepath = None
             return
-        filepath = self.raw_combo.itemData(index)
+        filepath = _combo_data_str(self.raw_combo.itemData(index))
         if not filepath:
             return
         self._update_raw_controls()
@@ -3270,7 +3324,7 @@ class MainWindow(QMainWindow):
         self._raw_loaded_filepath = None
 
     def _load_selected_raw_dump(self):
-        filepath = self.raw_combo.currentData()
+        filepath = _combo_data_str(self.raw_combo.currentData())
         if not filepath:
             return
         self._load_raw_dump(filepath)

@@ -13,7 +13,7 @@ description = "Index, explore, and organize LLM/Diffusion models"
 keywords = ["safetensors", "gguf", "onnx"]
 
 authors = [
-    { name = "[cOz]", email = "2877235+joeblowma@users.noreply.github.com" }
+    { name = "JBMan", email = "2877235+joeblowma@users.noreply.github.com" }
 ]
 requires-python = ">=3.11"
 dependencies = ['PyQt6', 'gguf', 'numpy']

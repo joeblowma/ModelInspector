@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app_paths import cache_dir
+from back.inspection_summary import compact_inspection_summary
 
 
 CACHE_VERSION = 1
@@ -278,14 +279,14 @@ def get_cached_inspection_snapshot(filepath: str) -> dict | None:
     return None
 
 
-def get_cached_inspection_snapshots(filepaths: list[str]) -> dict[str, dict]:
-    """Return cached inspection snapshots for many paths using one cache scan."""
+def _iter_cached_inspection_matches(filepaths: list[str]):
+    """Yield each requested filepath and matching cached data at most once."""
     wanted_by_value = {}
     for filepath in filepaths:
         for value in _path_match_values(filepath):
             wanted_by_value[value] = filepath
 
-    snapshots = {}
+    matched = set()
     for entry in _iter_cached_entries():
         raw_identity = entry.get("identity")
         identity = raw_identity if isinstance(raw_identity, dict) else {}
@@ -301,10 +302,38 @@ def get_cached_inspection_snapshots(filepaths: list[str]) -> dict[str, dict]:
         candidates.discard("")
         for candidate in candidates:
             filepath = wanted_by_value.get(candidate)
-            if filepath and filepath not in snapshots:
-                snapshot = dict(data)
-                snapshot.setdefault("cache_status", "snapshot")
-                snapshots[filepath] = snapshot
+            if filepath and filepath not in matched:
+                matched.add(filepath)
+                yield filepath, data
+
+
+def get_cached_inspection_snapshots(filepaths: list[str]) -> dict[str, dict]:
+    """Return cached inspection snapshots for many paths using one cache scan."""
+    snapshots = {}
+    for filepath, data in _iter_cached_inspection_matches(filepaths):
+        snapshot = dict(data)
+        snapshot.setdefault("cache_status", "snapshot")
+        snapshots[filepath] = snapshot
+    return snapshots
+
+
+def get_cached_inspection_summary_snapshot(filepath: str) -> dict | None:
+    """Return a compact GUI snapshot while preserving the full cache entry."""
+    snapshot = get_cached_inspection_snapshot(filepath)
+    if snapshot is None:
+        return None
+    return compact_inspection_summary(snapshot)
+
+
+def get_cached_inspection_summary_snapshots(
+    filepaths: list[str],
+) -> dict[str, dict]:
+    """Stream matching cache entries directly into compact GUI snapshots."""
+    snapshots = {}
+    for filepath, data in _iter_cached_inspection_matches(filepaths):
+        summary_source = dict(data)
+        summary_source.setdefault("cache_status", "snapshot")
+        snapshots[filepath] = compact_inspection_summary(summary_source)
     return snapshots
 
 

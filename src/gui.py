@@ -7,6 +7,7 @@ Dark-mode interface with drag-and-drop, card view, and data table view.
 import sys
 import os
 import json
+from time import perf_counter
 from pathlib import Path
 
 # for dismissing the Windows exe splash screen
@@ -79,14 +80,19 @@ from model_readers import (
 )
 from model_cache import (
     clear_inspection_cache,
-    get_cached_inspection_snapshots,
+    get_cached_inspection_summary_snapshots,
     get_cached_raw_dump,
     list_cached_inspection_paths,
     store_raw_dump,
     store_directory_scan,
 )
 from app_paths import settings_path
-from background_tasks import AnalysisWorker
+from background_tasks import (
+    AnalysisWorker,
+    DiscoveryWorker,
+)
+from back.inspection_summary import compact_inspection_summary
+from front.scan_projection import ProjectionEvent, ScanProjectionBuffer
 
 MODEL_FORMAT_FILTERS = (".safetensors", ".gguf", ".ckpt", ".onnx", ".pt", ".pth")
 
@@ -633,6 +639,19 @@ class CheckFilterButton(QToolButton):
         self._rebuild_item_actions()
         self._update_label()
 
+    def add_items(self, values):
+        changed = False
+        for value in values:
+            if not value:
+                continue
+            if value not in self._counts:
+                self._active.add(value)
+            self._counts[value] = self._counts.get(value, 0) + 1
+            changed = True
+        if changed:
+            self._rebuild_item_actions()
+            self._update_label()
+
     def ensure_item(self, arch: str, count: int = 0):
         if not arch or arch in self._counts:
             return
@@ -715,6 +734,7 @@ class ModelCard(QFrame):
         self.data = data
         self.filepath = data.get("filepath", "")
         self._selected = False
+        self._filter_visible = True
         self._simple_view = bool(simple_view)
         self._card_fields = card_fields or {}
         precision_text = (
@@ -943,6 +963,8 @@ class ModelCard(QFrame):
         super().contextMenuEvent(event)
 
     def set_selected(self, selected: bool):
+        if self._selected == selected:
+            return
         self._selected = selected
         self.select_cb.blockSignals(True)
         self.select_cb.setChecked(selected)
@@ -974,6 +996,10 @@ class ModelCard(QFrame):
             """)
 
     def set_filter_visible(self, visible: bool):
+        visible = bool(visible)
+        if self._filter_visible == visible:
+            return
+        self._filter_visible = visible
         self.setVisible(visible)
         self.setMaximumHeight(16777215 if visible else 0)
         self.updateGeometry()
@@ -1011,6 +1037,20 @@ class MainWindow(QMainWindow):
         self._queued_files: list[str] = []
         self._results: list[dict] = []
         self._worker: AnalysisWorker | None = None
+        self._discovery_worker: DiscoveryWorker | None = None
+        self._scan_generation = 0
+        self._discovery_generation = 0
+        self._discovery_paths: list[str] = []
+        self._discovery_roots: list[str] = []
+        self._discovery_auto_analyze = False
+        self._discovery_terminal: dict | None = None
+        self._table_sort_restore: tuple[bool, int, Qt.SortOrder] | None = None
+        self._card_rebuild_generation = 0
+        self._close_pending = False
+        self._close_waiting_workers: set[object] = set()
+        self._pending_filter_arches: list[str] = []
+        self._pending_filter_tags: list[str] = []
+        self._pending_filter_formats: list[str] = []
         self._raw_loaded_filepath: str | None = None
         self._cards: list[ModelCard] = []
         self._path_to_card: dict[str, ModelCard] = {}
@@ -1029,6 +1069,7 @@ class MainWindow(QMainWindow):
         self._analysis_bytes_scanned = 0
         self._scan_cancel_requested = False
         self._startup_cache_load_cancelled = False
+        self._startup_sort_restore: tuple[bool, int, Qt.SortOrder] | None = None
         self._progress_status_generation = 0
         self._allow_filename_alias_detection = False
         self._show_full_paths = False
@@ -1062,6 +1103,13 @@ class MainWindow(QMainWindow):
         }
         self._table_column_visibility_pref: dict[str, bool] = {}
         self._load_ui_settings()
+
+        self._projection = ScanProjectionBuffer(
+            self._project_scan_event,
+            self._reconcile_projected_results,
+            self._finish_analysis_projection,
+            parent=self,
+        )
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -1518,6 +1566,7 @@ class MainWindow(QMainWindow):
         if mime_data is None:
             return
         paths = []
+        folders = []
         unsupported = []
         for url in mime_data.urls():
             fp = url.toLocalFile()
@@ -1525,14 +1574,17 @@ class MainWindow(QMainWindow):
                 continue
             path = Path(fp)
             if path.is_dir():
-                paths.extend(self._discover_model_paths(fp))
+                folders.append(fp)
             elif is_supported_model_path(fp):
                 paths.append(fp)
             elif is_checkpoint_model_path(fp):
                 unsupported.append(fp)
         if unsupported:
             self._warn_unsupported_checkpoint_files(unsupported)
-        if paths:
+        if folders:
+            self._start_discovery(folders, paths)
+            a0.acceptProposedAction()
+        elif paths:
             self._add_files(paths)
             a0.acceptProposedAction()
 
@@ -1695,6 +1747,9 @@ class MainWindow(QMainWindow):
     def _cancel_current_operation(self):
         self._scan_cancel_requested = True
         self._startup_cache_load_cancelled = True
+        self._restore_startup_table_sorting()
+        if self._discovery_worker and self._discovery_worker.isRunning():
+            self._discovery_worker.cancel()
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
         self._set_cancel_available(False)
@@ -1717,62 +1772,108 @@ class MainWindow(QMainWindow):
         else:
             clear()
 
-    def _discover_model_paths(self, folder: str) -> list[str]:
-        found = []
-        seen = set()
-        discovered = 0
-        scanned_dirs = 0
-        normalized_extensions = tuple(ext.lower() for ext in SUPPORTED_MODEL_EXTENSIONS)
+    def _start_discovery(self, roots: list[str], seed_paths: list[str] | None = None):
+        if self._worker and self._worker.isRunning():
+            return
+        if self._discovery_worker and self._discovery_worker.isRunning():
+            return
+        self._discovery_generation += 1
+        self._discovery_roots = list(roots)
+        self._discovery_paths = list(seed_paths or [])
+        self._discovery_auto_analyze = self._auto_analyze_on_add
         self._scan_cancel_requested = False
-
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
         self._set_cancel_available(True)
-        self._set_progress_status(f"Discovering: 0 files | Current directory: {folder}")
-        QApplication.processEvents()
+        self._start_next_discovery_root(self._discovery_generation)
 
-        for dirpath, _, filenames in os.walk(folder):
-            if self._scan_cancel_requested:
-                break
-            scanned_dirs += 1
-            for filename in filenames:
-                if self._scan_cancel_requested:
-                    break
-                fp = Path(dirpath) / filename
-                if fp.suffix.lower() not in normalized_extensions:
-                    continue
-                if not fp.is_file() and not fp.is_symlink():
-                    continue
-                try:
-                    resolved = str(fp.resolve(strict=True))
-                except OSError:
-                    resolved = str(fp.absolute())
-                if resolved in seen:
-                    continue
-                seen.add(resolved)
-                found.append(str(fp))
-                discovered += 1
-            self._set_progress_status(
-                f"Discovering: {discovered} files | Directories: {scanned_dirs} | "
-                f"Current directory: {dirpath}"
+    def _start_next_discovery_root(self, generation: int):
+        if generation != self._discovery_generation or self._scan_cancel_requested:
+            self._finish_discovery(generation, True)
+            return
+        if not self._discovery_roots:
+            self._finish_discovery(generation, False)
+            return
+        root = self._discovery_roots.pop(0)
+        worker = DiscoveryWorker(root, extensions=SUPPORTED_MODEL_EXTENSIONS)
+        self._discovery_worker = worker
+        worker.progress_updated.connect(
+            lambda progress, g=generation: self._on_discovery_progress(g, progress)
+        )
+        worker.error_occurred.connect(
+            lambda path, message, g=generation: self._on_discovery_error(
+                g, path, message
             )
-            if scanned_dirs % 10 == 0:
-                QApplication.processEvents()
+        )
+        worker.discovery_done.connect(
+            lambda terminal, g=generation: self._on_discovery_done(g, terminal)
+        )
+        worker.finished.connect(
+            lambda g=generation, w=worker: self._on_discovery_worker_finished(g, w)
+        )
+        worker.start()
 
-        self.progress.setRange(0, 1)
-        self.progress.setValue(1)
-        if self._scan_cancel_requested:
+    def _on_discovery_progress(self, generation: int, progress: dict):
+        if generation != self._discovery_generation:
+            return
+        discovered = int(progress.get("discovered_files") or 0)
+        directories = int(progress.get("scanned_directories") or 0)
+        current = str(progress.get("current_directory") or progress.get("root") or "")
+        self._set_progress_status(
+            f"Discovering: {discovered} files | Directories: {directories} | "
+            f"Current directory: {current}"
+        )
+
+    def _on_discovery_error(self, generation: int, path: str, message: str):
+        if generation == self._discovery_generation:
+            self._set_progress_status(f"Discovery warning: {path} | {message}")
+
+    def _on_discovery_done(self, generation: int, terminal: dict):
+        if generation != self._discovery_generation:
+            return
+        self._discovery_terminal = terminal
+
+    def _on_discovery_worker_finished(
+        self, generation: int, worker: DiscoveryWorker
+    ):
+        if (
+            generation != self._discovery_generation
+            or worker is not self._discovery_worker
+        ):
+            return
+        terminal = self._discovery_terminal or {
+            "root": worker.root,
+            "paths": (),
+            "cancelled": True,
+        }
+        self._discovery_terminal = None
+        paths = [str(path) for path in terminal.get("paths") or ()]
+        self._discovery_paths.extend(paths)
+        root = str(terminal.get("root") or "")
+        if paths and not terminal.get("cancelled"):
+            store_directory_scan(root, paths)
+        if terminal.get("cancelled"):
+            self._finish_discovery(generation, True)
+        else:
+            self._start_next_discovery_root(generation)
+
+    def _finish_discovery(self, generation: int, cancelled: bool):
+        if generation != self._discovery_generation:
+            return
+        unique_paths = list(dict.fromkeys(self._discovery_paths))
+        self._set_cancel_available(False)
+        if cancelled:
             self._set_progress_status(
-                f"Discovery cancelled: {discovered} partial file"
-                f"{'s' if discovered != 1 else ''} found"
+                f"Discovery cancelled: {len(unique_paths)} partial files found"
             )
         else:
-            self._set_progress_status(
-                f"Discovered {discovered} file{'s' if discovered != 1 else ''} "
-                f"in {scanned_dirs} director{'ies' if scanned_dirs != 1 else 'y'}"
-            )
-        self._set_cancel_available(False)
-        return found
+            self._set_progress_status(f"Discovered {len(unique_paths)} files")
+        if unique_paths:
+            added = self._queue_files(unique_paths)
+            if added and self._discovery_auto_analyze:
+                self._analyze_all()
+                return
+        self._clear_progress_status(delay_ms=3000)
 
     def _queue_files(self, paths: list[str]) -> list[str]:
         if not paths:
@@ -1831,15 +1932,7 @@ class MainWindow(QMainWindow):
         )
         if not folder:
             return
-        found = self._discover_model_paths(folder)
-        if found and not self._scan_cancel_requested:
-            store_directory_scan(folder, found)
-        if found:
-            self._add_files(found)
-            if not self._auto_analyze_on_add:
-                self._clear_progress_status(delay_ms=3000)
-        elif not self._auto_analyze_on_add:
-            self._clear_progress_status(delay_ms=3000)
+        self._start_discovery([folder])
 
     def _load_default_libraries_from_cache_on_startup(self):
         if not self._load_default_libraries_on_startup:
@@ -1858,9 +1951,17 @@ class MainWindow(QMainWindow):
 
         self._startup_cache_load_cancelled = False
         snapshot_count = 0
-        snapshots = get_cached_inspection_snapshots(cached_paths)
+        snapshots = get_cached_inspection_summary_snapshots(cached_paths)
         total = len(cached_paths)
         batch_size = 20
+        header = self.table.horizontalHeader()
+        assert header is not None
+        self._startup_sort_restore = (
+            self.table.isSortingEnabled(),
+            header.sortIndicatorSection(),
+            header.sortIndicatorOrder(),
+        )
+        self.table.setSortingEnabled(False)
         self.progress.setVisible(True)
         self.progress.setRange(0, total)
         self.progress.setValue(0)
@@ -1869,6 +1970,7 @@ class MainWindow(QMainWindow):
         def load_batch(start_index: int):
             nonlocal snapshot_count
             if self._startup_cache_load_cancelled:
+                self._restore_startup_table_sorting()
                 self._set_progress_status(
                     f"Startup cache load cancelled: {snapshot_count}/{total} summaries loaded"
                 )
@@ -1905,6 +2007,7 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(0, lambda: load_batch(end_index))
                 return
 
+            self._restore_startup_table_sorting()
             if snapshot_count:
                 self._apply_arch_filter()
                 self._refresh_raw_combo_filtered()
@@ -1918,6 +2021,16 @@ class MainWindow(QMainWindow):
             self._clear_progress_status(delay_ms=5000)
 
         load_batch(0)
+
+    def _restore_startup_table_sorting(self):
+        if self._startup_sort_restore is None:
+            return
+        sorting_enabled, column, order = self._startup_sort_restore
+        self._startup_sort_restore = None
+        header = self.table.horizontalHeader()
+        assert header is not None
+        header.setSortIndicator(column, order)
+        self.table.setSortingEnabled(sorting_enabled)
 
     def _open_settings(self):
         col_vis = {
@@ -1996,6 +2109,20 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(tab_idx)
 
     def _clear_all(self):
+        self._startup_cache_load_cancelled = True
+        if self._worker and self._worker.isRunning():
+            self._worker.cancel()
+        if self._discovery_worker and self._discovery_worker.isRunning():
+            self._discovery_worker.cancel()
+        self._discovery_generation += 1
+        self._projection.invalidate()
+        self._scan_generation = self._projection.generation
+        self._card_rebuild_generation += 1
+        self._restore_table_sorting()
+        self._restore_startup_table_sorting()
+        self._pending_filter_arches.clear()
+        self._pending_filter_tags.clear()
+        self._pending_filter_formats.clear()
         self._queued_files.clear()
         self._results.clear()
         self._cards.clear()
@@ -2031,6 +2158,7 @@ class MainWindow(QMainWindow):
         if self._worker and self._worker.isRunning():
             return
 
+        self._scan_generation = self._projection.begin()
         self.analyze_btn.setEnabled(False)
         self.progress.setVisible(True)
         self.progress.setRange(0, len(paths))
@@ -2044,8 +2172,19 @@ class MainWindow(QMainWindow):
         self._set_progress_status(
             f"Scanning 0/{self._analysis_total_count} | Bytes scanned: 0 B"
         )
+        header = self.table.horizontalHeader()
+        assert header is not None
+        self._table_sort_restore = (
+            self.table.isSortingEnabled(),
+            header.sortIndicatorSection(),
+            header.sortIndicatorOrder(),
+        )
+        self.table.setSortingEnabled(False)
 
         if clear_existing:
+            self._pending_filter_arches.clear()
+            self._pending_filter_tags.clear()
+            self._pending_filter_formats.clear()
             self._results.clear()
             self._cards.clear()
             self._path_to_card.clear()
@@ -2074,12 +2213,62 @@ class MainWindow(QMainWindow):
             },
             threads=self._analysis_threads,
         )
-        self._worker.result_ready.connect(self._on_result)
-        self._worker.error_occurred.connect(self._on_error)
-        self._worker.all_done.connect(self._on_all_done)
-        self._worker.start()
+        worker = self._worker
+        generation = self._scan_generation
+        worker.result_ready.connect(
+            lambda data, g=generation, w=worker: self._on_result(g, w, data)
+        )
+        worker.error_occurred.connect(
+            lambda filepath, error, g=generation, w=worker: self._on_error(
+                g, w, filepath, error
+            )
+        )
+        worker.all_done.connect(
+            lambda g=generation, w=worker: self._on_all_done(g, w)
+        )
+        worker.start()
 
-    def _on_result(self, data: dict):
+    def _on_result(self, *args):
+        if len(args) == 1:
+            generation = self._scan_generation
+            worker = None
+            data = args[0]
+        else:
+            generation, worker, data = args
+        summary = compact_inspection_summary(data)
+        self._projection.enqueue(
+            ProjectionEvent(
+                generation,
+                "result",
+                summary,
+                worker.acknowledge_event if worker is not None else None,
+            )
+        )
+
+    def _on_error(self, *args):
+        if len(args) == 2:
+            generation = self._scan_generation
+            worker = None
+            filepath, error = args
+        else:
+            generation, worker, filepath, error = args
+        self._projection.enqueue(
+            ProjectionEvent(
+                generation,
+                "error",
+                (filepath, error),
+                worker.acknowledge_event if worker is not None else None,
+            )
+        )
+
+    def _project_scan_event(self, kind: str, payload: object):
+        if kind == "result":
+            self._project_result(payload)
+        else:
+            filepath, error = payload
+            self._project_error(str(filepath), str(error))
+
+    def _project_result(self, data: dict):
         self._normalize_result_data(data)
         self._results.append(data)
         self._analysis_done_count += 1
@@ -2087,14 +2276,12 @@ class MainWindow(QMainWindow):
         self._update_analysis_progress(data.get("filepath", ""))
         self._add_card(data)
         self._add_table_row(data)
-        self.arch_filter_btn.add_item(data.get("architecture", "Unknown"))
-        for tag in self._filter_tags_for_data(data):
-            self.tag_filter_btn.add_item(tag)
-        self.format_filter_btn.add_item(self._format_filter_for_data(data))
-        self._apply_arch_filter()
-        self._refresh_raw_combo_filtered()
+        self._apply_visibility_to_projected_item(data)
+        self._pending_filter_arches.append(data.get("architecture", "Unknown"))
+        self._pending_filter_tags.extend(self._filter_tags_for_data(data))
+        self._pending_filter_formats.append(self._format_filter_for_data(data))
 
-    def _on_error(self, filepath: str, error: str):
+    def _project_error(self, filepath: str, error: str):
         self._analysis_done_count += 1
         self._analysis_error_count += 1
         try:
@@ -2130,16 +2317,54 @@ class MainWindow(QMainWindow):
         self._results.append(err_data)
         self._add_card(err_data)
         self._add_table_row(err_data)
-        self.arch_filter_btn.add_item(err_data.get("architecture", "Unknown"))
-        for tag in self._filter_tags_for_data(err_data):
-            self.tag_filter_btn.add_item(tag)
-        self.format_filter_btn.add_item(self._format_filter_for_data(err_data))
-        self._apply_arch_filter()
+        self._apply_visibility_to_projected_item(err_data)
+        self._pending_filter_arches.append(err_data.get("architecture", "Unknown"))
+        self._pending_filter_tags.extend(self._filter_tags_for_data(err_data))
+        self._pending_filter_formats.append(self._format_filter_for_data(err_data))
 
-    def _on_all_done(self):
+    def _on_all_done(self, generation: int, worker: AnalysisWorker):
+        self._projection.mark_terminal(generation, worker)
+
+    def _reconcile_projected_results(self, final: bool):
+        self.arch_filter_btn.add_items(self._pending_filter_arches)
+        self.tag_filter_btn.add_items(self._pending_filter_tags)
+        self.format_filter_btn.add_items(self._pending_filter_formats)
+        self._pending_filter_arches.clear()
+        self._pending_filter_tags.clear()
+        self._pending_filter_formats.clear()
+        if not final:
+            return
+        self._apply_arch_filter(
+            refresh_raw=False,
+            refresh_geometry=False,
+            update_selection=False,
+        )
+        self._refresh_raw_combo_filtered()
+        self._sync_selection_visuals()
+        self._refresh_card_layout_geometry()
+
+    def _apply_visibility_to_projected_item(self, data: dict):
+        fp = str(data.get("filepath") or "")
+        if not fp:
+            return
+        visible = self._is_data_visible(data)
+        card = self._path_to_card.get(fp)
+        if card is None:
+            card = self._path_to_simple_card.get(fp)
+        if card:
+            card.set_filter_visible(visible)
+        row = self._row_for_filepath(fp)
+        if row is not None:
+            self.table.setRowHidden(row, not visible)
+
+    def _finish_analysis_projection(self, terminal: object):
+        worker = terminal
+        if worker is not self._worker:
+            return
+        self._restore_table_sorting()
         self.analyze_btn.setEnabled(True)
         self._set_cancel_available(False)
-        was_cancelled = bool(self._worker and self._worker.was_cancelled)
+        was_cancelled = bool(worker.was_cancelled)
         error_text = (
             f" | Errors: {self._analysis_error_count}"
             if self._analysis_error_count
@@ -2156,6 +2381,16 @@ class MainWindow(QMainWindow):
                 f"Bytes scanned: {self._format_bytes(self._analysis_bytes_scanned)}{error_text}"
             )
         self._clear_progress_status(delay_ms=4000)
+
+    def _restore_table_sorting(self):
+        if self._table_sort_restore is None:
+            return
+        sorting_enabled, column, order = self._table_sort_restore
+        self._table_sort_restore = None
+        header = self.table.horizontalHeader()
+        assert header is not None
+        header.setSortIndicator(column, order)
+        self.table.setSortingEnabled(sorting_enabled)
 
     def _reset_format_filter_items(self):
         self.format_filter_btn.blockSignals(True)
@@ -2325,6 +2560,7 @@ class MainWindow(QMainWindow):
     def _on_cards_view_changed(self, state):
         self._simple_cards_view = state == Qt.CheckState.Checked.value
         self._apply_cards_view_mode()
+        self._rebuild_active_cards_time_sliced()
 
     def _apply_cards_view_mode(self):
         if not hasattr(self, "cards_scroll") or not hasattr(
@@ -2336,39 +2572,69 @@ class MainWindow(QMainWindow):
         self._refresh_card_layout_geometry()
 
     def _add_card(self, data: dict):
-        # Remove placeholders if present
-        if self.cards_placeholder:
-            self.cards_layout.removeWidget(self.cards_placeholder)
-            self.cards_placeholder.deleteLater()
-            self.cards_placeholder = None
-        if self.simple_cards_placeholder:
-            self.simple_cards_layout.removeWidget(self.simple_cards_placeholder)
-            self.simple_cards_placeholder.deleteLater()
-            self.simple_cards_placeholder = None
+        simple_view = self._simple_cards_view
+        layout = self.simple_cards_layout if simple_view else self.cards_layout
+        cards = self._path_to_simple_card if simple_view else self._path_to_card
+        fp = str(data.get("filepath") or "")
+        if fp and fp in cards:
+            return
+        placeholder_name = (
+            "simple_cards_placeholder" if simple_view else "cards_placeholder"
+        )
+        placeholder = getattr(self, placeholder_name)
+        if placeholder:
+            layout.removeWidget(placeholder)
+            placeholder.deleteLater()
+            setattr(self, placeholder_name, None)
 
-        detail_card = ModelCard(
+        card = ModelCard(
             data,
-            simple_view=False,
-            card_fields=self._card_field_visibility,
+            simple_view=simple_view,
+            card_fields=(
+                self._simple_card_field_visibility
+                if simple_view
+                else self._card_field_visibility
+            ),
         )
-        simple_card = ModelCard(
-            data,
-            simple_view=True,
-            card_fields=self._simple_card_field_visibility,
-        )
-        for card in (detail_card, simple_card):
-            card.selection_requested.connect(self._on_card_selection_requested)
-            card.checkbox_toggled.connect(self._on_card_checkbox_toggled)
-            card.drag_over_requested.connect(self._on_card_drag_over)
-            card.context_requested.connect(self._on_card_context_menu)
-        fp = data.get("filepath", "")
+        card.selection_requested.connect(self._on_card_selection_requested)
+        card.checkbox_toggled.connect(self._on_card_checkbox_toggled)
+        card.drag_over_requested.connect(self._on_card_drag_over)
+        card.context_requested.connect(self._on_card_context_menu)
         if fp:
-            self._path_to_card[fp] = detail_card
-            self._path_to_simple_card[fp] = simple_card
-        self._cards.append(detail_card)
-        self.cards_layout.addWidget(detail_card)
-        self.simple_cards_layout.addWidget(simple_card)
-        self._refresh_card_layout_geometry()
+            cards[fp] = card
+        self._cards.append(card)
+        layout.addWidget(card)
+
+    def _rebuild_active_cards_time_sliced(self):
+        self._card_rebuild_generation += 1
+        generation = self._card_rebuild_generation
+        self._cards.clear()
+        self._path_to_card.clear()
+        self._path_to_simple_card.clear()
+        self._clear_cards()
+        pending = list(self._results)
+        index = 0
+
+        def build_batch():
+            nonlocal index
+            if generation != self._card_rebuild_generation:
+                return
+            started = perf_counter()
+            built = 0
+            while index < len(pending) and built < 8:
+                self._add_card(pending[index])
+                index += 1
+                built += 1
+                if (perf_counter() - started) * 1000.0 >= 12.0:
+                    break
+            self._refresh_card_layout_geometry()
+            if index < len(pending):
+                QTimer.singleShot(0, build_batch)
+            else:
+                self._apply_arch_filter()
+                self._sync_selection_visuals()
+
+        QTimer.singleShot(0, build_batch)
 
     def _refresh_card_layout_geometry(self):
         self.cards_layout.invalidate()
@@ -2387,7 +2653,6 @@ class MainWindow(QMainWindow):
     # -- Data table view ---------------------------------------------------
 
     def _add_table_row(self, data: dict):
-        self.table.setSortingEnabled(False)
         row = self.table.rowCount()
         self.table.insertRow(row)
 
@@ -2514,7 +2779,6 @@ class MainWindow(QMainWindow):
 
         if filepath:
             self._path_to_row[filepath] = row
-        self.table.setSortingEnabled(True)
 
     def _visible_paths(self) -> list[str]:
         paths = []
@@ -2547,7 +2811,9 @@ class MainWindow(QMainWindow):
     def _on_table_sort_changed(self, *_):
         QTimer.singleShot(0, self._sync_order_from_table)
 
-    def _sync_order_from_table(self):
+    def _sync_order_from_table(
+        self, *, refresh_raw: bool = True, refresh_geometry: bool = True
+    ):
         ordered_paths = []
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 1)
@@ -2565,8 +2831,9 @@ class MainWindow(QMainWindow):
                 if card:
                     layout.removeWidget(card)
                     layout.addWidget(card)
-        self._refresh_card_layout_geometry()
-        if hasattr(self, "raw_combo"):
+        if refresh_geometry:
+            self._refresh_card_layout_geometry()
+        if refresh_raw and hasattr(self, "raw_combo"):
             self._refresh_raw_combo_filtered()
 
     def _on_arch_filter_changed(self, active):
@@ -2581,22 +2848,18 @@ class MainWindow(QMainWindow):
         self._active_format_filter = None if active is None else set(active)
         self._apply_arch_filter()
 
-    def _apply_arch_filter(self):
-        active_arch = self._active_arch_filter
-        active_tags = self._active_tag_filter
-        active_formats = self._active_format_filter
+    def _apply_arch_filter(
+        self,
+        *,
+        refresh_raw: bool = True,
+        refresh_geometry: bool = True,
+        update_selection: bool = True,
+    ):
         for data in self._results:
             fp = str(data.get("filepath") or "")
             if not fp:
                 continue
-            arch = data.get("architecture", "")
-            tags = set(self._filter_tags_for_data(data))
-            file_format = self._format_filter_for_data(data)
-            visible = (
-                ((active_arch is None) or (arch in active_arch))
-                and ((active_tags is None) or bool(tags & active_tags))
-                and ((active_formats is None) or (file_format in active_formats))
-            )
+            visible = self._is_data_visible(data)
             card = self._path_to_card.get(fp)
             if card:
                 card.set_filter_visible(visible)
@@ -2606,8 +2869,25 @@ class MainWindow(QMainWindow):
             row = self._row_for_filepath(fp)
             if row is not None and 0 <= row < self.table.rowCount():
                 self.table.setRowHidden(row, not visible)
-        self._sync_order_from_table()
-        self._update_selection_ui_state()
+        self._sync_order_from_table(
+            refresh_raw=refresh_raw,
+            refresh_geometry=refresh_geometry,
+        )
+        if update_selection:
+            self._update_selection_ui_state()
+
+    def _is_data_visible(self, data: dict) -> bool:
+        active_arch = self._active_arch_filter
+        active_tags = self._active_tag_filter
+        active_formats = self._active_format_filter
+        arch = data.get("architecture", "")
+        tags = set(self._filter_tags_for_data(data))
+        file_format = self._format_filter_for_data(data)
+        return (
+            ((active_arch is None) or (arch in active_arch))
+            and ((active_tags is None) or bool(tags & active_tags))
+            and ((active_formats is None) or (file_format in active_formats))
+        )
 
     def _filter_tags_for_data(self, data: dict) -> list[str]:
         tags = []
@@ -3064,6 +3344,12 @@ class MainWindow(QMainWindow):
 
     def _rebuild_views_from_results(self):
         current_results = list(self._results)
+        header = self.table.horizontalHeader()
+        assert header is not None
+        sorting_enabled = self.table.isSortingEnabled()
+        sort_column = header.sortIndicatorSection()
+        sort_order = header.sortIndicatorOrder()
+        self.table.setSortingEnabled(False)
         self._cards.clear()
         self._path_to_card.clear()
         self._path_to_simple_card.clear()
@@ -3082,6 +3368,8 @@ class MainWindow(QMainWindow):
             for tag in self._filter_tags_for_data(data):
                 self.tag_filter_btn.add_item(tag)
             self.format_filter_btn.add_item(self._format_filter_for_data(data))
+        header.setSortIndicator(sort_column, sort_order)
+        self.table.setSortingEnabled(sorting_enabled)
         self._apply_arch_filter()
         self._refresh_raw_combo_filtered()
         self._sync_selection_visuals()
@@ -3224,6 +3512,50 @@ class MainWindow(QMainWindow):
             self.raw_load_btn.setEnabled(True)
             self.raw_load_btn.setText("Load Full Dump")
             self._clear_progress_status(delay_ms=1500)
+
+    def closeEvent(self, event):
+        running_workers = {
+            worker
+            for worker in (self._worker, self._discovery_worker)
+            if worker is not None and worker.isRunning()
+        }
+        if running_workers:
+            event.ignore()
+            if self._close_pending:
+                return
+            self._close_pending = True
+            self._projection.invalidate()
+            self._card_rebuild_generation += 1
+            self._discovery_generation += 1
+            self._startup_cache_load_cancelled = True
+            self._restore_table_sorting()
+            self._restore_startup_table_sorting()
+            self._close_waiting_workers = running_workers
+            for worker in running_workers:
+                worker.finished.connect(
+                    lambda w=worker: self._on_close_worker_finished(w)
+                )
+                worker.cancel()
+                if not worker.isRunning():
+                    self._on_close_worker_finished(worker)
+            return
+
+        self._close_pending = False
+        self._close_waiting_workers.clear()
+        self._projection.invalidate()
+        self._card_rebuild_generation += 1
+        self._discovery_generation += 1
+        self._startup_cache_load_cancelled = True
+        self._restore_table_sorting()
+        self._restore_startup_table_sorting()
+        super().closeEvent(event)
+
+    def _on_close_worker_finished(self, worker):
+        if worker not in self._close_waiting_workers:
+            return
+        self._close_waiting_workers.discard(worker)
+        if self._close_pending and not self._close_waiting_workers:
+            QTimer.singleShot(0, self.close)
 
 
 # ---------------------------------------------------------------------------

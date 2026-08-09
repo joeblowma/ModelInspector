@@ -214,10 +214,11 @@ assets/splash.bmp
 assets/icon.ico
 
 # LLM
-.claude
-.codex
-.kilo
-.opencode
+.claude/
+.codex/
+.kilo/
+.opencode/
+.pi/
 graphify-out/
 
 # Extras
@@ -227,3 +228,4 @@ src/.model-inspector
 test/
 /_mockups
 assets/splash.png
+/generated-goals

@@ -45,4 +45,5 @@ Recent history uses short, imperative or descriptive commit subjects, for exampl
 
 ## Agent-Specific Instructions
 
-Before answering architecture or cross-module codebase questions, read `graphify-out/GRAPH_REPORT.md`. Prefer `graphify query`, `graphify path`, or `graphify explain` for relationship questions. After modifying code files, run `graphify update .` to refresh the AST graph.
+- Before answering architecture or cross-module codebase questions, read `graphify-out/GRAPH_REPORT.md`. Prefer `graphify query`, `graphify path`, or `graphify explain` for relationship questions. After modifying code files, run `graphify update .` to refresh the AST graph.
+- When spawning subagents use `fork_turns = "none"`. Provide specific scoped tasks and their context for subagents.

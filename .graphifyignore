@@ -1,20 +1,22 @@
-# .graphifyignore
-.gitignore
-.pylintrc
-LICENSE
-splash_base.bmp
-*.bat
-settings.ini
-.graphifyignore
-.model-inspector/
-__pycache__/
-assets/
-_mockups/
-.venv/
-requirements.txt
-requirements-dev.txt
-pyproject.toml
-TODO.md
-README.md
-DONE.md
-AGENTS.md
+# 1. Ignore everything by default
+*
+
+# 2. Allow Git to look inside these specific folders
+!src/
+!src/back/
+!src/front/
+!tests/
+
+# 3. Re-ignore everything inside them by default
+src/*
+tests/*
+
+# 4. Un-ignore only the Python files
+!src/*.py
+!src/back/*.py
+!src/front/*.py
+!tests/*.py
+
+# 5. Explicitly block pycache and compiled files
+**/__pycache__/
+*.pyc

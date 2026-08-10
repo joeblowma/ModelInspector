@@ -12,22 +12,25 @@ This is a small Python desktop/CLI utility for inspecting various language and d
   - `model_readers.py` Read-only model file readers and discovery helpers
   - `modelinfo.py` Model-info dump helpers for Model Inspector
   - `front/` Sub-module for GUI support functionality
+    - `scan_projection.py` Time-sliced delivery of scan events to Qt widgets
   - `back/` Sub-module for backend/command line callable inspect_model.py
+    - `inspection_summary.py` Compact inspection results for long-lived GUI presentation state
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
 - `compile.bat`, `clean.bat`, `ModelInspector.spec`, `build/`, and `dist/` support PyInstaller packaging.
   - Treat `ModelInspector.spec`, `version.txt`, `build/` and `dist/` as generated output.
+- `README.md` github front page, extremely out of date, ignore for now
 - `graphify-out/` contains the repository knowledge graph used by agents for architecture navigation.
 
 ## Build, Test, and Development Commands
 
-- `venv_create.bat` creates the local virtual environment and installs dependencies.
-- `venv_activate.bat` activates the environment for manual work.
 - `py src/gui.py` launches the desktop UI.
 - `py src/inspect_model.py --help` checks CLI argument wiring.
 - `py src/inspect_model.py path\to\model.safetensors` inspects one file from the CLI.
 - `py src/inspect_model.py path\to\folder --recursive --json` runs a recursive CLI smoke test with JSON output.
+- `venv_create.bat` creates the local virtual environment and installs dependencies.
+- `venv_activate.bat` activates the environment for manual work.
 - `win_compile.bat` builds a distributable with PyInstaller.
 - `win_clean.bat` cleans up stray bits from compile and direct python execution
 
@@ -37,13 +40,16 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 
 ## Testing Guidelines
 
-There is currently no committed automated test suite. Validate changes with targeted CLI smoke checks against representative `.safetensors` files and launch `py gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
+Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
-## Commit & Pull Request Guidelines
-
-Recent history uses short, imperative or descriptive commit subjects, for example `Improved ZiT detection` and `revert a UI change from a prior commit`. Keep commits focused and mention the affected area when useful. Pull requests should include a concise description, manual validation commands, screenshots for visible GUI changes, and notes about any model files or edge cases used for verification.
+Existing tests:
+- `.\test_gui_scan_lifecycle.py`
+- `.\test_inspection_summary.py`
+- `.\test_integrated_scan_behavior.py`
+- `.\test_background_tasks.py`
+- `.\test_gui_projection.py`
 
 ## Agent-Specific Instructions
 
-- Before answering architecture or cross-module codebase questions, read `graphify-out/GRAPH_REPORT.md`. Prefer `graphify query`, `graphify path`, or `graphify explain` for relationship questions. After modifying code files, run `graphify update .` to refresh the AST graph.
+- When project structure changes or tests are added, update this file.
 - When spawning subagents use `fork_turns = "none"`. Provide specific scoped tasks and their context for subagents.

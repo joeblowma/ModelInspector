@@ -27,6 +27,30 @@ from model_readers import (
 from model_cache import get_cached_inspection, store_cached_inspection, store_model_data
 
 
+def _numeric_sort_key(key: str) -> tuple:
+    """Extract numeric parts for natural sorting of tensor keys.
+
+    Splits the key into numeric and non-numeric segments, then sorts
+    numerically where applicable. For example:
+    - "blk.1.*" -> ("blk.", 1, ".*")
+    - "blk.10.*" -> ("blk.", 10, ".*")
+    - "model.layers.0.*" -> ("model.layers.", 0, ".*")
+    """
+    parts = []
+    current_num = ""
+    for char in key:
+        if char.isdigit():
+            current_num += char
+        else:
+            if current_num:
+                parts.append((0, int(current_num)))
+                current_num = ""
+            parts.append((1, char))
+    if current_num:
+        parts.append((0, int(current_num)))
+    return tuple(parts)
+
+
 def _resolve_display_path(filepath: str) -> str:
     try:
         return str(Path(filepath).resolve(strict=True))
@@ -1544,7 +1568,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     resolved_filepath = _resolve_display_path(filepath)
     file_format = metadata.get("smi.format") or model_format_for_path(filepath)
     quantization = metadata.get("smi.quantization")
-    keys = sorted(tensor_info.keys())
+    keys = sorted(tensor_info.keys(), key=_numeric_sort_key)
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
     arch, arch_details = detect_architecture(
@@ -1661,7 +1685,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
 
 
 def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: int):
-    keys = sorted(tensor_info.keys())
+    keys = sorted(tensor_info.keys(), key=_numeric_sort_key)
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
     arch, arch_details = detect_architecture(

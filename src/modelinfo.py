@@ -17,6 +17,30 @@ def _resolve_display_path(filepath: str) -> str:
         return str(Path(filepath).absolute())
 
 
+def _numeric_sort_key(key: str) -> tuple:
+    """Extract numeric parts for natural sorting of tensor keys.
+
+    Splits the key into numeric and non-numeric segments, then sorts
+    numerically where applicable. For example:
+    - "blk.1.*" -> ("blk.", 1, ".*")
+    - "blk.10.*" -> ("blk.", 10, ".*")
+    - "model.layers.0.*" -> ("model.layers.", 0, ".*")
+    """
+    parts = []
+    current_num = ""
+    for char in key:
+        if char.isdigit():
+            current_num += char
+        else:
+            if current_num:
+                parts.append((0, int(current_num)))
+                current_num = ""
+            parts.append((1, char))
+    if current_num:
+        parts.append((0, int(current_num)))
+    return tuple(parts)
+
+
 def _modelinfo_base_path(filepath: str, resolve_output_path: bool = False) -> str:
     if resolve_output_path:
         return _resolve_display_path(filepath)
@@ -44,7 +68,7 @@ def _read_header_or_cached(filepath: str, options: dict | None = None):
 def generate_modelinfo_dump(filepath: str) -> str:
     """Generate detailed .modelinfo text dump for a single safetensors file."""
     metadata, tensor_info, file_size = _read_header_or_cached(filepath)
-    keys = sorted(tensor_info.keys())
+    keys = sorted(tensor_info.keys(), key=_numeric_sort_key)
     _, total_params, shapes = analyze_tensors(tensor_info)
 
     lines = []
@@ -110,7 +134,7 @@ def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dic
         summary = get_cached_inspection_snapshot(filepath) or {}
 
     tensors = []
-    for name in sorted(tensor_info.keys()):
+    for name in sorted(tensor_info.keys(), key=_numeric_sort_key):
         shape = shapes.get(name, [])
         params = 1
         for dim in shape:

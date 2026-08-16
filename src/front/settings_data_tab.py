@@ -6,13 +6,11 @@ State is JSON-friendly and persistence remains outside this widget.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
 from typing import Any, cast
 
 from PyQt6.QtCore import QSignalBlocker, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QCheckBox,
     QComboBox,
     QFormLayout,
@@ -20,72 +18,12 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QSpinBox,
-    QToolButton,
-    QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-
-@dataclass(frozen=True)
-class ColumnDefinition:
-    """Stable description of one Data-table column.
-
-    ``key`` is the persistence identity.  ``label`` is presentation-only and
-    may be changed without invalidating a saved configuration.
-    """
-
-    key: str
-    label: str
-    visible: bool = True
-    width: int = 100
-    minimum_width: int = 32
-
-
-@dataclass(frozen=True)
-class _ThemeChoice:
-    key: str
-    label: str
-
-
-class _ColumnTree(QTreeWidget):
-    """Top-level-only tree with a reliable post-drop notification."""
-
-    rowsReordered = pyqtSignal()
-
-    def dropEvent(self, event) -> None:  # type: ignore[no-untyped-def]
-        super().dropEvent(event)
-        self.rowsReordered.emit()
-
-
-class _DragHandle(QToolButton):
-    """Small handle that starts the tree's native internal-move operation."""
-
-    def __init__(self, tree: _ColumnTree, item: QTreeWidgetItem, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._tree = tree
-        self._item = item
-        self._press_position = None
-
-    def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._tree.setCurrentItem(self._item)
-            self._press_position = event.position().toPoint()
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event) -> None:  # type: ignore[no-untyped-def]
-        if self._press_position is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            distance = (event.position().toPoint() - self._press_position).manhattanLength()
-            if distance >= QApplication.startDragDistance():
-                self._tree.startDrag(Qt.DropAction.MoveAction)
-                self._press_position = None
-                return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
-        self._press_position = None
-        super().mouseReleaseEvent(event)
+from front.settings_data_support import ColumnDefinition, ColumnState, ColumnTree, DragHandle, ThemeChoice
 
 
 class SettingsDataTab(QWidget):
@@ -135,6 +73,7 @@ class SettingsDataTab(QWidget):
         self._rows: dict[str, QTreeWidgetItem] = {}
         self._checks: dict[str, QCheckBox] = {}
         self._widths: dict[str, QSpinBox] = {}
+        self._states: dict[str, ColumnState] = {}
         self._updating = False
 
         self._theme_choices = self._normalise_themes(
@@ -155,7 +94,7 @@ class SettingsDataTab(QWidget):
         columns_layout = QVBoxLayout(columns_group)
         columns_layout.setContentsMargins(8, 8, 8, 8)
 
-        self.column_tree = _ColumnTree()
+        self.column_tree = ColumnTree()
         self.column_tree.setObjectName("dataColumnList")
         self.column_tree.setHeaderLabels(["", "Visible", "Column", "Width"])
         self.column_tree.setRootIsDecorated(False)
@@ -200,17 +139,24 @@ class SettingsDataTab(QWidget):
         item.setData(0, Qt.ItemDataRole.UserRole, column.key)
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled)
         self._rows[column.key] = item
+        self._states[column.key] = ColumnState(column.visible, self._clamp_width(column.width, column))
+        self._attach_row_controls(item)
 
-        handle = _DragHandle(self.column_tree, item)
+    def _attach_row_controls(self, item: QTreeWidgetItem) -> None:
+        key = str(item.data(0, Qt.ItemDataRole.UserRole))
+        column = self._columns_by_key[key]
+        state = self._states[key]
+
+        handle = DragHandle(self.column_tree, item)
         handle.setText("⋮⋮")
         handle.setAutoRaise(True)
         handle.setToolTip(f"Drag to reorder the {column.label} column.")
         self.column_tree.setItemWidget(item, 0, handle)
 
         checkbox = QCheckBox()
-        checkbox.setChecked(column.visible)
+        checkbox.setChecked(state.visible)
         checkbox.setToolTip(f"Show the {column.label} column in the Data table.")
-        checkbox.stateChanged.connect(lambda _state, key=column.key: self._on_visibility_changed(key))
+        checkbox.stateChanged.connect(lambda value, key=key: self._on_visibility_changed(key, value))
         self.column_tree.setItemWidget(item, 1, checkbox)
         self._checks[column.key] = checkbox
 
@@ -220,12 +166,12 @@ class SettingsDataTab(QWidget):
 
         width = QSpinBox()
         width.setRange(self._column_minimum(column), self._maximum_width)
-        width.setValue(self._clamp_width(column.width, column))
+        width.setValue(state.width)
         width.setSuffix(" px")
         width.setToolTip(
             f"Width of {column.label} in pixels; minimum {width.minimum()} px."
         )
-        width.valueChanged.connect(lambda _value, key=column.key: self._on_width_changed(key))
+        width.valueChanged.connect(lambda value, key=key: self._on_width_changed(key, value))
         self.column_tree.setItemWidget(item, 3, width)
         self._widths[column.key] = width
 
@@ -280,7 +226,7 @@ class SettingsDataTab(QWidget):
             self._report("No valid Data columns were supplied.")
         return result
 
-    def _normalise_themes(self, supplied: Iterable[Any] | None, loader: Any) -> list[_ThemeChoice]:
+    def _normalise_themes(self, supplied: Iterable[Any] | None, loader: Any) -> list[ThemeChoice]:
         values: Iterable[Any] | None = supplied
         if values is None:
             try:
@@ -296,7 +242,7 @@ class SettingsDataTab(QWidget):
             except (ImportError, OSError, TypeError, ValueError, AttributeError) as exc:
                 self._report(f"Theme list unavailable; using Default Dark: {exc}")
                 values = ()
-        choices: list[_ThemeChoice] = []
+        choices: list[ThemeChoice] = []
         seen: set[str] = set()
         for value in values or ():
             try:
@@ -309,12 +255,12 @@ class SettingsDataTab(QWidget):
                     key = str(getattr(value, "id")).strip()
                     label = str(getattr(value, "name", key)).strip() or key
                 if key and key not in seen:
-                    choices.append(_ThemeChoice(key, label))
+                    choices.append(ThemeChoice(key, label))
                     seen.add(key)
             except (AttributeError, TypeError, ValueError):
                 continue
         if not choices:
-            choices.append(_ThemeChoice("default", "Default Dark"))
+            choices.append(ThemeChoice("default", "Default Dark"))
         return choices
 
     # --------------------------------------------------------------- helpers
@@ -347,13 +293,16 @@ class SettingsDataTab(QWidget):
         if not self._updating:
             self.configurationChanged.emit(self.export_configuration())
 
-    def _on_visibility_changed(self, _key: str) -> None:
+    def _on_visibility_changed(self, key: str, value: int) -> None:
+        self._states[key].visible = bool(value)
         self._emit_configuration()
 
-    def _on_width_changed(self, _key: str) -> None:
+    def _on_width_changed(self, key: str, value: int) -> None:
+        self._states[key].width = self._clamp_width(value, self._columns_by_key[key])
         self._emit_configuration()
 
     def _on_rows_reordered(self) -> None:
+        self._rebuild_row_controls()
         self._emit_configuration()
 
     def _on_theme_changed(self, _index: int) -> None:
@@ -384,8 +333,7 @@ class SettingsDataTab(QWidget):
         if index < 0:
             self._report(f"Theme {theme_id!r} is unavailable; using Default Dark.")
             index = self.theme_combo.findData("default")
-            if index < 0:
-                index = 0
+            index = max(index, 0)
         changed = index != self.theme_combo.currentIndex()
         blocker = QSignalBlocker(self.theme_combo)
         self.theme_combo.setCurrentIndex(index)
@@ -395,6 +343,18 @@ class SettingsDataTab(QWidget):
             self._emit_configuration()
         return changed
 
+    def _rebuild_row_controls(self) -> None:
+        """Replace Qt-owned cell controls after a native row move or load."""
+        self._checks.clear()
+        self._widths.clear()
+        self._rows.clear()
+        for index in range(self.column_tree.topLevelItemCount()):
+            item = self.column_tree.topLevelItem(index)
+            if item is not None:
+                key = str(item.data(0, Qt.ItemDataRole.UserRole))
+                self._rows[key] = item
+                self._attach_row_controls(item)
+
     def export_configuration(self) -> dict[str, Any]:
         """Return a JSON-serializable snapshot of the current widget state."""
         columns = []
@@ -402,8 +362,8 @@ class SettingsDataTab(QWidget):
             columns.append(
                 {
                     "key": key,
-                    "visible": self._checks[key].isChecked(),
-                    "width": self._widths[key].value(),
+                    "visible": self._states[key].visible,
+                    "width": self._states[key].width,
                 }
             )
         return {"columns": columns, "theme": self.current_theme_id()}
@@ -437,8 +397,8 @@ class SettingsDataTab(QWidget):
                 entry = by_key.get(key, {})
                 visible = bool(entry.get("visible", column.visible))
                 width = self._clamp_width(entry.get("width", column.width), column)
-                self._checks[key].setChecked(visible)
-                self._widths[key].setValue(width)
+                self._states[key] = ColumnState(visible, width)
+            self._rebuild_row_controls()
             requested_theme = configuration.get("theme", "default")
             self.set_theme(str(requested_theme), emit=False)
         finally:
@@ -480,6 +440,9 @@ class SettingsDataTab(QWidget):
             for key in list(self._rows):
                 item = self._rows.pop(key)
                 self.column_tree.takeTopLevelItem(self.column_tree.indexOfTopLevelItem(item))
+            self._checks.clear()
+            self._widths.clear()
+            self._states.clear()
             for column in self._defaults:
                 self._add_row(column)
             self.set_theme(self._default_theme_id(), emit=False)

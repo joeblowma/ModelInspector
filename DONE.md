@@ -1,96 +1,106 @@
-# Completed
+# DONE: Completed, Rejected, and Superseded Work
 
-Fully completed items of the plan
+This file records implemented foundations and explicit product decisions. A
+completed foundation does not imply that every refinement in `TODO.md` is done.
 
-## Reorganize Project Layout
+## Project Structure and Architecture
 
-- [x] Move executable Python source files from the repository root into `src/`, for example `src/gui.py` and `src/inspect_model.py`.
-- [x] Move icons and bundled assets out of `src/assets/` into a dedicated resource directory, for example `resources/icons/`.
-- [x] Update all imports after the move; prefer explicit module imports over path hacks.
-- [x] Update asset lookup helpers so development and PyInstaller-frozen runs resolve `resources/icons/icon.png` consistently.
-- [x] Update `compile.bat` paths for the new GUI entry point and icon location.
-- [x] Update `ModelInspector.spec` `Analysis`, `datas`, and `icon` paths.
-- [x] Update `README.md` and `AGENTS.md` command examples after the layout change.
-- [x] Run `py src/gui.py`, `py src/inspect_model.py --help`, and `compile.bat` after the move.
+- [x] Move executable sources under `src/` and keep `src/gui.py` and
+  `src/inspect_model.py` as thin compatibility/bootstrap wrappers.
+- [x] Split GUI workflows into focused `src/front/` widgets/controllers and
+  inspection logic into focused `src/back/` modules.
+- [x] Keep bundled icons, splash assets, and themes under `assets/` and resolve
+  them in development and packaged execution.
+- [x] Update build/spec entry points for the current source layout.
+- [x] Establish a hard 500-line source-module ceiling and verify the current
+  `src/front` and `src/back` modules against it.
+- [x] Add regression coverage for scan lifecycle, projection, inspection
+  summaries, background tasks, integrated behavior, settings, themes, cache,
+  Explorer, and Advanced Viewer components.
 
-## Explorer Filtering & Progress UX
+## Readers, Inspection, and Reporting
 
-- [x] Add format filters for `.safetensors`, `.gguf`, `.ckpt`, `.pt`, and `.pth` in a separated section of the filters popup.
-- [x] Keep architecture/type filters separate from file-format filters so users can combine both.
-- [x] Sort filter menus with `ERROR` first, then `Unknown`, then alphabetical values.
-- [x] Keep card and Raw dropdown ordering aligned with the current Data table sort order.
-- [x] Replace vague progress percentages with visible metrics, such as files discovered, files parsed, bytes scanned, and current directory.
-- [x] Keep the progress bar visible during long directory scans and model-info loading.
-- [x] Surface cancellation and partial-results behavior for long scans.
+- [x] Add a shared extension reader abstraction for `.safetensors` and `.gguf`.
+- [x] Implement read-only GGUF metadata, tensor descriptors, dtype summaries,
+  architecture hints, and size reporting.
+- [x] Inspect safetensors headers without loading tensor payloads.
+- [x] Evaluate the official `safetensors` package for metadata-only use. The
+  custom header reader remains the preferred lightweight path; adding the
+  dependency merely for parity was rejected.
+- [x] Research pickle-backed checkpoint risks and require explicit opt-in for
+  any future unsafe deserialization. Actual additional-format support remains
+  in `TODO.md`.
+- [x] Add stable, pretty-printed JSON `.modelinfo` output to CLI and GUI flows.
+- [x] Preserve both user-provided and resolved file paths and keep default dump
+  output beside the user-provided path.
 
-## Resolve Real Paths for Dump Targets
+## Discovery, Filtering, Progress, and Concurrency
 
-- [x] Investigate how Windows symlinks behave with `Path.resolve()` and file IDs.
-- [x] Decide whether `.modelinfo` should be written beside the user-provided path or the resolved target path.
-- [x] Add an option if both behaviors are useful, for example `--resolve-output-path`.
-- [x] Preserve the user-provided path for default `.modelinfo` output and expose `resolved_filepath` separately.
-- [x] Handle failures conservatively and show the chosen output path in CLI/GUI results.
+- [x] Add separate file-format and architecture/type filters.
+- [x] Sort filter values consistently and align Cards/Raw ordering with the
+  Data table.
+- [x] Report files, bytes, directory progress, cancellation, and partial
+  results during scans.
+- [x] Add bounded parallel analysis for independent files with per-file error
+  reporting and configurable thread count.
 
-## Library Linking & Path Resolution
+## Cache Foundations and Integrity
 
-## Add Configurable Parallel Loading
+- [x] Persist inspection summaries, raw/model data, directory scans, canonical
+  identity, size, modification time, and format in an app-local cache.
+- [x] Retain missing-file summaries rather than pruning them.
+- [x] Add `Load Cache`, `Load Cache All`, and `Load Cache Archived` controls with
+  conditional availability.
+- [x] Display Total, Active, and Historic counts beside cache controls.
+- [x] Classify missing files as Historic without inspecting them and keep their
+  cached summaries viewable.
+- [x] Detect changed or legacy active entries and queue background refresh while
+  leaving unchanged active entries on the cached fast path.
+- [x] Repair the cache identity handoff so unchanged active entries do not
+  spuriously schedule analysis.
+- [x] Retain an explicit confirmed Clear Cache action.
 
-- [x] Audit current `AnalysisWorker` behavior and CLI folder scanning for safe concurrency points.
-- [x] Add a setting/CLI option such as `--threads N` for batch inspection.
-- [x] Use bounded worker pools only for independent file reads; avoid parallel UI mutation.
-- [x] Benchmark on large folders before enabling a default above one thread.
-- [x] Surface per-file errors without cancelling the full batch.
+## Settings and Themes
 
-## Add JSON `.modelinfo` Dumps
+- [x] Replace primary INI persistence with readable, commented
+  `settings.jsonc` defaults.
+- [x] Migrate legacy INI settings on first JSONC launch.
+- [x] Use atomic settings replacement and back up malformed settings before
+  falling back to defaults.
+- [x] Externalize bundled Catppuccin, Cursor, GitHub, and Gruvbox theme data
+  under `assets/themes/`.
+- [x] Validate themes and keep a safe built-in fallback when loading fails.
+- [x] Apply persisted themes at startup and apply settings changes immediately.
 
-- [x] Add a CLI option such as `--write-modelinfo-json`.
-- [x] Reuse the existing `.modelinfo` naming schema and append `.json`, for example `model.safetensors.modelinfo.json`.
-- [x] Serialize existing inspection output with the standard `json` module unless a stronger need appears.
-- [x] Add matching GUI setting/action for JSON dump generation.
-- [x] Verify output is stable, pretty-printed, and contains parsed metadata, tensor summaries, architecture details, and warnings.
+## Data Table Customization
 
-## Add GGUF Support
+- [x] Add settings for Data-column visibility, stable-key ordering, and width.
+- [x] Add checkbox rows and drag handles for column reordering.
+- [x] Persist table header moves and resized widths across settings reloads.
+- [x] Fix the native drag/drop ownership crash by keeping durable column state
+  outside Qt-owned cell widgets, deferring post-drop reconciliation, and
+  rebuilding controls safely after each move.
+- [x] Add deleted-widget and repeated queued-reorder regression coverage.
 
-- [x] Add a reader abstraction that can dispatch by extension: `.safetensors` first, then `.gguf`.
-- [x] Use the installed `gguf` package from `.venv\Lib\site-packages\gguf`.
-- [x] Review `.venv\Lib\site-packages\gguf\scripts\gguf_editor_gui.py` for PySide/PyQt patterns, metadata parsing, and tensor listing behavior.
-- [x] Implement GGUF metadata extraction, tensor summaries, dtype counts, architecture hints, and model size reporting.
-- [x] Keep GGUF support read-only for now; do not expose editing behavior.
-- [x] Add CLI and GUI smoke checks with at least one representative `.gguf` file.
+## Explorer and Raw Dump
 
-## Research Safetensors Library Integration
+- [x] Add a read-only Explorer with searchable metadata key/value rows.
+- [x] Add a sortable/filterable tensor descriptor table with Name, Shape,
+  Dtype, Component Bucket, and Parameter Count.
+- [x] Detect header-derived VAE, LoRA, text-encoder, and template candidates and
+  expose explicit host-handled inspect/export/extract requests.
+- [x] Keep the legacy Raw Dump navigator beside Explorer.
+- [x] Reject the earlier requirement to replace/remove Raw; retaining both views
+  is the accepted product direction.
 
-- [x] Evaluate the official `safetensors` Python package as a replacement or supplement for the current custom header reader.
-- [x] Confirm whether `safe_open` can provide metadata, keys, tensor shapes, and dtypes without loading full tensor payloads or requiring Torch.
-- [x] Test `framework="numpy"` and metadata-only/key-only flows to avoid a full Torch dependency.
-- [x] If unsuitable, document why the custom header parser remains preferable.
+## Advanced Viewer Foundation
 
-## Caching & Default Libraries
-
-- [x] Add a cache for parsed model summaries to speed up repeated launches.
-- [x] Store enough identity data to detect moved, deleted, or changed files, such as canonical path, size, modified time, and format.
-- [x] Default settings/cache to a portable app-local data directory with relocation overrides.
-- [x] Use a cache index with per-entry files instead of one monolithic cache blob.
-- [x] Add a cache for scanned directories to speed up repeated launches.
-- [x] Add a `load default libraries on startup` setting backed by the cached directory list.
-- [x] Keep cached startup entries for missing or temporarily unavailable files instead of pruning stale paths.
-- [x] Add a settings action to clear the cache entirely.
-- [x] Organize settings into General, Cards, and Data Columns tabs.
-- [x] Decide whether cache writes happen immediately after each scan or only after successful batch completion.
-
-## Replace Raw Tab with Explorer Tab
-
-
-## Add Checkpoint, onnx and `.pt`/`.pth` Support
-
-- [x] Research safe metadata-only handling for PyTorch checkpoint formats.
-- [x] Treat pickle-based formats as unsafe by default; require explicit opt-in before loading.
-- [x] Add clear warnings in CLI and GUI when a format may execute pickle deserialization.
-
-## Refactor Overloaded Structures
-
-- [x] Use graphify god-node results to split overloaded modules and classes.
-- [x] Consider extracting reader modules, architecture detection modules, modelinfo dumping, and GUI widgets into separate files.
-- [x] Prioritize reducing `MainWindow`, `inspect_file()`, `generate_modelinfo_dump()`, and architecture detection helper sprawl.
-- [x] Add tests or smoke fixtures before large refactors so behavior stays stable.
-- [x] After code changes, run `graphify update .` and review the updated god-node/community report.
+- [x] Add a topmost modal Advanced Viewer dialog for the selected model.
+- [x] Add architecture/layer/context/RoPE/MTP/expert fact extraction with safe
+  handling for missing metadata.
+- [x] Add domain tags and Tool Use, Thinking, and Vision capability badges.
+- [x] Add interactive weight/context/KV-cache VRAM and RAM estimation.
+- [x] Add plain-text configuration generation and clipboard copy support.
+- [x] Keep richer layout, shard visualization, sidecar integration, template
+  validation, and screenshot-aligned redesign work explicitly open in
+  `TODO.md`.

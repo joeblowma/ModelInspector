@@ -8,6 +8,8 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PyQt6.QtCore import QCoreApplication, QEvent
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
 from front.settings_data_tab import ColumnDefinition, SettingsDataTab
@@ -109,3 +111,54 @@ def test_loader_themes_keep_builtin_default_as_reset_theme(app):
     widget = SettingsDataTab([ColumnDefinition("file", "File")])
     assert widget.theme_combo.findData("default") >= 0
     assert widget.current_theme_id() == "default"
+
+
+def test_export_uses_durable_state_after_qt_deletes_owned_cell_widget(app):
+    widget = SettingsDataTab(_columns(), themes=["default"])
+    emissions: list[dict] = []
+    widget.configurationChanged.connect(emissions.append)
+    checkbox = widget._checks["size"]
+    checkbox.setChecked(True)
+    widget._widths["size"].setValue(123)
+    assert emissions[-1]["columns"][1] == {"key": "size", "visible": True, "width": 123}
+    item = widget._rows["size"]
+    widget.column_tree.removeItemWidget(item, 1)
+    checkbox.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    with pytest.raises(RuntimeError):
+        checkbox.isChecked()
+
+    exported = widget.export_configuration()
+    size = next(entry for entry in exported["columns"] if entry["key"] == "size")
+    assert size == {"key": "size", "visible": True, "width": 123}
+
+    widget.load_configuration(exported)
+    assert widget._checks["size"] is not checkbox
+    assert widget.export_configuration() == exported
+
+
+def test_post_drop_reconciliation_stress_preserves_state_and_emits_once(app):
+    widget = SettingsDataTab(_columns(), themes=["default"])
+    emissions: list[dict] = []
+    widget.configurationChanged.connect(emissions.append)
+    expected_by_key = {entry["key"]: entry for entry in widget.export_configuration()["columns"]}
+
+    for _ in range(20):
+        key = widget.column_keys()[-1]
+        item = widget.column_tree.takeTopLevelItem(widget.column_tree.topLevelItemCount() - 1)
+        assert item is not None
+        checkbox = widget._checks[key]
+        widget.column_tree.removeItemWidget(item, 1)
+        checkbox.deleteLater()
+        widget.column_tree.insertTopLevelItem(0, item)
+        widget.column_tree.queue_post_drop_reconciliation()
+        widget.column_tree.queue_post_drop_reconciliation()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        QTest.qWait(1)
+
+        exported = widget.export_configuration()
+        assert sorted(widget.column_keys()) == sorted(expected_by_key)
+        assert {entry["key"]: entry for entry in exported["columns"]} == expected_by_key
+
+    assert len(emissions) == 20

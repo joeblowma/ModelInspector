@@ -1,131 +1,176 @@
-# TODO: Repository Roadmap & Integration Plan
+# TODO: Active Product Roadmap
 
-## 1. File Readers, Model Formats & Sharding
+This file contains only outstanding or partially completed work. Completed,
+rejected, and superseded items belong in `DONE.md`.
 
-### Research Safetensors Integration: Add `safetensors` to `requirements.txt` and isolate file reading behind the shared reader abstraction.
+The legacy Raw Dump view remains useful and should be retained alongside the
+read-only Explorer. The Explorer is an expansion of model inspection, not a
+replacement for access to the raw generated dump.
 
-- Add Checkpoint, `.onnx`, and `.pt`/`.pth` Support:
-  - Implement extension dispatch for `.ckpt`, `.onnx`, `.pt`, and `.pth` only after explicit security sandboxing/safety checks.
-  - Prefer lightweight inspection paths that avoid importing PyTorch unless strictly required.
+## 0. Immediate UI Glitches and Performance
 
-### Support Sharded Model Files:
+- Fix Data-column ordering when the bottom item is moved: the row currently
+  disappears even though the earlier deleted-widget crash is fixed.
+- Remove the persistent blank row/line at the bottom of the Data-column
+  settings scroller.
+- Profile closing Settings with a large loaded library (observed 3-5 seconds
+  with roughly 600 models). Move expensive table reprojection, settings writes,
+  cache verification, or filter rebuilding out of the dialog close path and
+  avoid making the main window appear hung.
 
-- Add support for sharded `.gguf` and `.safetensors` sets (e.g., `*00001-of-00004*`).
-- Index original layer/block order and track shard indices (`shard_id = 0` for non-sharded files).
+## 1. File Readers, Model Formats, Sharding, and Sidecars
 
-### Sidecar File Discovery & Association:
+### Additional model formats
 
-- Automatically detect sidecar files (`mmproj`, `dflash`/`eagle`, `draft`) located in the same directory as the primary model.
-- Store sidecar metadata separately and tag the primary model with `mmproj`, `draft`, or `spec-type`.
-- Maintain lightweight sidecar records to perform fast change-detection scans upon user request.
+- Add `.onnx` metadata inspection.
+- Add `.ckpt`, `.pt`, and `.pth` dispatch only behind an explicit safety model.
+  Prefer metadata-only paths and never silently enable pickle deserialization.
+- Keep optional third-party reader libraries behind the shared reader
+  abstraction and add them only when they improve safety or coverage.
 
-## 2. Library Linking & Path Resolution
+### Sharded models and original ordering
 
-### Symbolic Link Creation: Add an option to create symlinks alongside existing move-file operations.
+- Support sharded `.gguf` and `.safetensors` sets such as
+  `*00001-of-00004*`.
+- Preserve original tensor/layer/block order in addition to the current sorted
+  presentation.
+- Record the shard index for every tensor or block (`shard_id = 0` for
+  non-sharded models).
+- In Explorer and Advanced Viewer, allow sorted versus original-order display
+  and visually group original-order rows by shard.
 
-- Destination Templates:
-  - Support configurable directory templates (e.g., `.\models\<type>\<model name>\<file>`).
-  - Provide built-in presets for ComfyUI, LMStudio, Fooocus, and A1111 directory conventions.
+### Sidecar discovery and association
 
-### Canonical Path Resolution: Resolve target paths before link creation to prevent duplicating aliases (symlinks, junctions, hardlinks).
+- Detect `mmproj`, `dflash`, `eagle`, `draft`, and MTP sidecars beside the
+  primary model.
+- Store full sidecar inspection records separately while keeping enough
+  identity metadata on the primary model to detect changes quickly.
+- Tag the primary model with discovered sidecar roles and include associated
+  paths in copied runtime configurations.
 
-- Pre-Flight Operations & Safety:
-  - Show resolved source paths and planned link destinations prior to bulk execution.
-  - Detect existing target files/links and offer `Skip`, `Overwrite`, or `Open Location` options.
+## 2. Library Linking and Path Resolution
 
-## 3. Cache Management & Integrity
+- Add symbolic-link creation alongside existing move-file actions.
+- Support editable destination templates such as
+  `.\models\<type>\<model name>\<file>`.
+- Provide presets for ComfyUI, LM Studio, Fooocus, and A1111 layouts.
+- Canonicalize source and destination paths so symlinks, junctions, hardlinks,
+  and original paths do not create duplicate model records.
+- Show resolved source and planned destination paths before bulk operations.
+- Detect existing destinations and offer Skip, Overwrite, or Open Location.
 
-### Manual Cache Load Actions:
+## 3. Cache Follow-ups
 
-- `Load Cache`: Active only when the current model cache is populated.
-- `Load Cache All`: Active if historic/unlocatable model caches exist.
-- `Load Cache Archived`: Active if historic model caches exist.
+- Move `Load Cache`, `Load Cache All`, and `Load Cache Archived` out of Settings
+  into a menu attached to the main-window Open button.
+- Only show cache-load menu actions when their corresponding cache population
+  makes them meaningful, and enable loading only when the current model view is
+  empty (normally startup or immediately after Clear).
+- Define the actions consistently: active-only, active plus Historic, and
+  Historic-only; loading Historic summaries must never inspect missing files.
+- Refresh Total / Active / Historic counts immediately after Clear Cache rather
+  than requiring Settings to be closed and reopened.
+- Add an explicit `Verify Cached File Paths` action beside the cache controls;
+  disable it when the cache is empty.
+- Decide whether the current dynamically derived Historic classification needs
+  a separately persisted archive index. Preserve cached summaries either way.
+- Surface verification progress and a concise result summary when a manual
+  verification archives missing entries or schedules changed entries.
 
-### Cache Validation & Background Sync:
+## 4. Settings, Themes, and General UI Refinement
 
-- Verify physical file existence on cache load; move missing entries to the historic/archive cache.
-- Detect changes in file size or timestamp to queue non-blocking background metadata updates.
+- Remove the obsolete `Load default libraries on startup` setting and its
+  startup-cache path now that cache loading has explicit actions.
+- Move the current theme dropdown to the General tab, in the bottom-right cell,
+  using roughly one third of that column's width.
+- Export bundled themes into a user theme directory, enumerate user themes,
+  and document the editable theme schema in `settings.jsonc`.
+- Show a user-facing popup when a requested external theme is malformed; retain
+  the current validated default fallback.
+- Later add a dedicated Theme tab with live color editing applied to the real
+  window or a representative preview, plus `Save`, `Save As`, and
+  `Reset to Defaults` actions.
+- Make Theme `Reset to Defaults` require an explicit warning/confirmation, then
+  clear the user theme directory and re-extract the bundled themes.
+- Perform a complete tooltip/content audit across existing controls, not only
+  controls added during the Explorer/settings work.
 
-### Settings Clear & Verify Controls:
+### Data table smart column groups
 
-- Display item counts (`Total` / `Active` / `Historic`) alongside the `Clear Cache` button.
-- Add a `Verify Cached File Paths` tool to scan and archive stale or unlocatable cached models.
+- Add pinned `LLM`, `Diffusion`, and `Adapter` checkboxes on the right of the
+  same toolbar row as Select All and Show Full Path.
+- Each checkbox controls the columns used only by that model family. Smart
+  groups default off, automatically enable when loaded data needs their
+  columns, and remain user-toggleable so those columns can be hidden entirely.
+- Keep smart-group behavior distinct from the persisted per-column visibility
+  settings and define which preference wins after an automatic enable.
 
-## 4. Settings & External Theme Engine
+## 5. Explorer and Raw Dump Refinement
 
-### JSONC Migration:
+- Keep both Explorer and Raw Dump views available in the current shared tab.
+- In Raw model labels, hide the file extension unless Show Full Path is enabled.
+- Keep the Raw selection-checkbox column permanently visible and pinned on the
+  left; remove it from user-configurable column visibility/order.
+- Implement safe host-side extraction for genuinely extractable embedded
+  tensors such as VAE, encoder/decoder, and LoRA content. The current Explorer
+  intentionally exposes header-derived candidates and requests only.
+- Support extraction of useful text fields such as Jinja templates and training
+  configuration without implying that tensor payloads were loaded.
+- Add template type detection, validation, and supported-kwargs reporting.
+- Add a selected-model action to force a metadata re-scan while preserving
+  cached-first UI behavior.
 
-- Convert `settings.ini` to a human-readable `settings.jsonc` file with explanatory comments.
-- Generate a user settings template on launch with default values and safety guidelines.
-- Remove obsolete `load default libraries on startup` setting.
+## 6. Advanced Model Viewer Redesign and Completion
 
-### Externalized Themes:
+- Revisit the Advanced Viewer layout and interaction model against the supplied
+  reference screenshot; treat the current dialog as a functional foundation,
+  not the final design.
+- Follow the reference's file-inspector information architecture: a persistent
+  model path/header, dense use of the available window, and separate Metadata
+  and Tensors work areas rather than making summary cards the primary content.
+- Keep the at-a-glance facts and memory estimator as a compact header, sidebar,
+  or secondary tab supporting the inspector rather than dominating the window.
+- Show metadata as typed Key / Type / Value rows and tensors as an equivalently
+  dense sortable table. Replace the reference editor's mutating actions with
+  read-only actions such as Copy, Inspect, and safe Export/Extract where the
+  underlying format actually supports them.
+- Retain a topmost/modal relationship with the main window while improving the
+  density and hierarchy of model facts.
+- Add sorted/original block and layer views, visually grouped by shard.
+- Present memory projections as useful comparisons across common context sizes,
+  weight quantizations, and KV-cache precisions rather than only a single
+  selected estimate.
+- Expand the at-a-glance section, when values are available or safely
+  inferable, with:
+  - architecture, layers, parameter size, and file size;
+  - total/active experts;
+  - trained/max context, top-p, top-k, and temperature;
+  - RoPE type, original context, scale, and multiplier;
+  - MTP/speculative-decoding details;
+  - embedded-template presence, type, validation, and supported kwargs;
+  - associated `mmproj` and draft model facts.
+- Refine capability badges so Tool Use, Thinking, and Vision distinguish
+  metadata-backed facts from weaker heuristics.
+- Generate the full human-readable runtime configuration format, including
+  primary model, sidecars, comments, context, sampling, RoPE, and speculative
+  decoding arguments. Keep copy icons consistent between Explorer/Raw and the
+  Advanced Viewer.
 
-- Move hard-coded themes into external `./assets/` JSON files as defaults.
-- Include free/unlicensed community variants (e.g., Catppuccin, Cursor, GitHub, Gruvbox).
-- Export themes to the user configuration folder; validate external themes on load with an automatic fallback to default + alert popup on error.
+## 7. CLI, Packaging, and CI/CD
 
-## 5. UI & Explorer Tab Refinement
+- Accept files/folders passed to the packaged executable and queue them after
+  the GUI is ready, as if dropped onto the window.
+- Add `modelinspector.exe -cli <commands>` pass-through and mirror the behavior
+  when launched from Python.
+- Finish wheel packaging.
+- Add GitHub Actions for supported wheel builds, Windows executable packaging,
+  optional publishing, and GitHub releases.
 
-### Data Tab Customization:
+## 8. Developer Tooling and Architecture Graph
 
-- Add a settings pane for Data Tab column visibility and order (scrolling list with checkboxes and reorder drag-handles).
-- Persist column width adjustments across application restarts.
-
-### Tooltips: Add contextual tooltips across UI buttons, controls, and configuration options.
-
-- Explorer Tab (Replacing Raw Tab):
-  - Redesign the Raw Tab into a read-only GGUF/Safetensors Explorer Tab.
-  - Display metadata in searchable key/value rows.
-  - Render tensors in a sortable/filterable table showing Name, Shape, Dtype, Bucket, and Parameter count.
-  - Enable inspection and extraction of embedded checkpoint tensors (VAE, encoder, decoder, LoRA) and text fields (Jinja templates, training configs).
-
-### Metadata Re-scan: Add a lower right menu option to force a re-scan of selected models.
-
-## 6. Advanced Model Viewer & Memory Estimator
-
-### Interactive Popup Window:
-
-- Dedicated pop-out window (pinned on top, locking main window interactions).
-- Toggle between sorted and unsorted block/layer views (grouped visually by shard).
-
-### Capability & Model Tagging:
-
-- Categorize models by domain (Diffusion, LLM, Multimodal, LoRA).
-- Apply granular capability badges (Tool Use, Thinking, Vision).
-
-### At-a-Glance Summary & Memory Projection:
-
-- Calculate estimated VRAM/RAM requirements mapped across context sizes and quantization levels.
-- Display core parameters: Architecture, Layer Count, Experts (Total/Active), Trained/Max Context, Top-P/Top-K, Temperature, RoPE Scaling, and MTP details.
-- Validate embedded Jinja templates and supported keyword arguments.
-- Include a `Copy Configuration` button to output plain-text human-readable model parameters:
-
-```text
-[SOME_FILE_NAME_BF16]
-; 256 experts, 8 used, 40 layers - qwen35moe - 16.5GB
-model=C:\path\to\SOME_FOLDER_NAME\SOME_FILE_NAME-BF16.gguf
-; 27 layers, 447.5M, clip, 863.4MB
-mmproj=C:\path\to\SOME_FOLDER_NAME\SOME_FILE_NAME-mmproj-F16.gguf
-; 5 layers, 833.2M, dflash-draft, 514.9MB
-spec-draft-model=C:\path\to\SOME_FOLDER_NAME\SOME_FILE_NAME-dflash.Q4_K_M.gguf
-ctx-size=262144
-temperature=0.3
-rope-scaling=yarn
-rope-scale=64
-yarn-orig-ctx=4096
-spec-type=draft-mtp
-```
-
-## 7. CLI, Packaging & CI/CD
-
-### Drag-and-Drop & CLI Pass-through:
-
-- Handle files/folders dropped directly onto the compiled `.exe` icon by queuing them on startup.
-- Implement a CLI pass-through flag: `modelinspector.exe -cli <command>`.
-- Mirror all GUI to CLI capabilities when executing directly via Python scripts.
-
-### Build System & GitHub Workflows:
-
-- Complete python wheel build configuration (`pyproject.toml` / `setup.py`).
-- Create GitHub Actions workflows to compile cross-platform Python wheels, build Windows `.exe` packages, and publish releases automatically.
+- Repair `.graphifyignore` ordering so `src/back/*.py` and `src/front/*.py`
+  remain unignored after the broad `src/*` rule; the current incremental graph
+  sees root `src/*.py` and tests but omits both application subpackages.
+- Run a full Graphify rebuild after fixing the ignore rules, verify current
+  frontend/backend nodes and edges are present, and use incremental
+  `graphify update .` after later structural changes.

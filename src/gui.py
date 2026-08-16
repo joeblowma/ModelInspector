@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow
 from front.analysis_controller import AnalysisMixin
 from front.discovery_controller import DiscoveryMixin
 from front.filter_widgets import CheckFilterButton, SortableTableWidgetItem
+from front.integration_controller import IntegrationMixin
 from front.model_card import ModelCard
 from front.selection_controller import SelectionMixin
 from front.settings_dialog import SettingsDialog
@@ -51,6 +52,7 @@ class MainWindow(
     CoreMixin,
     WindowLayoutMixin,
     DiscoveryMixin,
+    IntegrationMixin,
     StartupCacheMixin,
     AnalysisMixin,
     ViewMixin,

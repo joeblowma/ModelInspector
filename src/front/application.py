@@ -9,6 +9,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 from front.window_core import _asset
+from back.theme_loader import load_theme
 
 try:
     import pyi_splash  # type: ignore[import-not-found]
@@ -150,10 +151,37 @@ QProgressBar::chunk {
 """
 
 
+def _theme_stylesheet(theme_id: str | None) -> str:
+    """Return a complete safe stylesheet using validated external theme colors."""
+    loaded = load_theme(theme_id)
+    colors = loaded.theme.colors
+    return DARK_STYLE + (
+        "\nQMainWindow, QWidget { background-color: %(background)s; color: %(text)s; }"
+        "\nQTableWidget { background-color: %(surface)s; alternate-background-color: %(background)s;"
+        " selection-background-color: %(surface_alt)s; }"
+        "\nQHeaderView::section, QTabBar::tab { background-color: %(surface)s; color: %(accent)s; }"
+        "\nQPushButton { background-color: %(surface)s; border-color: %(border)s; color: %(text)s; }"
+        "\nQPushButton:hover { background-color: %(surface_alt)s; border-color: %(accent)s; }"
+    ) % colors
+
+
+def apply_theme(application: QApplication, theme_id: str | None = None) -> tuple[str, tuple[str, ...]]:
+    """Apply a validated external theme, retaining the default style on failure."""
+    loaded = load_theme(theme_id)
+    application.setStyleSheet(_theme_stylesheet(loaded.theme.id))
+    return loaded.theme.id, loaded.diagnostics
+
+
 def configure_application(application: QApplication) -> None:
     """Apply the desktop look and bundled icon before showing a window."""
     application.setStyle("Fusion")
-    application.setStyleSheet(DARK_STYLE)
+    try:
+        from app_paths import legacy_settings_path, settings_path
+        from back.settings_store import open_settings
+        selected = open_settings(settings_path(), legacy_settings_path()).value("data_layout", {}).get("theme", "default")
+    except (ImportError, AttributeError, OSError, TypeError, ValueError):
+        selected = "default"
+    apply_theme(application, str(selected))
     application.setWindowIcon(QIcon(_asset("icon.ico")))
 
 

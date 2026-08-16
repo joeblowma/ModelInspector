@@ -15,6 +15,7 @@ from back.inspection_summary import (
     compact_inspection_summary,
 )
 import model_cache
+from front.cache_identity import get_cached_inspection_identity_snapshots
 
 
 def _full_result():
@@ -134,6 +135,39 @@ def test_compact_bulk_matching_is_equivalent_to_compacted_full_bulk(
     assert compact[requested] == compact_inspection_summary(full[requested])
     assert "metadata" in full[requested]
     assert "metadata" not in compact[requested]
+
+
+def test_identity_snapshot_preserves_identity_without_copying_inspection_data(
+    monkeypatch, tmp_path
+):
+    requested = str(tmp_path / "requested.safetensors")
+    full = _full_result()
+    full["filepath"] = requested
+    entries = [
+        {
+            "identity": {
+                "resolved_filepath": requested,
+                "file_size": 42,
+                "mtime_ns": 123,
+            },
+            "data": full,
+        }
+    ]
+    monkeypatch.setattr(model_cache, "_iter_cached_entries", lambda: iter(entries))
+
+    snapshots = get_cached_inspection_identity_snapshots([requested])
+
+    assert snapshots == {
+        requested: {
+            "filepath": requested,
+            "identity": {
+                "resolved_filepath": requested,
+                "file_size": 42,
+                "mtime_ns": 123,
+            },
+            "data": {"filepath": requested},
+        }
+    }
 
 
 def test_user_sized_strings_and_containers_are_bounded_with_markers():

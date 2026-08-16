@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from front.settings_data_tab import ColumnDefinition, SettingsDataTab
 
 __all__ = ["SettingsDialog"]
 
@@ -34,6 +35,8 @@ class SettingsDialog(QDialog):
         card_fields=None,
         simple_card_fields=None,
         table_column_visibility=None,
+        data_columns=None,
+        data_configuration=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -189,7 +192,20 @@ class SettingsDialog(QDialog):
         cache_note.setStyleSheet("color: #a6adc8; font-size: 11px;")
         cache_layout.addWidget(cache_note, 1)
         self.clear_cache_btn = QPushButton("Clear Cache")
+        self.clear_cache_btn.setToolTip("Permanently remove cached inspection data after confirmation.")
         cache_layout.addWidget(self.clear_cache_btn)
+        self.cache_counts_label = QLabel("Total: 0  Active: 0  Historic: 0")
+        self.cache_counts_label.setToolTip("Cached summaries by file availability. Historic files remain viewable without loading model payloads.")
+        cache_layout.addWidget(self.cache_counts_label)
+        self.load_cache_btn = QPushButton("Load Cache")
+        self.load_cache_btn.setToolTip("Load all cached summaries without reading model tensor payloads.")
+        cache_layout.addWidget(self.load_cache_btn)
+        self.load_cache_all_btn = QPushButton("Load Cache All")
+        self.load_cache_all_btn.setToolTip("Load summaries whose source files are currently available.")
+        cache_layout.addWidget(self.load_cache_all_btn)
+        self.load_cache_archived_btn = QPushButton("Load Cache Archived")
+        self.load_cache_archived_btn.setToolTip("Load historic summaries for missing model files; no inspection is started.")
+        cache_layout.addWidget(self.load_cache_archived_btn)
         general_tab_layout.addWidget(cache_group)
         general_tab_layout.addStretch()
         tabs.addTab(general_tab, "General")
@@ -250,23 +266,15 @@ class SettingsDialog(QDialog):
         data_tab_layout = QVBoxLayout(data_tab)
         data_tab_layout.setContentsMargins(0, 0, 0, 0)
         data_tab_layout.setSpacing(10)
-        data_group = QGroupBox("Data Columns")
-        data_layout = QGridLayout(data_group)
-        data_layout.setHorizontalSpacing(18)
-        data_layout.setVerticalSpacing(4)
+        # Kept as an empty compatibility mapping for callers from older UI code.
         self.table_column_checks = {}
-        entries = list((table_column_visibility or {}).items())
-        cols_count = 3
-        rows_count = (len(entries) + cols_count - 1) // cols_count if entries else 0
-        for idx, (col_name, visible) in enumerate(entries):
-            cb = QCheckBox(col_name)
-            cb.setChecked(bool(visible))
-            self.table_column_checks[col_name] = cb
-            row = idx % rows_count if rows_count else 0
-            col = idx // rows_count if rows_count else 0
-            data_layout.addWidget(cb, row, col)
-        data_tab_layout.addWidget(data_group)
-        data_tab_layout.addStretch()
+        columns = data_columns or [
+            ColumnDefinition(str(name), str(name), bool(visible))
+            for name, visible in (table_column_visibility or {}).items()
+        ]
+        self.data_settings_tab = SettingsDataTab(columns)
+        self.data_settings_tab.load_configuration(data_configuration or {})
+        data_tab_layout.addWidget(self.data_settings_tab, 1)
         tabs.addTab(data_tab, "Data Columns")
 
         buttons = QDialogButtonBox(

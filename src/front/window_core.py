@@ -11,7 +11,7 @@ import json
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QEvent, QSettings, QTimer, Qt
+from PyQt6.QtCore import QEvent, QTimer, Qt
 from PyQt6.QtGui import (
     QAction,
     QClipboard,
@@ -27,7 +27,8 @@ from PyQt6.QtWidgets import (
     QMessageBox,
 )
 
-from app_paths import settings_path
+from app_paths import legacy_settings_path, settings_path
+from back.settings_store import open_settings
 from background_tasks import AnalysisWorker, DiscoveryWorker
 from front.model_card import ModelCard
 from front.scan_projection import ScanProjectionBuffer
@@ -67,10 +68,10 @@ def _model_file_filter() -> str:
     )
 
 
-def _settings() -> QSettings:
+def _settings():
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    return QSettings(str(path), QSettings.Format.IniFormat)
+    return open_settings(path, legacy_settings_path())
 
 
 def _asset(name: str) -> str:
@@ -170,6 +171,7 @@ class WindowCoreMixin:
             parent=self,
         )
         self._build_window_layout()
+        self._configure_extended_ui()
 
     def _center_window(self):
         screen = QApplication.primaryScreen()

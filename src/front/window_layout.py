@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
 )
 
 from front.filter_widgets import CheckFilterButton
+from front.explorer_tab import ExplorerTab
 
 
 class WindowLayoutMixin:
@@ -58,6 +59,11 @@ class WindowLayoutMixin:
         settings_btn.setFixedHeight(35)
         settings_btn.clicked.connect(self._open_settings)
         btn_row_1.addWidget(settings_btn)
+
+        self.advanced_viewer_btn = QPushButton("Advanced Viewer")
+        self.advanced_viewer_btn.setToolTip("Open live model facts and runtime resource projections for the selected model.")
+        self.advanced_viewer_btn.clicked.connect(self._show_advanced_viewer)
+        btn_row_1.addWidget(self.advanced_viewer_btn)
 
         self.open_btn = QToolButton()
         self.open_btn.setObjectName("openBtn")
@@ -274,13 +280,23 @@ class WindowLayoutMixin:
         data_tab_layout.addWidget(self.table)
         self.tabs.addTab(data_tab, "Data")
 
-        # Raw data tab
+        # Explorer and legacy raw-dump views share the original Raw tab.
         raw_container = QWidget()
         raw_layout = QVBoxLayout(raw_container)
         raw_layout.setContentsMargins(8, 8, 8, 8)
         raw_layout.setSpacing(6)
 
-        # File selector for raw view
+        self.raw_sections = QTabWidget()
+        self.raw_sections.setToolTip("Explore header metadata or use the compatible raw-dump navigator.")
+        self.explorer_tab = ExplorerTab()
+        self.raw_sections.addTab(self.explorer_tab, "Explorer")
+        raw_dump_container = QWidget()
+        raw_dump_layout = QVBoxLayout(raw_dump_container)
+        raw_dump_layout.setContentsMargins(0, 0, 0, 0)
+        self.raw_sections.addTab(raw_dump_container, "Raw Dump")
+        raw_layout.addWidget(self.raw_sections)
+
+        # File selector for compatible raw-dump view
         raw_top = QHBoxLayout()
         raw_top.addWidget(QLabel("Select model:"))
         self.raw_combo = QComboBox()
@@ -302,7 +318,7 @@ class WindowLayoutMixin:
         self.raw_load_btn.clicked.connect(self._load_selected_raw_dump)
         raw_top.addWidget(self.raw_load_btn)
         self._update_raw_controls()
-        raw_layout.addLayout(raw_top)
+        raw_dump_layout.addLayout(raw_top)
 
         self.raw_text = QTextEdit()
         self.raw_text.setReadOnly(True)
@@ -314,7 +330,7 @@ class WindowLayoutMixin:
         self.raw_text.setPlaceholderText(
             "Analyze models to see raw tensor key data here."
         )
-        raw_layout.addWidget(self.raw_text)
+        raw_dump_layout.addWidget(self.raw_text)
 
         self.tabs.addTab(raw_container, "Raw")
         self.tabs.currentChanged.connect(self._on_tab_changed)

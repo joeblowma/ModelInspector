@@ -1,0 +1,19 @@
+{
+  // Catppuccin Mocha-inspired palette
+  "id": "catppuccin",
+  "name": "Catppuccin",
+  "description": "Soft pastel colors on a deep mocha background.",
+  "colors": {
+    "background": "#1e1e2e",
+    "surface": "#313244",
+    "surface_alt": "#45475a",
+    "text": "#cdd6f4",
+    "muted": "#a6adc8",
+    "accent": "#89b4fa",
+    "accent_text": "#11111b",
+    "border": "#585b70",
+    "success": "#a6e3a1",
+    "warning": "#f9e2af",
+    "error": "#f38ba8",
+  },
+}

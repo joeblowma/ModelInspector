@@ -5,14 +5,14 @@
 This is a small Python desktop/CLI utility for inspecting various language and diffusion model files.
 
 - `src/` contains .py source code
-  - `app_paths.py` Application data paths for portable defaults
+  - `app_paths.py` Application data paths, including JSONC settings and legacy INI migration location
   - `gui.py` Thin compatibility/bootstrap wrapper that composes and re-exports `MainWindow`, while delegating application startup to `front.application`.
   - `inspect_model.py` Minimal CLI bootstrap that invokes `back.cli`.
   - `model_cache.py` Persistent inspection-result cache
   - `model_readers.py` Read-only model file readers and discovery helpers
   - `modelinfo.py` Model-info dump helpers for Model Inspector
-  - `front/` GUI presentation and application layer: `application` bootstraps Qt; `window_core`, `window_layout`, and `window_lifecycle` compose `MainWindow`; `analysis_controller`, `discovery_controller`, `selection_controller`, `startup_cache_controller`, and `view_controller` manage UI workflows; `model_card`, `filter_widgets`, `settings_dialog`, and `scan_projection` provide reusable widgets, dialogs, and scan-event delivery.
-  - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `reporting` writes reports; `inspection_summary` supplies compact GUI-facing result state.
+  - `front/` GUI presentation and application layer: `application` bootstraps Qt and applies themes; `window_core`, `window_layout`, and `window_lifecycle` compose `MainWindow`; `analysis_controller`, `discovery_controller`, `selection_controller`, `startup_cache_controller`, `view_controller`, and `integration_controller` manage UI workflows; `explorer_tab`/`explorer_data` provide header-only inspection exploration; `advanced_viewer` provides live resource projections; `settings_data_tab` owns Data column/theme editing; `cache_identity` is the read-only bridge projecting persisted cache identity metadata for cache verification and background sync; `model_card`, `filter_widgets`, `settings_dialog`, and `scan_projection` provide reusable widgets, dialogs, and scan-event delivery.
+  - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `estimator`, `theme_loader`, `settings_store`, and `cache_verifier` provide UI-safe backend services; `reporting` writes reports; `inspection_summary` supplies compact GUI-facing result state.
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
@@ -46,6 +46,11 @@ Existing tests:
 - `.\test_integrated_scan_behavior.py`
 - `.\test_background_tasks.py`
 - `.\test_gui_projection.py`
+- `.\tests\test_explorer_tab.py`
+- `.\tests\test_advanced_viewer.py`
+- `.\tests\test_settings_data_tab.py`
+- `.\tests\test_backend_phase2.py`
+- `.\tests\test_phase4_integration.py`
 
 ## Agent-Specific Instructions
 

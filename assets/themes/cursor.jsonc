@@ -1,0 +1,18 @@
+{
+  "id": "cursor",
+  "name": "Cursor",
+  "description": "A focused blue editor palette.",
+  "colors": {
+    "background": "#101114",
+    "surface": "#1b1d23",
+    "surface_alt": "#2a2d35",
+    "text": "#e6e9ef",
+    "muted": "#9aa1b2",
+    "accent": "#6ea8fe",
+    "accent_text": "#0b0d10",
+    "border": "#3b404c",
+    "success": "#7bd88f",
+    "warning": "#f2cc60",
+    "error": "#f07178"
+  }
+}

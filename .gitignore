@@ -229,3 +229,4 @@ test/
 /_mockups
 assets/splash.png
 /generated-goals
+.aider*

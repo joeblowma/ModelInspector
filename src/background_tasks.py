@@ -11,7 +11,7 @@ from typing import Any, Iterable, Optional
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from back.inspection_summary import compact_inspection_summary
-from inspect_model import inspect_file
+from back.inspection_pipeline import inspect_file
 from model_readers import SUPPORTED_MODEL_EXTENSIONS
 
 

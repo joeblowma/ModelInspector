@@ -5,40 +5,12 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from inspect_model import FINGERPRINTS, inspect_file, _collect_lora_up_dims
+from back.adapter_detection import _collect_lora_up_dims
+from back.architecture_keys import FINGERPRINTS
+from back.inspection_pipeline import _resolve_display_path, inspect_file
+from back.tensor_summary import _numeric_sort_key
 from model_cache import get_cached_inspection_snapshot, get_cached_model_data
 from model_readers import analyze_tensors, read_model_header
-
-
-def _resolve_display_path(filepath: str) -> str:
-    try:
-        return str(Path(filepath).resolve(strict=True))
-    except OSError:
-        return str(Path(filepath).absolute())
-
-
-def _numeric_sort_key(key: str) -> tuple:
-    """Extract numeric parts for natural sorting of tensor keys.
-
-    Splits the key into numeric and non-numeric segments, then sorts
-    numerically where applicable. For example:
-    - "blk.1.*" -> ("blk.", 1, ".*")
-    - "blk.10.*" -> ("blk.", 10, ".*")
-    - "model.layers.0.*" -> ("model.layers.", 0, ".*")
-    """
-    parts = []
-    current_num = ""
-    for char in key:
-        if char.isdigit():
-            current_num += char
-        else:
-            if current_num:
-                parts.append((0, int(current_num)))
-                current_num = ""
-            parts.append((1, char))
-    if current_num:
-        parts.append((0, int(current_num)))
-    return tuple(parts)
 
 
 def _modelinfo_base_path(filepath: str, resolve_output_path: bool = False) -> str:

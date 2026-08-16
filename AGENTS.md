@@ -6,15 +6,13 @@ This is a small Python desktop/CLI utility for inspecting various language and d
 
 - `src/` contains .py source code
   - `app_paths.py` Application data paths for portable defaults
-  - `gui.py` contains the PyQt6 desktop application, including `MainWindow`, drag-and-drop input, cards, tables, filters, and background analysis workers.
-  - `inspect_model.py` contains the parser, architecture detection, tensor summaries, `.modelinfo` generation, and CLI entry point.
+  - `gui.py` Thin compatibility/bootstrap wrapper that composes and re-exports `MainWindow`, while delegating application startup to `front.application`.
+  - `inspect_model.py` Minimal CLI bootstrap that invokes `back.cli`.
   - `model_cache.py` Persistent inspection-result cache
   - `model_readers.py` Read-only model file readers and discovery helpers
   - `modelinfo.py` Model-info dump helpers for Model Inspector
-  - `front/` Sub-module for GUI support functionality
-    - `scan_projection.py` Time-sliced delivery of scan events to Qt widgets
-  - `back/` Sub-module for backend/command line callable inspect_model.py
-    - `inspection_summary.py` Compact inspection results for long-lived GUI presentation state
+  - `front/` GUI presentation and application layer: `application` bootstraps Qt; `window_core`, `window_layout`, and `window_lifecycle` compose `MainWindow`; `analysis_controller`, `discovery_controller`, `selection_controller`, `startup_cache_controller`, and `view_controller` manage UI workflows; `model_card`, `filter_widgets`, `settings_dialog`, and `scan_projection` provide reusable widgets, dialogs, and scan-event delivery.
+  - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `reporting` writes reports; `inspection_summary` supplies compact GUI-facing result state.
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
@@ -53,3 +51,9 @@ Existing tests:
 
 - When project structure changes or tests are added, update this file.
 - When spawning subagents use `fork_turns = "none"`. Provide specific scoped tasks and their context for subagents.
+
+### Guardrails & Limits
+
+- **Hard Module Ceiling (500 Lines)**: Any generated or extracted file exceeding 500 lines is automatically flagged as an invalid God Node. It must immediately be queued for a second split by a worker before progressing to linkage repair. No "cohesive file exceptions" without explicit Lead Architect approval.
+- **Model Type Enforcement**: Before spawning subagents, verify that requested subagent models map strictly to `luna-medium`, `luna-xhigh`, `terra-medium`, or `terra-high`. If a model alias resolves incorrectly or defaults to `sol-medium`, halt execution immediately.
+- **Wrapper Boundary Policy**: Entry-point wrappers (`gui.py`, `inspect_model.py`) may contain thin re-exports, MRO composition, and compatibility hooks, but zero domain logic.

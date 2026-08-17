@@ -2,7 +2,7 @@
 :: Version 1.6
 @echo off
 title ModelInspector VENV Install
-set USE_PYTHON_VER=3.11
+set USE_PYTHON_VER=3.15
 
 echo ------------------------
 echo VENV Installation Script

@@ -1,0 +1,18 @@
+{
+  // Warm, high-contrast Gruvbox dark palette.
+  "id": "mytest",
+  "name": "Mytest",
+  "colors": {
+    "background": "#282828",
+    "surface": "#3c3836",
+    "surface_alt": "#504945",
+    "text": "#ebdbb2",
+    "muted": "#a89984",
+    "accent": "#83a598",
+    "accent_text": "#1d2021",
+    "border": "#665c54",
+    "success": "#b8bb26",
+    "warning": "#fabd2f",
+    "error": "#fb4934",
+  },
+}

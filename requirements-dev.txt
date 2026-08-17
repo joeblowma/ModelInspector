@@ -6,7 +6,7 @@ setuptools
 build
 wheel
 # optional, linting in VSCode
-pylance
+# pylance
 pylint
 pytest
 pyright

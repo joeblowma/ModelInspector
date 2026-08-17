@@ -17,6 +17,20 @@ replacement for access to the raw generated dump.
   with roughly 600 models). Move expensive table reprojection, settings writes,
   cache verification, or filter rebuilding out of the dialog close path and
   avoid making the main window appear hung.
+- Themes not loading in exe build. See src/back/theme_loader.py line 209 (broken),
+  src/front/windows_core.py line 79 , src/gui.py line 132. _MEIPASS must be
+  used to access builtin then extracted assets. Accessors like this should
+  likely be in a unified utility.py type file rather than repeated everywhere.
+- 'advanced' pop up window should always be on top of the main window, not 
+  always on top everywhere.
+- model type in advanced (ie: LLM) hasn't been propogated to other areas: 
+  cards, list. Multimodal capable models should have a vision tower and
+  be definied as MLLM.
+- curent raw->explorer tab should be a part of the advanced view's search
+  ability rather than a subtab of raw tab. Restore raw tab single purpose.
+- advanced current output information should also be presented at the top
+  of the raw output data for easy copy/paste.
+- raw view does not need "top key prefixes", remove it.
 
 ## 1. File Readers, Model Formats, Sharding, and Sidecars
 
@@ -38,11 +52,12 @@ replacement for access to the raw generated dump.
   non-sharded models).
 - In Explorer and Advanced Viewer, allow sorted versus original-order display
   and visually group original-order rows by shard.
+- Calculate tensor or block size for raw output and tool-tip in advanced view.
 
 ### Sidecar discovery and association
 
-- Detect `mmproj`, `dflash`, `eagle`, `draft`, and MTP sidecars beside the
-  primary model.
+- Detect `mmproj`, `dflash`, `dspark`, `eagle`, `draft`, and MTP sidecars beside
+  the primary model.
 - Store full sidecar inspection records separately while keeping enough
   identity metadata on the primary model to detect changes quickly.
 - Tag the primary model with discovered sidecar roles and include associated

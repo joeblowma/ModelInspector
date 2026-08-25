@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PyQt6.QtCore import QCoreApplication, QEvent
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QTreeWidget
 
 from front.settings_data_tab import ColumnDefinition, SettingsDataTab
 
@@ -162,3 +162,38 @@ def test_post_drop_reconciliation_stress_preserves_state_and_emits_once(app):
         assert {entry["key"]: entry for entry in exported["columns"]} == expected_by_key
 
     assert len(emissions) == 20
+
+
+def test_native_drop_detaches_cell_widgets_before_moving_bottom_row(app, monkeypatch):
+    widget = SettingsDataTab(_columns(), themes=["default"])
+    tree = widget.column_tree
+
+    def fake_native_drop(view, _event):
+        source = view.topLevelItem(view.topLevelItemCount() - 1)
+        assert source is not None
+        assert all(view.itemWidget(source, column) is None for column in range(view.columnCount()))
+        moved = view.takeTopLevelItem(view.topLevelItemCount() - 1)
+        assert moved is source
+        view.insertTopLevelItem(0, moved)
+
+    monkeypatch.setattr(QTreeWidget, "dropEvent", fake_native_drop)
+    tree.dropEvent(object())
+    QTest.qWait(1)
+
+    assert widget.column_keys() == ["architecture", "file", "size"]
+    assert [entry["key"] for entry in widget.export_configuration()["columns"]] == [
+        "architecture",
+        "file",
+        "size",
+    ]
+
+
+def test_data_column_tree_has_no_persistent_blank_viewport_row(app):
+    widget = SettingsDataTab(_columns(), themes=["default"])
+    widget.show()
+    app.processEvents()
+    tree = widget.column_tree
+    last_row = tree.visualItemRect(tree.topLevelItem(tree.topLevelItemCount() - 1))
+
+    assert tree.viewport().height() <= last_row.bottom() + 1
+    assert not tree.verticalScrollBar().isVisible()

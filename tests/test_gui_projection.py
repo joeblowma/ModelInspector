@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel
 
 from front.scan_projection import ProjectionEvent, ScanProjectionBuffer
 
@@ -80,3 +80,36 @@ def test_projection_buffer_discards_and_acknowledges_stale_events():
     assert acknowledged == [True]
     assert buffer.pending_count == 0
 
+
+
+def test_mllm_model_type_projects_to_card_and_table():
+    import gui
+
+    app = QApplication.instance() or QApplication([])
+    window = gui.MainWindow()
+    data = {
+        "filepath": "mllm.safetensors",
+        "filename": "mllm.safetensors",
+        "format": "SAFETENSORS",
+        "file_size_friendly": "1.0 KB",
+        "architecture": "Qwen2VLForConditionalGeneration",
+        "model_type": "MLLM",
+        "adapter_type": None,
+        "quantization": None,
+        "precision_summary": "FP16",
+        "components": {"transformer": True, "vision": True},
+        "named_text_encoders": {},
+        "total_params_friendly": "7B",
+        "tensor_count": 1,
+        "training_meta": {},
+    }
+    try:
+        window._add_card(data)
+        window._add_table_row(data)
+
+        card = window._path_to_card[data["filepath"]]
+        assert any("MLLM" in label.text() for label in card.findChildren(QLabel))
+        assert window.table.item(0, 5).text() == "MLLM"
+    finally:
+        window.close()
+        app.processEvents()

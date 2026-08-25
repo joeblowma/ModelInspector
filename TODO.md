@@ -7,31 +7,6 @@ The legacy Raw Dump view remains useful and should be retained alongside the
 read-only Explorer. The Explorer is an expansion of model inspection, not a
 replacement for access to the raw generated dump.
 
-## 0. Immediate UI Glitches and Performance
-
-- Fix Data-column ordering when the bottom item is moved: the row currently
-  disappears even though the earlier deleted-widget crash is fixed.
-- Remove the persistent blank row/line at the bottom of the Data-column
-  settings scroller.
-- Profile closing Settings with a large loaded library (observed 3-5 seconds
-  with roughly 600 models). Move expensive table reprojection, settings writes,
-  cache verification, or filter rebuilding out of the dialog close path and
-  avoid making the main window appear hung.
-- Themes not loading in exe build. See src/back/theme_loader.py line 209 (broken),
-  src/front/windows_core.py line 79 , src/gui.py line 132. _MEIPASS must be
-  used to access builtin then extracted assets. Accessors like this should
-  likely be in a unified utility.py type file rather than repeated everywhere.
-- 'advanced' pop up window should always be on top of the main window, not 
-  always on top everywhere.
-- model type in advanced (ie: LLM) hasn't been propogated to other areas: 
-  cards, list. Multimodal capable models should have a vision tower and
-  be definied as MLLM.
-- curent raw->explorer tab should be a part of the advanced view's search
-  ability rather than a subtab of raw tab. Restore raw tab single purpose.
-- advanced current output information should also be presented at the top
-  of the raw output data for easy copy/paste.
-- raw view does not need "top key prefixes", remove it.
-
 ## 1. File Readers, Model Formats, Sharding, and Sidecars
 
 ### Additional model formats

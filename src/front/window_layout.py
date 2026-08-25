@@ -29,7 +29,6 @@ from PyQt6.QtWidgets import (
 )
 
 from front.filter_widgets import CheckFilterButton
-from front.explorer_tab import ExplorerTab
 
 
 class WindowLayoutMixin:
@@ -280,23 +279,13 @@ class WindowLayoutMixin:
         data_tab_layout.addWidget(self.table)
         self.tabs.addTab(data_tab, "Data")
 
-        # Explorer and legacy raw-dump views share the original Raw tab.
+        # The Raw tab remains a focused compatible raw-dump view.
         raw_container = QWidget()
         raw_layout = QVBoxLayout(raw_container)
         raw_layout.setContentsMargins(8, 8, 8, 8)
         raw_layout.setSpacing(6)
 
-        self.raw_sections = QTabWidget()
-        self.raw_sections.setToolTip("Explore header metadata or use the compatible raw-dump navigator.")
-        self.explorer_tab = ExplorerTab()
-        self.raw_sections.addTab(self.explorer_tab, "Explorer")
-        raw_dump_container = QWidget()
-        raw_dump_layout = QVBoxLayout(raw_dump_container)
-        raw_dump_layout.setContentsMargins(0, 0, 0, 0)
-        self.raw_sections.addTab(raw_dump_container, "Raw Dump")
-        raw_layout.addWidget(self.raw_sections)
-
-        # File selector for compatible raw-dump view
+        # File selector for the compatible raw-dump view
         raw_top = QHBoxLayout()
         raw_top.addWidget(QLabel("Select model:"))
         self.raw_combo = QComboBox()
@@ -318,7 +307,7 @@ class WindowLayoutMixin:
         self.raw_load_btn.clicked.connect(self._load_selected_raw_dump)
         raw_top.addWidget(self.raw_load_btn)
         self._update_raw_controls()
-        raw_dump_layout.addLayout(raw_top)
+        raw_layout.addLayout(raw_top)
 
         self.raw_text = QTextEdit()
         self.raw_text.setReadOnly(True)
@@ -330,7 +319,7 @@ class WindowLayoutMixin:
         self.raw_text.setPlaceholderText(
             "Analyze models to see raw tensor key data here."
         )
-        raw_dump_layout.addWidget(self.raw_text)
+        raw_layout.addWidget(self.raw_text)
 
         self.tabs.addTab(raw_container, "Raw")
         self.tabs.currentChanged.connect(self._on_tab_changed)

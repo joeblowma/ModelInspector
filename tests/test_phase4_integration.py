@@ -164,9 +164,9 @@ def test_theme_application_and_mainwindow_explorer_wiring(monkeypatch, tmp_path:
 
     window = MainWindow()
     try:
-        assert window.raw_sections.tabText(0) == "Explorer"
+        assert not hasattr(window, "raw_sections")
         assert window.advanced_viewer_btn.toolTip()
-        assert window.explorer_tab.status_label.text()
+        assert not hasattr(window, "explorer_tab")
         layout = window._capture_data_layout()
         assert {entry["key"] for entry in layout["columns"]} >= {"selection", "column_1"}
         window._apply_data_layout({

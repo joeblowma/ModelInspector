@@ -8,16 +8,19 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-try:
-    from PySide6.QtWidgets import QApplication
-except ImportError:  # pragma: no cover - fallback for the project's PyQt6 env.
-    from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication
 
-from front.advanced_viewer import AdvancedViewerDialog
+from front.advanced_viewer import AdvancedViewerDialog, Qt, QWidget
+
+
+_APPLICATION: QApplication | None = None
 
 
 def _app() -> QApplication:
-    return QApplication.instance() or QApplication([])
+    global _APPLICATION
+    application = QApplication.instance()
+    _APPLICATION = application if isinstance(application, QApplication) else QApplication([])
+    return _APPLICATION
 
 
 def test_viewer_populates_facts_and_recalculates_projection():
@@ -66,3 +69,26 @@ def test_missing_values_are_visible_and_filename_is_not_inference_source():
     assert [badge.text() for badge in dialog._domain_badges] == ["Unknown"]
     assert dialog._projection.assumptions
     dialog.close()
+
+
+def test_viewer_is_parent_owned_window_modal_and_hosts_explorer():
+    _app()
+    parent = QWidget()
+    dialog = AdvancedViewerDialog(
+        parent,
+        {
+            "architecture": "TestArchitecture",
+            "tensor_info": {"model.layer.weight": {"shape": [2], "dtype": "F16"}},
+        },
+    )
+
+    assert dialog.parentWidget() is parent
+    assert dialog.windowModality() == Qt.WindowModality.WindowModal
+    assert not dialog.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    assert [dialog.work_area.tabText(index) for index in range(dialog.work_area.count())] == [
+        "Overview",
+        "Explorer",
+    ]
+    assert dialog.explorer_tab.tensor_model.rowCount() == 1
+    dialog.close()
+    parent.close()

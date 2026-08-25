@@ -6,8 +6,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+import weakref
 
-from PyQt6.QtCore import QTimer
+from PyQt6 import sip
+from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from back.cache_verifier import verify_cache_entries
@@ -19,25 +21,27 @@ from front.settings_data_tab import ColumnDefinition
 from model_cache import get_cached_inspection_snapshots
 
 
+def _run_deferred_settings_rebuild(window_ref, generation: int) -> None:
+    """Run a queued rebuild only while its Python window wrapper is alive."""
+    window = window_ref()
+    if window is not None:
+        window._run_settings_rebuild(generation)
+
+
 class IntegrationMixin:
     """Keep optional Phase 2/3 features out of the near-limit core mixins."""
 
     def _configure_extended_ui(self) -> None:
         self._advanced_dialog: AdvancedViewerDialog | None = None
+        self._settings_rebuild_generation = 0
         self._data_layout = self._settings_data_layout()
         self._apply_data_layout(self._data_layout)
         header = self.table.horizontalHeader()
         assert header is not None
         header.sectionMoved.connect(lambda *_args: self._capture_data_layout())
         header.sectionResized.connect(lambda *_args: self._capture_data_layout())
-        self.table.cellClicked.connect(lambda *_args: QTimer.singleShot(0, self._refresh_explorer))
-        self.raw_combo.currentIndexChanged.connect(lambda *_args: self._refresh_explorer())
-        self.explorer_tab.inspect_requested.connect(self._handle_explorer_inspect)
-        self.explorer_tab.export_requested.connect(self._handle_explorer_export)
-        self.explorer_tab.extraction_requested.connect(self._handle_explorer_extract)
         self._refresh_cache_controls()
         QTimer.singleShot(0, self._schedule_cache_sync)
-        QTimer.singleShot(0, self._refresh_explorer)
 
     def _open_settings(self) -> None:
         from front.settings_dialog import SettingsDialog
@@ -72,11 +76,72 @@ class IntegrationMixin:
         for key, check in dialog.simple_card_field_checks.items():
             self._simple_card_field_visibility[key] = check.isChecked()
         self._data_layout = dialog.data_settings_tab.export_configuration()
-        self._apply_data_layout(self._data_layout)
-        self._save_ui_settings()
-        self._save_data_layout()
-        self._rebuild_views_from_results()
-        self._apply_default_tab()
+        self._schedule_settings_rebuild()
+
+    def _schedule_settings_rebuild(self) -> None:
+        """Defer the expensive model reprojection until Settings has closed."""
+        if not self._settings_rebuild_is_active():
+            return
+        self._settings_rebuild_generation += 1
+        generation = self._settings_rebuild_generation
+        window_ref = weakref.ref(self)
+        QTimer.singleShot(
+            0,
+            lambda ref=window_ref, generation=generation: _run_deferred_settings_rebuild(
+                ref, generation
+            ),
+        )
+
+    def _settings_rebuild_is_active(self) -> bool:
+        """Return whether a deferred callback may still touch this window."""
+        if getattr(self, "_close_pending", False) or getattr(
+            self, "_lifecycle_closed", False
+        ):
+            return False
+        if isinstance(self, QObject):
+            try:
+                if sip.isdeleted(self):
+                    return False
+            except (TypeError, RuntimeError):
+                return False
+        return True
+
+    def _run_settings_rebuild(self, generation: int) -> None:
+        if self._settings_rebuild_is_active() and generation == self._settings_rebuild_generation:
+            self._apply_data_layout(self._data_layout)
+            self._save_accepted_settings()
+            self._update_raw_controls()
+            self._update_analyze_slot()
+            self._apply_default_tab()
+            self._rebuild_active_cards_time_sliced()
+
+    def _save_accepted_settings(self) -> None:
+        """Persist one accepted dialog as a single crash-safe settings update."""
+        column_visibility = {
+            name: not self.table.isColumnHidden(index)
+            for index, name in enumerate(self._table_columns)
+            if index != 0
+        }
+        store = open_settings(
+            self._settings_path(), self._legacy_settings_path(), defer_initial_save=True
+        )
+        store.setValues(
+            {
+                "allow_filename_alias_detection": str(self._allow_filename_alias_detection).lower(),
+                "auto_analyze_on_add": str(self._auto_analyze_on_add).lower(),
+                "dump_json_modelinfo": str(self._dump_json_modelinfo).lower(),
+                "auto_load_raw_dump": str(self._auto_load_raw_dump).lower(),
+                "load_default_libraries_on_startup": str(self._load_default_libraries_on_startup).lower(),
+                "cache_full_data_on_analyze": str(self._cache_full_data_on_analyze).lower(),
+                "analysis_threads": str(self._analysis_threads),
+                "add_mode": self._add_mode,
+                "default_tab": self._default_tab,
+                "detailed_card_fields": json.dumps(self._card_field_visibility),
+                "simple_card_fields": json.dumps(self._simple_card_field_visibility),
+                "table_columns": json.dumps(column_visibility),
+                "data_layout": self._capture_data_layout(),
+            }
+        )
 
     def _refresh_cache_dialog(self, dialog) -> None:
         report = self._cache_report().availability
@@ -172,23 +237,18 @@ class IntegrationMixin:
                 return cached
         return None
 
-    def _refresh_explorer(self) -> None:
-        data = self._selected_inspection()
-        if data is None:
-            self.explorer_tab.clear()
-            return
-        filepath = str(data.get("filepath") or "")
-        cached = get_cached_inspection_snapshots([filepath]).get(filepath, {}) if filepath else {}
-        detail = cached or data
-        tensors = detail.get("tensor_info", detail.get("tensors", detail.get("tensor_data", {})))
-        self.explorer_tab.set_inspection(detail, tensors, payload_available=False)
-
     def _show_advanced_viewer(self) -> None:
         inspection = self._selected_inspection()
         if inspection is None:
             QMessageBox.information(self, "Advanced Viewer", "Select or load a model first.")
             return
-        self._advanced_dialog = AdvancedViewerDialog(self, inspection)
+        filepath = str(inspection.get("filepath") or "")
+        detail = get_cached_inspection_snapshots([filepath]).get(filepath, {}) if filepath else {}
+        self._advanced_dialog = AdvancedViewerDialog(self, detail or inspection)
+        explorer = self._advanced_dialog.explorer_tab
+        explorer.inspect_requested.connect(self._handle_explorer_inspect)
+        explorer.export_requested.connect(self._handle_explorer_export)
+        explorer.extraction_requested.connect(self._handle_explorer_extract)
         self._advanced_dialog.exec()
 
     def _handle_explorer_inspect(self, request: dict[str, Any]) -> None:
@@ -269,7 +329,6 @@ class IntegrationMixin:
             self._add_card(data)
             self._add_table_row(data)
         self._refresh_raw_combo_filtered()
-        self._refresh_explorer()
         self._set_progress_status(f"Loaded {len(snapshots)} cached {'historic ' if wanted == 'historic' else ''}summaries")
 
     def _load_cache(self) -> None:

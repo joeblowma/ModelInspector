@@ -275,3 +275,12 @@ def test_operational_and_classification_strings_remain_exact():
     ):
         assert summary[key] == long_value
     assert summary["modelinfo_outputs"]["json"] == [long_value]
+
+
+def test_mllm_model_type_is_preserved_for_gui_consumers():
+    full = _full_result()
+    full["model_type"] = "MLLM"
+
+    summary = compact_inspection_summary(full)
+
+    assert summary["model_type"] == "MLLM"

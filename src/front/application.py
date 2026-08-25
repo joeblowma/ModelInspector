@@ -8,7 +8,7 @@ os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from front.window_core import _asset
+from app_paths import asset_path
 from back.theme_loader import load_theme
 
 try:
@@ -182,7 +182,7 @@ def configure_application(application: QApplication) -> None:
     except (ImportError, AttributeError, OSError, TypeError, ValueError):
         selected = "default"
     apply_theme(application, str(selected))
-    application.setWindowIcon(QIcon(_asset("icon.ico")))
+    application.setWindowIcon(QIcon(str(asset_path("icon.ico"))))
 
 
 def close_startup_splash() -> None:

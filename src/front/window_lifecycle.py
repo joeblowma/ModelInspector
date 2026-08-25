@@ -19,6 +19,8 @@ class WindowLifecycleMixin:
     _card_rebuild_generation: int
     _discovery_generation: int
 
+    _RAW_DUMP_SEPARATOR = "=" * 70
+
     def _on_raw_selection_changed(self, index):
         if index < 0:
             self.raw_text.clear()
@@ -74,6 +76,33 @@ class WindowLifecycleMixin:
         self.raw_text.setPlainText("\n".join(lines))
         self._raw_loaded_filepath = None
 
+    def _raw_dump_with_current_info(self, filepath: str, dump: str) -> str:
+        """Prefix raw dumps with a stable, copyable summary of the current model."""
+        normalized_dump = dump.replace("\r\n", "\n").replace("\r", "\n")
+        if normalized_dump.startswith("CURRENT MODEL / OUTPUT\n"):
+            return dump
+        legacy_prefix_heading = "\n  Top key prefixes (depth 2):"
+        legacy_prefix_start = dump.find(legacy_prefix_heading)
+        if legacy_prefix_start >= 0:
+            tensor_keys_start = dump.find("\n  All tensor keys", legacy_prefix_start)
+            if tensor_keys_start >= 0:
+                dump = dump[:legacy_prefix_start] + dump[tensor_keys_start:]
+        data = self._result_for_filepath(filepath) or {}
+        lines = [
+            "CURRENT MODEL / OUTPUT",
+            "Output: Full tensor key dump",
+            f"File: {data.get('filename', Path(filepath).name)}",
+            f"Path: {filepath}",
+            f"Architecture: {data.get('architecture', 'Unknown')}",
+            f"Model type: {data.get('model_type', 'Unknown')}",
+            f"Size: {data.get('file_size_friendly', '-')}",
+            f"Parameters: {data.get('total_params_friendly', '-')}",
+            f"Tensors: {data.get('tensor_count', 0)}",
+            f"Precision: {data.get('precision_display') or data.get('precision_summary', '-')}",
+            self._RAW_DUMP_SEPARATOR,
+        ]
+        return "\n".join(lines) + "\n" + dump
+
     def _load_selected_raw_dump(self):
         filepath = _combo_data_str(self.raw_combo.currentData())
         if not filepath:
@@ -85,7 +114,9 @@ class WindowLifecycleMixin:
         # seam without making this reusable mixin import ``gui``.
         cached_dump = self._get_cached_raw_dump(filepath)
         if cached_dump is not None:
-            self.raw_text.setPlainText(cached_dump)
+            self.raw_text.setPlainText(
+                self._raw_dump_with_current_info(filepath, cached_dump)
+            )
             self._raw_loaded_filepath = filepath
             self._set_progress_status(f"Loaded cached full dump: {Path(filepath).name}")
             self._clear_progress_status(delay_ms=1500)
@@ -98,6 +129,7 @@ class WindowLifecycleMixin:
             self.raw_load_btn.setEnabled(False)
             self.raw_load_btn.setText("Loading...")
             dump = generate_modelinfo_dump(filepath)
+            dump = self._raw_dump_with_current_info(filepath, dump)
             store_raw_dump(filepath, dump)
             self.raw_text.setPlainText(dump)
             self._raw_loaded_filepath = filepath
@@ -116,6 +148,7 @@ class WindowLifecycleMixin:
             self._clear_progress_status(delay_ms=1500)
 
     def closeEvent(self, event):
+        self._lifecycle_closed = True
         running_workers = {
             worker
             for worker in (self._worker, self._discovery_worker)

@@ -3,6 +3,26 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-08-24 — Immediate UI Glitches and Performance
+
+- [x] Fix bottom-item Data-column reordering so the moved row remains visible,
+  while retaining the earlier deleted-widget crash fix.
+- [x] Remove the persistent blank row from the bottom of the Data-column
+  settings scroller.
+- [x] Improve Settings close performance for large loaded libraries by moving
+  expensive work out of the dialog close path.
+- [x] Load bundled themes correctly in packaged executables through extracted
+  application assets.
+- [x] Keep the Advanced Viewer above its main window without forcing it above
+  unrelated applications.
+- [x] Propagate multimodal model classification as MLLM, including vision-tower
+  detection, to cards and lists.
+- [x] Give the Advanced Viewer ownership of Explorer search while keeping Raw
+  as a single-purpose main tab.
+- [x] Show Advanced Viewer’s current output information at the top of Raw for
+  convenient copying.
+- [x] Remove the unnecessary “top key prefixes” from the Raw view.
+
 ## Project Structure and Architecture
 
 - [x] Move executable sources under `src/` and keep `src/gui.py` and

@@ -54,6 +54,9 @@ __all__ = [
 ]
 
 
+from back.model_classification import has_vision_component
+
+
 def _resolve_display_path(filepath: str) -> str:
     """Return a canonical display path, falling back for missing files."""
     try:
@@ -155,6 +158,7 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
     keys = sorted(tensor_info.keys(), key=_numeric_sort_key)
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
+    components["vision"] = has_vision_component(keys)
     architecture, arch_details = detect_architecture(
         keys, shapes, total_params, components, metadata
     )

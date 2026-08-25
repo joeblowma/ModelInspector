@@ -2,7 +2,6 @@
 """Model-info dump helpers for Model Inspector."""
 
 import json
-from collections import Counter
 from pathlib import Path
 
 from back.adapter_detection import _collect_lora_up_dims
@@ -74,17 +73,6 @@ def generate_modelinfo_dump(filepath: str) -> str:
     up_dims = _collect_lora_up_dims(keys, shapes)
     if up_dims:
         lines.append(f"\n  LoRA up dims (target layer sizes): {sorted(up_dims)}")
-
-    lines.append("\n  Top key prefixes (depth 2):")
-    prefixes = Counter()
-    for k in keys:
-        parts = k.split(".")
-        p = parts[0]
-        if len(parts) > 1:
-            p += "." + parts[1]
-        prefixes[p] += 1
-    for p, c in prefixes.most_common(25):
-        lines.append(f"    {p:<55} {c:>5}")
 
     lines.append(f"\n  All tensor keys ({len(keys)}):")
     for k in keys:

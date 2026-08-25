@@ -149,9 +149,15 @@ def test_integrated_worker_projection_filters_sorting_and_raw_summary(
         assert f"Path: {selected}" in raw_text
         assert "Architecture: Architecture A" in raw_text
 
-        monkeypatch.setattr(gui, "get_cached_raw_dump", lambda _: "cached full dump")
+        monkeypatch.setattr(
+            gui,
+            "get_cached_raw_dump",
+            lambda _: "CURRENT MODEL / OUTPUT\r\ncached full dump",
+        )
         window._load_raw_dump(selected)
-        assert window.raw_text.toPlainText() == "cached full dump"
+        cached_raw_text = window.raw_text.toPlainText()
+        assert cached_raw_text.count("CURRENT MODEL / OUTPUT") == 1
+        assert cached_raw_text.endswith("cached full dump")
         app.processEvents()
     finally:
         window.close()

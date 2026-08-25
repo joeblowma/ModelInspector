@@ -13,6 +13,7 @@ from pathlib import Path
 __all__ = [
     "classify_model_type",
     "detect_moe",
+    "has_vision_component",
     "format_size",
     "format_params",
     "_friendly_encoder_name",
@@ -27,24 +28,83 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-def classify_model_type(components: dict, arch: str):
-    """Classify: checkpoint, single component, or LoRA."""
-    if components["lora"]:
-        return "LoRA"
+_VISION_PREFIXES = (
+    "vision_tower.",
+    "model.vision_tower.",
+    "vision_model.",
+    "model.vision_model.",
+    "visual.",
+    "model.visual.",
+    "vision_encoder.",
+    "model.vision_encoder.",
+    "image_encoder.",
+    "model.image_encoder.",
+    "clip_vision_model.",
+    "model.clip_vision_model.",
+)
 
-    has_backbone = components["unet"] or components["transformer"]
+_VISION_EVIDENCE_PATTERNS = (
+    re.compile(r"(?:^|\.)(?:encoder|layers?|blocks|resblocks|transformer_blocks)\.\d+(?:\.|$)"),
+    re.compile(
+        r"(?:^|\.)(?:patch_embed|patch_embedding|embeddings|position_embeddings?|"
+        r"class_embedding|conv1|stem)(?:\.|$)"
+    ),
+    re.compile(
+        r"(?:^|\.)(?:self_attn|attn|attention|q_proj|k_proj|v_proj|qkv|"
+        r"to_[qkv])(?:\.|$)"
+    ),
+    re.compile(r"(?:^|\.)(?:mlp|fc[12]|resampler|merger)(?:\.|$)"),
+)
+
+
+def has_vision_component(keys: list[str]) -> bool:
+    """Return whether keys provide credible evidence of a vision tower.
+
+    A single tensor with a suggestive container name is not enough: partial
+    exports and unrelated tensors can use the same roots.  Require multiple
+    tensors from a known vision root plus two distinct structural signals,
+    such as indexed encoder blocks and attention/projection weights.  This
+    covers the existing CLIP/LLaVA-style ``vision_tower`` and ``vision_model``
+    layouts as well as Qwen-VL-style ``visual.blocks`` layouts.
+    """
+    candidates = [
+        str(key).lower()
+        for key in keys
+        if str(key).lower().startswith(_VISION_PREFIXES)
+    ]
+    if len(candidates) < 2:
+        return False
+
+    evidence = {
+        index
+        for index, pattern in enumerate(_VISION_EVIDENCE_PATTERNS)
+        if any(pattern.search(key) for key in candidates)
+    }
+    return len(evidence) >= 2
+
+
+def classify_model_type(components: dict, arch: str):
+    """Classify: multimodal, checkpoint, single component, or LoRA."""
+    if components.get("lora"):
+        return "LoRA"
+    if components.get("vision"):
+        return "MLLM"
+
+    has_backbone = components.get("unet") or components.get("transformer")
     has_aux = (
-        components["vae"] or components["text_encoder"] or components["text_encoder_2"]
+        components.get("vae")
+        or components.get("text_encoder")
+        or components.get("text_encoder_2")
     )
 
     if has_backbone and has_aux:
         return "Checkpoint"
     if has_backbone:
         return "Backbone"
-    if components["vae"] and not has_backbone:
+    if components.get("vae") and not has_backbone:
         return "VAE"
     if (
-        components["text_encoder"] or components["text_encoder_2"]
+        components.get("text_encoder") or components.get("text_encoder_2")
     ) and not has_backbone:
         return "Text Encoder"
 

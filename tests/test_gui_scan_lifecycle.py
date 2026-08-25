@@ -315,3 +315,58 @@ def test_close_is_deferred_until_slow_thread_finishes(tmp_path, monkeypatch):
             worker.wait(2000)
         if window.isVisible():
             window.close()
+
+
+def test_raw_full_dump_prefixes_cached_and_generated_output(tmp_path, monkeypatch):
+    from front import window_lifecycle
+
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    QApplication.instance() or QApplication([])
+    window = MainWindow()
+    filepath = "R:/synthetic/current-model.safetensors"
+    window._results.append(_summary(filepath))
+    try:
+        window._get_cached_raw_dump = lambda _path: (
+            "legacy data\n  Top key prefixes (depth 2):\n"
+            "    model.layers 2\n  All tensor keys (1):\n    cached tensor keys"
+        )
+        window._load_raw_dump(filepath)
+        cached_text = window.raw_text.toPlainText()
+        assert cached_text.startswith("CURRENT MODEL / OUTPUT\nOutput: Full tensor key dump")
+        assert "File: current-model.safetensors" in cached_text
+        assert window._RAW_DUMP_SEPARATOR in cached_text
+        assert "Top key prefixes" not in cached_text
+        assert cached_text.endswith("cached tensor keys")
+
+        stored = []
+        window._get_cached_raw_dump = lambda _path: None
+        monkeypatch.setattr(
+            window_lifecycle, "generate_modelinfo_dump", lambda _path: "generated tensor keys"
+        )
+        monkeypatch.setattr(
+            window_lifecycle, "store_raw_dump", lambda _path, dump: stored.append(dump)
+        )
+        window._load_raw_dump(filepath)
+        assert stored and stored[0].startswith("CURRENT MODEL / OUTPUT\n")
+        assert window.raw_text.toPlainText().endswith("generated tensor keys")
+    finally:
+        window.close()
+
+
+def test_modelinfo_dump_omits_top_key_prefixes(monkeypatch):
+    from modelinfo import generate_modelinfo_dump
+    import modelinfo
+
+    tensor_info = {
+        "model.layers.0.weight": {"shape": [2], "dtype": "F16"},
+        "model.layers.1.weight": {"shape": [2], "dtype": "F16"},
+    }
+    monkeypatch.setattr(
+        modelinfo, "_read_header_or_cached", lambda _filepath: ({}, tensor_info, 4)
+    )
+
+    dump = generate_modelinfo_dump("current-model.safetensors")
+
+    assert "Top key prefixes" not in dump
+    assert "All tensor keys (2):" in dump

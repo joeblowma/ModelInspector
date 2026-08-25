@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         QScrollArea,
         QSizePolicy,
         QSpinBox,
+        QTabWidget,
         QVBoxLayout,
         QWidget,
     )
@@ -65,6 +66,30 @@ else:
     QScrollArea = _qt_widgets.QScrollArea
     QSizePolicy = _qt_widgets.QSizePolicy
     QSpinBox = _qt_widgets.QSpinBox
+    QTabWidget = _qt_widgets.QTabWidget
+    QVBoxLayout = _qt_widgets.QVBoxLayout
+    QWidget = _qt_widgets.QWidget
+
+    # ExplorerTab is PyQt6-based because it is also hosted by the main window.
+    # Keep this dialog in that same binding rather than mixing QWidget types.
+    _qt_core = importlib.import_module("PyQt6.QtCore")
+    _qt_widgets = importlib.import_module("PyQt6.QtWidgets")
+    Qt = _qt_core.Qt
+    QApplication = _qt_widgets.QApplication
+    QComboBox = _qt_widgets.QComboBox
+    QDialog = _qt_widgets.QDialog
+    QDialogButtonBox = _qt_widgets.QDialogButtonBox
+    QDoubleSpinBox = _qt_widgets.QDoubleSpinBox
+    QFormLayout = _qt_widgets.QFormLayout
+    QGridLayout = _qt_widgets.QGridLayout
+    QGroupBox = _qt_widgets.QGroupBox
+    QHBoxLayout = _qt_widgets.QHBoxLayout
+    QLabel = _qt_widgets.QLabel
+    QPushButton = _qt_widgets.QPushButton
+    QScrollArea = _qt_widgets.QScrollArea
+    QSizePolicy = _qt_widgets.QSizePolicy
+    QSpinBox = _qt_widgets.QSpinBox
+    QTabWidget = _qt_widgets.QTabWidget
     QVBoxLayout = _qt_widgets.QVBoxLayout
     QWidget = _qt_widgets.QWidget
 
@@ -75,6 +100,7 @@ from back.estimator import (
     project_resources,
     runtime_configuration,
 )
+from front.explorer_tab import ExplorerTab
 
 __all__ = ["AdvancedViewer", "AdvancedViewerDialog", "AdvancedViewerPopup"]
 
@@ -88,7 +114,7 @@ _BADGE_COLORS = {
 
 
 class AdvancedViewerDialog(QDialog):
-    """Pinned, modal viewer for model facts and live memory projections."""
+    """Parent-owned, window-modal viewer for model facts and exploration."""
 
     def __init__(self, parent: QWidget | Mapping[str, Any] | None = None, inspection: Mapping[str, Any] | None = None):
         # Accept ``AdvancedViewerDialog(inspection)`` as a convenient, safe
@@ -98,8 +124,7 @@ class AdvancedViewerDialog(QDialog):
             parent = None
         super().__init__(cast(QWidget | None, parent))
         self.setWindowTitle("Advanced Model Viewer")
-        self.setModal(True)
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setMinimumSize(620, 620)
         self.resize(760, 760)
         self._inspection: dict[str, Any] = {}
@@ -115,6 +140,11 @@ class AdvancedViewerDialog(QDialog):
         root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(10)
 
+        self.work_area = QTabWidget()
+        facts_page = QWidget()
+        facts_layout = QVBoxLayout(facts_page)
+        facts_layout.setContentsMargins(0, 0, 0, 0)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -124,7 +154,7 @@ class AdvancedViewerDialog(QDialog):
         content_layout.setContentsMargins(2, 2, 2, 2)
         content_layout.setSpacing(10)
         scroll.setWidget(content)
-        root.addWidget(scroll, 1)
+        facts_layout.addWidget(scroll, 1)
 
         summary = QGroupBox("At a glance")
         summary.setToolTip("Facts are extracted from inspected metadata; Unknown means metadata was unavailable.")
@@ -239,6 +269,11 @@ class AdvancedViewerDialog(QDialog):
         content_layout.addWidget(projection)
         content_layout.addStretch()
 
+        self.explorer_tab = ExplorerTab()
+        self.work_area.addTab(facts_page, "Overview")
+        self.work_area.addTab(cast(QWidget, self.explorer_tab), "Explorer")
+        root.addWidget(self.work_area, 1)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         self.copy_configuration_button = QPushButton("Copy Configuration")
@@ -257,6 +292,12 @@ class AdvancedViewerDialog(QDialog):
         """Replace inspected metadata and refresh facts, badges, and projection."""
         self._inspection = dict(inspection) if isinstance(inspection, Mapping) else {}
         self._facts = facts_from_inspection(self._inspection)
+        tensors = self._inspection.get(
+            "tensor_info", self._inspection.get("tensors", self._inspection.get("tensor_data", {}))
+        )
+        self.explorer_tab.set_inspection(
+            self._inspection, tensors, payload_available=False
+        )
         self._update_summary()
         self._replace_badges(self._capability_row, self._capability_badges, self._facts.capabilities, "capability")
         self._replace_badges(self._domain_row, self._domain_badges, self._facts.domains, "domain")

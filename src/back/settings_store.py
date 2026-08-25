@@ -35,9 +35,16 @@ _TEMPLATE = (
 class SettingsStore:
     """Small QSettings-like adapter backed by a documented JSONC file."""
 
-    def __init__(self, path: str | Path, legacy_ini_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        legacy_ini_path: str | Path | None = None,
+        *,
+        defer_initial_save: bool = False,
+    ) -> None:
         self.path = Path(path)
         self.legacy_ini_path = Path(legacy_ini_path) if legacy_ini_path else None
+        self._defer_initial_save = defer_initial_save
         self.diagnostic = ""
         self.values = dict(DEFAULTS)
         self._load()
@@ -47,6 +54,11 @@ class SettingsStore:
 
     def setValue(self, key: str, value: Any) -> None:
         self.values[key] = value
+        self.save()
+
+    def setValues(self, values: dict[str, Any]) -> None:
+        """Atomically persist a related group of settings with one write."""
+        self.values.update(values)
         self.save()
 
     def _load(self) -> None:
@@ -64,10 +76,12 @@ class SettingsStore:
                     self.path.replace(self.path.with_suffix(self.path.suffix + ".invalid"))
                 except OSError:
                     pass
-                self.save()
+                if not self._defer_initial_save:
+                    self.save()
                 return
         migrated = self._migrate_ini()
-        self.save()
+        if not self._defer_initial_save:
+            self.save()
         if migrated:
             self.diagnostic = "Migrated existing Model Inspector INI settings to settings.jsonc."
 
@@ -96,9 +110,14 @@ class SettingsStore:
         os.replace(temporary, self.path)
 
 
-def open_settings(path: str | Path, legacy_ini_path: str | Path | None = None) -> SettingsStore:
+def open_settings(
+    path: str | Path,
+    legacy_ini_path: str | Path | None = None,
+    *,
+    defer_initial_save: bool = False,
+) -> SettingsStore:
     """Open settings with safe defaults, migration, and atomic persistence."""
-    return SettingsStore(path, legacy_ini_path)
+    return SettingsStore(path, legacy_ini_path, defer_initial_save=defer_initial_save)
 
 
 __all__ = ["DEFAULTS", "SettingsStore", "open_settings"]

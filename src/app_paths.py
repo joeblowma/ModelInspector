@@ -12,6 +12,35 @@ def app_base_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def resource_base_dir() -> Path:
+    """Return the root containing read-only application resources.
+
+    PyInstaller extracts one-file resources below ``sys._MEIPASS``.  During
+    normal Python execution the repository root contains the bundled assets
+    beside ``src``.  Keeping this distinction here prevents each GUI/backend
+    caller from growing its own packaging-specific path calculation.
+    """
+    extracted_dir = getattr(sys, "_MEIPASS", None)
+    if extracted_dir:
+        return Path(extracted_dir)
+    return app_base_dir() if getattr(sys, "frozen", False) else app_base_dir().parent
+
+
+def resource_path(*parts: str | os.PathLike[str]) -> Path:
+    """Resolve a path relative to the application resource root."""
+    return resource_base_dir().joinpath(*parts)
+
+
+def asset_path(*parts: str | os.PathLike[str]) -> Path:
+    """Resolve a path below the bundled ``assets`` directory."""
+    return resource_path("assets", *parts)
+
+
+def themes_dir() -> Path:
+    """Return the directory containing bundled JSONC themes."""
+    return asset_path("themes")
+
+
 def app_data_dir() -> Path:
     override = os.environ.get("SMI_DATA_DIR")
     if override:

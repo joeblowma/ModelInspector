@@ -220,6 +220,8 @@ assets/icon.ico
 .opencode/
 .pi/
 graphify-out/
+.codegraph/
+.serena/
 
 # Extras
 .vscode

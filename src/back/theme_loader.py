@@ -13,6 +13,8 @@ from pathlib import Path
 import re
 from typing import Any, Iterable, Mapping
 
+from app_paths import themes_dir
+
 
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
 _DEFAULT_COLORS = {
@@ -206,7 +208,7 @@ def _theme_files(directory: Path) -> Iterable[Path]:
 
 def list_themes(directory: str | Path | None = None) -> tuple[Theme, ...]:
     """Enumerate valid external themes; invalid files are skipped safely."""
-    folder = Path(directory) if directory is not None else Path(__file__).resolve().parents[2] / "assets" / "themes"
+    folder = Path(directory) if directory is not None else themes_dir()
     themes: list[Theme] = [BUILTIN_THEME]
     for path in _theme_files(folder):
         try:
@@ -223,7 +225,7 @@ def load_theme(theme_id_or_path: str | Path | None, directory: str | Path | None
     if str(theme_id_or_path).lower() in {"default", "builtin"}:
         return ThemeLoadResult(BUILTIN_THEME)
     requested = Path(str(theme_id_or_path))
-    folder = Path(directory) if directory is not None else Path(__file__).resolve().parents[2] / "assets" / "themes"
+    folder = Path(directory) if directory is not None else themes_dir()
     path = requested if requested.suffix else folder / (str(theme_id_or_path) + ".jsonc")
     diagnostics: list[str] = []
     try:

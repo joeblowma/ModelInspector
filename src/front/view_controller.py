@@ -158,31 +158,44 @@ class ViewControllerMixin:
     def _rebuild_active_cards_time_sliced(self):
         self._card_rebuild_generation += 1
         generation = self._card_rebuild_generation
-        self._cards.clear()
-        self._path_to_card.clear()
-        self._path_to_simple_card.clear()
-        self._clear_cards()
-        pending = list(self._results)
-        index = 0
+        self._cards.clear(); self._path_to_card.clear(); self._path_to_simple_card.clear()
+        pending = list(self._results); index = 0
+        layouts = [self.cards_layout, self.simple_cards_layout]; layout_index = 0
         def build_batch():
             nonlocal index
-            if generation != self._card_rebuild_generation:
+            if generation != self._card_rebuild_generation or getattr(self, "_lifecycle_closed", False):
                 return
-            started = perf_counter()
-            built = 0
+            started = perf_counter(); built = 0
             while index < len(pending) and built < 8:
-                self._add_card(pending[index])
-                index += 1
-                built += 1
+                data = pending[index]; self._add_card(data)
+                filepath = str(data.get("filepath") or "")
+                card = (self._path_to_simple_card if self._simple_cards_view else self._path_to_card).get(filepath)
+                if card:
+                    card.set_selected(filepath in self._selected_paths); card.set_filter_visible(self._is_data_visible(data))
+                index += 1; built += 1
                 if (perf_counter() - started) * 1000.0 >= 12.0:
                     break
             self._refresh_card_layout_geometry()
             if index < len(pending):
                 QTimer.singleShot(0, build_batch)
-            else:
-                self._apply_arch_filter()
-                self._sync_selection_visuals()
-        QTimer.singleShot(0, build_batch)
+        def clear_batch():
+            nonlocal layout_index
+            if generation != self._card_rebuild_generation or getattr(self, "_lifecycle_closed", False):
+                return
+            started = perf_counter(); removed = 0
+            while layout_index < len(layouts) and removed < 8:
+                item = layouts[layout_index].takeAt(0)
+                if item is None: layout_index += 1; continue
+                widget = item.widget()
+                if widget is not None: widget.deleteLater()
+                removed += 1
+                if (perf_counter() - started) * 1000.0 >= 12.0:
+                    break
+            self._refresh_card_layout_geometry()
+            if layout_index < len(layouts): QTimer.singleShot(0, clear_batch); return
+            self._clear_cards()
+            QTimer.singleShot(0, build_batch)
+        QTimer.singleShot(0, clear_batch)
     def _refresh_card_layout_geometry(self):
         self.cards_layout.invalidate()
         self.simple_cards_layout.invalidate()

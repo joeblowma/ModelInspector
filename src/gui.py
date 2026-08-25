@@ -9,6 +9,7 @@ cache test seams, and the standalone Qt entry point.
 
 import sys
 
+from app_paths import asset_path as _asset
 from front.application import DARK_STYLE, close_startup_splash, configure_application
 from PyQt6.QtWidgets import QApplication, QMainWindow
 
@@ -23,7 +24,6 @@ from front.startup_cache_controller import StartupCacheMixin
 from front.view_controller import ViewMixin
 from front.window_core import (
     CoreMixin,
-    _asset,
     _clipboard,
     _combo_data_str,
     _model_file_filter,

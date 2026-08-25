@@ -445,6 +445,7 @@ class SettingsDataTab(QWidget):
             self._states.clear()
             for column in self._defaults:
                 self._add_row(column)
+            self.column_tree.refresh_content_height()
             self.set_theme(self._default_theme_id(), emit=False)
         finally:
             self._updating = False

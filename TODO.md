@@ -17,6 +17,13 @@ replacement for access to the raw generated dump.
 - Keep optional third-party reader libraries behind the shared reader
   abstraction and add them only when they improve safety or coverage.
 
+### Header-based architecture and adapter classification
+
+- Give FLUX LoRA detection precedence over broad Qwen Edit heuristics when
+  read-only header evidence matches a standard rank-64 adapter with 19 dual and
+  38 single FLUX blocks plus generic `add_k_proj`/`add_q_proj` markers. Add a
+  regression using that real header shape without accessing model payloads.
+
 ### Sharded models and original ordering
 
 - Support sharded `.gguf` and `.safetensors` sets such as
@@ -95,9 +102,18 @@ replacement for access to the raw generated dump.
 - Keep smart-group behavior distinct from the persisted per-column visibility
   settings and define which preference wins after an automatic enable.
 
+### Data viewer fallback values
+
+- In the Data viewer's Quantization column, retain real quantization labels when
+  metadata supports them; otherwise show meaningful precision/dtype such as
+  F32, F16, or BF16 without labeling uniform unquantized files as quantized,
+  and define a clear fallback when neither is available.
+
 ## 5. Explorer and Raw Dump Refinement
 
-- Keep both Explorer and Raw Dump views available in the current shared tab.
+- Keep both Explorer and Raw Dump views available in the current shared tab;
+  external context-menu View Raw actions must select the target model and load
+  the full output when auto-load is enabled.
 - In Raw model labels, hide the file extension unless Show Full Path is enabled.
 - Keep the Raw selection-checkbox column permanently visible and pinned on the
   left; remove it from user-configurable column visibility/order.
@@ -110,7 +126,24 @@ replacement for access to the raw generated dump.
 - Add a selected-model action to force a metadata re-scan while preserving
   cached-first UI behavior.
 
+### Explorer filter behavior
+
+- Keep filter controls stable while parsing: retain selected values and avoid
+  flashing, clearing, or rebuilding them on each progress update; apply new
+  options atomically when parsing provides them.
+- Constrain filter popups to the available window or screen bounds and make
+  long option lists scrollable instead of allowing an oversized popup.
+
 ## 6. Advanced Model Viewer Redesign and Completion
+
+### Cards geometry
+
+- Reserve visible bottom spacing after the final Cards content so the view does
+  not end in a clipped or missing blank region.
+- Let long cards use the available viewer width, wrapping or expanding safely
+  instead of forcing key values into an unnecessarily narrow card.
+- Enforce a usable minimum size for short cards so they do not collapse or
+  destabilize neighboring cards.
 
 - Revisit the Advanced Viewer layout and interaction model against the supplied
   reference screenshot; treat the current dialog as a functional foundation,
@@ -144,7 +177,8 @@ replacement for access to the raw generated dump.
 - Generate the full human-readable runtime configuration format, including
   primary model, sidecars, comments, context, sampling, RoPE, and speculative
   decoding arguments. Keep copy icons consistent between Explorer/Raw and the
-  Advanced Viewer.
+  Advanced Viewer; path-specific actions must copy exact full paths, while
+  `File:` labels remain only in Copy Info output.
 
 ## 7. CLI, Packaging, and CI/CD
 

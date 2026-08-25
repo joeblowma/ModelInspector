@@ -92,10 +92,10 @@ if not exist ModelInspector.spec (
         --version-file "version.txt" ^
         --icon "assets/icon.ico" ^
         --add-data "assets/icon.ico:assets" ^
-        --add-data "assets/themes/catppuccin.jsonc:assets/themes/catppuccin.jsonc" ^
-        --add-data "assets/themes/cursor.jsonc:assets/themes/cursor.jsonc" ^
-        --add-data "assets/themes/github.jsonc:assets/themes/github.jsonc" ^
-        --add-data "assets/themes/gruvbox.jsonc:assets/themes/gruvbox.jsonc" ^
+        --add-data "assets/themes/catppuccin.jsonc:assets/themes" ^
+        --add-data "assets/themes/cursor.jsonc:assets/themes" ^
+        --add-data "assets/themes/github.jsonc:assets/themes" ^
+        --add-data "assets/themes/gruvbox.jsonc:assets/themes" ^
         --splash "assets/splash.png" ^
         src/gui.py
     if %ERRORLEVEL% neq 0 (

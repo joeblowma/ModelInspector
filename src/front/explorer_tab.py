@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QHeaderView,
     QSplitter,
     QTableView,
     QTableWidget,
@@ -138,11 +139,18 @@ class ExplorerTab(QWidget):
         metadata_layout.addWidget(self.metadata_search)
         self.metadata_table = QTableWidget(0, 2)
         self.metadata_table.setHorizontalHeaderLabels(("Key", "Value"))
-        self.metadata_table.setSortingEnabled(True)
+        meta_header = self.metadata_table.horizontalHeader()
+        assert meta_header is not None
+        for i in range(1, 2):
+            meta_header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+        self.metadata_table.setColumnWidth(0, 300)
+        self.metadata_table.setColumnWidth(1, 2000)
+        self.metadata_table.setSortingEnabled(False)
         self.metadata_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.metadata_table.setToolTip("Read-only metadata rows. Long values are truncated for safety.")
         metadata_layout.addWidget(self.metadata_table)
         upper_layout.addWidget(metadata_group, 1)
+        splitter.addWidget(upper)
 
         tensor_group = QGroupBox("Tensors (header descriptors)")
         tensor_group.setToolTip("Sortable tensor headers only; no tensor payload is loaded by Explorer.")
@@ -178,8 +186,8 @@ class ExplorerTab(QWidget):
         self.tensor_detail.setToolTip("Read-only bounded preview of the selected tensor descriptor.")
         tensor_layout.addWidget(self.tensor_detail, 1)
         upper_layout.addWidget(tensor_group, 3)
-        splitter.addWidget(upper)
-
+        splitter.addWidget(tensor_group)
+    
         embedded_group = QGroupBox("Embedded content candidates")
         embedded_group.setToolTip("Detected VAE, LoRA, text-encoder, and template candidates from headers and metadata.")
         embedded_layout = QVBoxLayout(embedded_group)
@@ -210,8 +218,8 @@ class ExplorerTab(QWidget):
         actions.addStretch()
         embedded_layout.addLayout(actions)
         splitter.addWidget(embedded_group)
-        splitter.setSizes([650, 240])
-
+        splitter.setSizes([650, 0, 0])
+        
     def set_inspection(self, inspection: Mapping[str, Any] | None, tensor_data: Any = None, *, payload_available: bool | None = None) -> None:
         """Display an inspection result and optional header tensor descriptors."""
         self._inspection = dict(inspection or {})

@@ -106,6 +106,7 @@ __all__ = ["AdvancedViewer", "AdvancedViewerDialog", "AdvancedViewerPopup"]
 
 
 _UNKNOWN = "Unknown"
+_MINIMUM_OVERVIEW_CARD_HEIGHT = 72
 _BADGE_COLORS = {
     "capability": ("#89b4fa", "#11111b"),
     "domain": ("#a6e3a1", "#11111b"),
@@ -150,11 +151,16 @@ class AdvancedViewerDialog(QDialog):
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setToolTip("Scroll through model facts, capabilities, and resource estimates.")
         content = QWidget()
+        content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(2, 2, 2, 2)
+        content_layout.setContentsMargins(8, 8, 8, 16)
         content_layout.setSpacing(10)
+        content_layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)
         scroll.setWidget(content)
         facts_layout.addWidget(scroll, 1)
+        self._overview_scroll = scroll
+        self._overview_content = content
+        self._overview_layout = content_layout
 
         summary = QGroupBox("At a glance")
         summary.setToolTip("Facts are extracted from inspected metadata; Unknown means metadata was unavailable.")
@@ -177,6 +183,7 @@ class AdvancedViewerDialog(QDialog):
             label.setStyleSheet("color: #a6adc8; font-size: 11px;")
             value = QLabel(_UNKNOWN)
             value.setWordWrap(True)
+            value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             value.setStyleSheet("color: #cdd6f4; font-size: 13px; font-weight: bold;")
             label.setToolTip(f"Inspected model {title.lower()}.")
@@ -185,6 +192,8 @@ class AdvancedViewerDialog(QDialog):
             summary_grid.addWidget(label, row, column * 2)
             summary_grid.addWidget(value, row, column * 2 + 1)
             self._summary_values[key] = value
+        summary_grid.setColumnStretch(1, 1)
+        summary_grid.setColumnStretch(3, 1)
         content_layout.addWidget(summary)
 
         badges = QGroupBox("Capabilities and domains")
@@ -209,6 +218,7 @@ class AdvancedViewerDialog(QDialog):
         projection = QGroupBox("Runtime resource projection")
         projection.setToolTip("Adjust controls to recalculate the estimator projection immediately.")
         projection_form = QFormLayout(projection)
+        projection_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         projection_form.setHorizontalSpacing(14)
         projection_form.setVerticalSpacing(8)
 
@@ -259,15 +269,22 @@ class AdvancedViewerDialog(QDialog):
             result_grid.addWidget(label, row, column * 2)
             result_grid.addWidget(value, row, column * 2 + 1)
             self._projection_values[key] = value
+        result_grid.setColumnStretch(1, 1)
+        result_grid.setColumnStretch(3, 1)
         projection_form.addRow(result_grid)
 
         self.assumptions_label = QLabel()
         self.assumptions_label.setWordWrap(True)
+        self.assumptions_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.assumptions_label.setStyleSheet("color: #f9e2af; font-size: 11px;")
         self.assumptions_label.setToolTip("Estimator assumptions used when inspected metadata is incomplete.")
         projection_form.addRow("Assumptions", self.assumptions_label)
         content_layout.addWidget(projection)
         content_layout.addStretch()
+        self._overview_cards = (summary, badges, projection)
+        for card in self._overview_cards:
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            card.setMinimumHeight(max(_MINIMUM_OVERVIEW_CARD_HEIGHT, card.minimumSizeHint().height()))
 
         self.explorer_tab = ExplorerTab()
         self.work_area.addTab(facts_page, "Overview")

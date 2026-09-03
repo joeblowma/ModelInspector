@@ -4,10 +4,12 @@ from pathlib import Path; from time import perf_counter
 from back.reporting import write_modelinfo_dump, write_modelinfo_json
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QApplication, QCheckBox, QLabel
-from front.filter_widgets import SortableTableWidgetItem
-from front.model_card import ModelCard
-
+from front.filter_widgets import SortableTableWidgetItem; from front.model_card import ModelCard
 def _combo_data_str(value): return str(value) if value else None
+def _data_quantization_display(data):
+    label = str(data.get("quantization") or "").strip()
+    dtypes = {str(item.get("dtype")) for item in data.get("dtypes") or [{"dtype": data.get("precision_summary")}] if item.get("dtype")}
+    return label or (next(iter(dtypes)) if len(dtypes) == 1 and dtypes <= {"F32", "F16", "BF16"} else "Unavailable")
 
 class ViewControllerMixin:
     """Render and rebuild result views using ``WindowCoreMixin`` state."""
@@ -256,7 +258,7 @@ class ViewControllerMixin:
         values = [
             data["filename"], data.get("format", "-"), data["file_size_friendly"],
             data["architecture"], data["model_type"], data.get("adapter_type") or "-",
-            data.get("quantization") or "-", data.get("precision_summary", "-"),
+            _data_quantization_display(data), data.get("precision_summary", "-"),
             unet_str, vae_str, text_enc_str, trans_str, data["total_params_friendly"],
             str(data["tensor_count"]), rank_str, moe_str, expert_count_str,
             expert_used_count_str, training_meta.get("software", "-"),

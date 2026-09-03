@@ -5,6 +5,8 @@ adapter files.  When metadata is inconclusive, :func:`detect_architecture`
 delegates to the ordered key-pattern detector in :mod:`architecture_keys`.
 """
 
+import re
+
 from .architecture_keys import (
     _build_metadata_blob,
     _detect_from_keys,
@@ -20,6 +22,44 @@ __all__ = [
     "_detect_from_metadata",
     "_zimage_label",
 ]
+
+
+def _block_indices(keys: list[str], block_names: tuple[str, ...]) -> set[int]:
+    """Collect block indices without confusing single and dual block names."""
+    indices: set[int] = set()
+    for block_name in block_names:
+        pattern = re.compile(rf"(?:^|\.){re.escape(block_name)}\.(\d+)(?:\.|$)")
+        for key in keys:
+            match = pattern.search(key)
+            if match:
+                indices.add(int(match.group(1)))
+    return indices
+
+
+def _is_standard_flux_lora_header(
+    keys: list[str], shapes: dict, components: dict
+) -> bool:
+    """Recognize the unambiguous FLUX LoRA header signature.
+
+    Diffusers FLUX adapters can expose ``add_k_proj``/``add_q_proj`` names,
+    which the broad Qwen detector also uses.  The complete 19/38 block layout
+    and rank-64 adapter evidence are stronger header-only signals, so keep this
+    check here, before the general metadata and key-pattern dispatch.
+    """
+    if not components.get("lora"):
+        return False
+
+    key_blob = "\n".join(keys).lower()
+    if "add_k_proj" not in key_blob or "add_q_proj" not in key_blob:
+        return False
+    if _detect_lora_rank(keys, shapes) != 64:
+        return False
+
+    dual_blocks = _block_indices(keys, ("double_blocks", "transformer_blocks"))
+    single_blocks = _block_indices(
+        keys, ("single_blocks", "single_transformer_blocks")
+    )
+    return dual_blocks == set(range(19)) and single_blocks == set(range(38))
 
 
 def detect_architecture(
@@ -45,6 +85,16 @@ def detect_architecture(
         adapter_type = detect_adapter_type(keys, metadata)
         if adapter_type:
             details["adapter_type"] = adapter_type
+
+    # The exact FLUX adapter header is more specific than the broad Qwen
+    # add_* projection heuristic (and remains header-only, with no payload
+    # access).  LoRA headers do not reliably retain the guidance input marker,
+    # so use the conventional Dev label for this standard layout.
+    if _is_standard_flux_lora_header(keys, shapes, components):
+        details["double_blocks"] = 19
+        details["single_blocks"] = 38
+        details["guidance_input"] = any("guidance_in" in k.lower() for k in keys)
+        return "Flux.1 Dev", details
 
     # 1. Try metadata-based detection (most reliable, especially for LoRAs)
     meta_result = _detect_from_metadata(metadata)

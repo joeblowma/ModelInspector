@@ -8,7 +8,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QSizePolicy, QVBoxLayout
 
 from front.advanced_viewer import AdvancedViewerDialog, Qt, QWidget
 
@@ -92,3 +92,41 @@ def test_viewer_is_parent_owned_window_modal_and_hosts_explorer():
     assert dialog.explorer_tab.tensor_model.rowCount() == 1
     dialog.close()
     parent.close()
+
+
+def test_overview_cards_reserve_padding_and_usable_minimum_geometry():
+    _app()
+    dialog = AdvancedViewerDialog()
+
+    margins = dialog._overview_layout.contentsMargins()
+    content_policy = dialog._overview_content.sizePolicy()
+    assert dialog._overview_scroll.widgetResizable()
+    assert margins.bottom() >= 16
+    assert content_policy.horizontalPolicy() == QSizePolicy.Policy.Expanding
+    assert content_policy.verticalPolicy() == QSizePolicy.Policy.Minimum
+    assert dialog._overview_layout.sizeConstraint() == QVBoxLayout.SizeConstraint.SetMinimumSize
+    for card in dialog._overview_cards:
+        policy = card.sizePolicy()
+        assert policy.horizontalPolicy() == QSizePolicy.Policy.Expanding
+        assert policy.verticalPolicy() == QSizePolicy.Policy.Minimum
+        assert card.minimumHeight() >= 72
+    dialog.close()
+
+
+def test_overview_long_values_wrap_within_resizable_viewport():
+    app = _app()
+    dialog = AdvancedViewerDialog(
+        {
+            "architecture": "LongArchitecture" * 20,
+            "rope": {"long_metadata_key": "long metadata value " * 20},
+        }
+    )
+    dialog.resize(640, 700)
+    dialog.show()
+    app.processEvents()
+
+    assert dialog._summary_values["architecture"].wordWrap()
+    assert dialog._summary_values["rope"].wordWrap()
+    assert dialog.assumptions_label.wordWrap()
+    assert dialog._overview_content.width() <= dialog._overview_scroll.viewport().width()
+    dialog.close()

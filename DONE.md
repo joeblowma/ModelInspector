@@ -53,6 +53,10 @@ completed foundation does not imply that every refinement in `TODO.md` is done.
 - [x] Add stable, pretty-printed JSON `.modelinfo` output to CLI and GUI flows.
 - [x] Preserve both user-provided and resolved file paths and keep default dump
   output beside the user-provided path.
+- [x] Give FLUX LoRA header detection precedence over broad Qwen Edit heuristics
+  for standard rank-64 adapters with 19 dual and 38 single blocks plus generic
+  `add_k_proj`/`add_q_proj` markers; add header-only regression coverage without
+  loading model payloads.
 
 ## Discovery, Filtering, Progress, and Concurrency
 
@@ -101,6 +105,9 @@ completed foundation does not imply that every refinement in `TODO.md` is done.
   outside Qt-owned cell widgets, deferring post-drop reconciliation, and
   rebuilding controls safely after each move.
 - [x] Add deleted-widget and repeated queued-reorder regression coverage.
+- [x] Preserve metadata-backed quantization labels in the Data viewer; otherwise
+  show meaningful dtype/precision or a clear unknown fallback without labeling
+  uniform unquantized files as quantized.
 
 ## Explorer and Raw Dump
 
@@ -121,6 +128,9 @@ completed foundation does not imply that every refinement in `TODO.md` is done.
 - [x] Add domain tags and Tool Use, Thinking, and Vision capability badges.
 - [x] Add interactive weight/context/KV-cache VRAM and RAM estimation.
 - [x] Add plain-text configuration generation and clipboard copy support.
+- [x] Fix Advanced Viewer Cards bottom spacing, long-card width/wrapping, and
+  minimum short-card sizing, with focused geometry regression coverage. The
+  broader Advanced Viewer redesign remains open in `TODO.md`.
 - [x] Keep richer layout, shard visualization, sidecar integration, template
   validation, and screenshot-aligned redesign work explicitly open in
   `TODO.md`.

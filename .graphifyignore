@@ -1,22 +1,19 @@
-# 1. Ignore everything by default
+# Ignore everything
 *
 
-# 2. Allow Git to look inside these specific folders
+# Allow traversal into the directories we care about
 !src/
 !src/back/
 !src/front/
 !tests/
 
-# 3. Re-ignore everything inside them by default
-src/*
-tests/*
-
-# 4. Un-ignore only the Python files
+# Include Python files
 !src/*.py
 !src/back/*.py
 !src/front/*.py
 !tests/*.py
 
-# 5. Explicitly block pycache and compiled files
+# Explicit junk exclusions
 **/__pycache__/
 *.pyc
+graphify-out/*

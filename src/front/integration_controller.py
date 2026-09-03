@@ -223,28 +223,23 @@ class IntegrationMixin:
         store = open_settings(self._settings_path(), self._legacy_settings_path())
         store.setValue("data_layout", self._capture_data_layout())
 
-    def _selected_inspection(self) -> dict[str, Any] | None:
-        paths = list(self._selected_paths)
-        if not paths:
-            data = self.raw_combo.currentData()
-            paths = [str(data)] if data else []
-        for path in paths:
-            data = self._result_for_filepath(path)
-            if data:
-                return data
-            cached = get_cached_inspection_snapshots([path]).get(path)
-            if cached:
-                return cached
-        return None
-
     def _show_advanced_viewer(self) -> None:
-        inspection = self._selected_inspection()
+        filepath = str(self.raw_combo.currentData() or "")
+        self._show_advanced_viewer_for_path(filepath)
+
+    def _show_advanced_viewer_for_path(self, filepath: str) -> None:
+        """Open the exact requested model, never an arbitrary selected entry."""
+        filepath = str(filepath or "")
+        inspection = self._result_for_filepath(filepath) if filepath else None
+        if inspection is None and filepath:
+            inspection = get_cached_inspection_snapshots([filepath]).get(filepath)
         if inspection is None:
-            QMessageBox.information(self, "Advanced Viewer", "Select or load a model first.")
+            QMessageBox.information(self, "Advanced Viewer", "The requested model is unavailable.")
             return
-        filepath = str(inspection.get("filepath") or "")
         detail = get_cached_inspection_snapshots([filepath]).get(filepath, {}) if filepath else {}
-        self._advanced_dialog = AdvancedViewerDialog(self, detail or inspection)
+        self._advanced_dialog = AdvancedViewerDialog(
+            self, detail or inspection, card_fields=self._card_field_visibility
+        )
         explorer = self._advanced_dialog.explorer_tab
         explorer.inspect_requested.connect(self._handle_explorer_inspect)
         explorer.export_requested.connect(self._handle_explorer_export)

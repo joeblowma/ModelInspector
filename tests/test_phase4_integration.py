@@ -165,7 +165,9 @@ def test_theme_application_and_mainwindow_explorer_wiring(monkeypatch, tmp_path:
     window = MainWindow()
     try:
         assert not hasattr(window, "raw_sections")
-        assert window.advanced_viewer_btn.toolTip()
+        assert not hasattr(window, "advanced_viewer_btn")
+        assert callable(window._show_advanced_viewer_for_path)
+        assert callable(window._open_table_row_in_advanced_viewer)
         assert not hasattr(window, "explorer_tab")
         layout = window._capture_data_layout()
         assert {entry["key"] for entry in layout["columns"]} >= {"selection", "column_1"}

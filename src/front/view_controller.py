@@ -97,72 +97,34 @@ class ViewControllerMixin:
             "color: #45475a; font-size: 14px; padding: 60px;"
         )
         self.cards_layout.insertWidget(0, self.cards_placeholder)
-        while self.simple_cards_layout.count():
-            item = self.simple_cards_layout.takeAt(0)
-            if item is None:
-                continue
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        self.simple_cards_placeholder = QLabel(
-            "No models analyzed yet.\nDrop files anywhere or click Open."
-        )
-        self.simple_cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.simple_cards_placeholder.setStyleSheet(
-            "color: #45475a; font-size: 14px; padding: 60px;"
-        )
-        self.simple_cards_layout.insertWidget(0, self.simple_cards_placeholder)
         self._refresh_card_layout_geometry()
-    def _on_cards_view_changed(self, state):
-        self._simple_cards_view = state == Qt.CheckState.Checked.value
-        self._apply_cards_view_mode()
-        self._rebuild_active_cards_time_sliced()
-    def _apply_cards_view_mode(self):
-        if not hasattr(self, "cards_scroll") or not hasattr(
-            self, "simple_cards_scroll"
-        ):
-            return
-        self.cards_scroll.setVisible(not self._simple_cards_view)
-        self.simple_cards_scroll.setVisible(self._simple_cards_view)
-        self._refresh_card_layout_geometry()
+
     def _add_card(self, data: dict):
-        simple_view = self._simple_cards_view
-        layout = self.simple_cards_layout if simple_view else self.cards_layout
-        cards = self._path_to_simple_card if simple_view else self._path_to_card
         fp = str(data.get("filepath") or "")
-        if fp and fp in cards:
+        if fp and fp in self._path_to_card:
             return
-        placeholder_name = (
-            "simple_cards_placeholder" if simple_view else "cards_placeholder"
-        )
-        placeholder = getattr(self, placeholder_name)
+        placeholder = self.cards_placeholder
         if placeholder:
-            layout.removeWidget(placeholder)
+            self.cards_layout.removeWidget(placeholder)
             placeholder.deleteLater()
-            setattr(self, placeholder_name, None)
+            self.cards_placeholder = None
         card = ModelCard(
             data,
-            simple_view=simple_view,
-            card_fields=(
-                self._simple_card_field_visibility
-                if simple_view
-                else self._card_field_visibility
-            ),
+            card_fields=self._simple_card_field_visibility,
         )
-        card.selection_requested.connect(self._on_card_selection_requested)
+        card.advanced_requested.connect(self._show_advanced_viewer_for_path)
         card.checkbox_toggled.connect(self._on_card_checkbox_toggled)
         card.drag_over_requested.connect(self._on_card_drag_over)
         card.context_requested.connect(self._on_card_context_menu)
         if fp:
-            cards[fp] = card
+            self._path_to_card[fp] = card
         self._cards.append(card)
-        layout.addWidget(card)
+        self.cards_layout.addWidget(card)
     def _rebuild_active_cards_time_sliced(self):
         self._card_rebuild_generation += 1
         generation = self._card_rebuild_generation
-        self._cards.clear(); self._path_to_card.clear(); self._path_to_simple_card.clear()
+        self._cards.clear(); self._path_to_card.clear()
         pending = list(self._results); index = 0
-        layouts = [self.cards_layout, self.simple_cards_layout]; layout_index = 0
         def build_batch():
             nonlocal index
             if generation != self._card_rebuild_generation or getattr(self, "_lifecycle_closed", False):
@@ -171,7 +133,7 @@ class ViewControllerMixin:
             while index < len(pending) and built < 8:
                 data = pending[index]; self._add_card(data)
                 filepath = str(data.get("filepath") or "")
-                card = (self._path_to_simple_card if self._simple_cards_view else self._path_to_card).get(filepath)
+                card = self._path_to_card.get(filepath)
                 if card:
                     card.set_selected(filepath in self._selected_paths); card.set_filter_visible(self._is_data_visible(data))
                 index += 1; built += 1
@@ -181,36 +143,35 @@ class ViewControllerMixin:
             if index < len(pending):
                 QTimer.singleShot(0, build_batch)
         def clear_batch():
-            nonlocal layout_index
+            nonlocal index
             if generation != self._card_rebuild_generation or getattr(self, "_lifecycle_closed", False):
                 return
             started = perf_counter(); removed = 0
-            while layout_index < len(layouts) and removed < 8:
-                item = layouts[layout_index].takeAt(0)
-                if item is None: layout_index += 1; continue
+            while self.cards_layout.count() and removed < 8:
+                item = self.cards_layout.takeAt(0)
+                if item is None:
+                    continue
                 widget = item.widget()
                 if widget is not None: widget.deleteLater()
                 removed += 1
                 if (perf_counter() - started) * 1000.0 >= 12.0:
                     break
             self._refresh_card_layout_geometry()
-            if layout_index < len(layouts): QTimer.singleShot(0, clear_batch); return
+            if self.cards_layout.count(): QTimer.singleShot(0, clear_batch); return
             self._clear_cards()
             QTimer.singleShot(0, build_batch)
         QTimer.singleShot(0, clear_batch)
     def _refresh_card_layout_geometry(self):
         self.cards_layout.invalidate()
-        self.simple_cards_layout.invalidate()
         self.cards_container.adjustSize()
-        self.simple_cards_container.adjustSize()
         self.cards_container.updateGeometry()
-        self.simple_cards_container.updateGeometry()
         cards_viewport = self.cards_scroll.viewport()
-        simple_cards_viewport = self.simple_cards_scroll.viewport()
         assert cards_viewport is not None
-        assert simple_cards_viewport is not None
+        margins = self.cards_layout.contentsMargins()
+        maximum_width = max(1, cards_viewport.width() - margins.left() - margins.right())
+        for card in self._path_to_card.values():
+            card.setMaximumWidth(maximum_width)
         cards_viewport.update()
-        simple_cards_viewport.update()
     def _add_table_row(self, data: dict):
         row = self.table.rowCount()
         self.table.insertRow(row)
@@ -341,15 +302,11 @@ class ViewControllerMixin:
             if fp:
                 ordered_paths.append(fp)
                 self._path_to_row[fp] = row
-        for layout, cards in (
-            (self.cards_layout, self._path_to_card),
-            (self.simple_cards_layout, self._path_to_simple_card),
-        ):
-            for fp in ordered_paths:
-                card = cards.get(fp)
-                if card:
-                    layout.removeWidget(card)
-                    layout.addWidget(card)
+        for fp in ordered_paths:
+            card = self._path_to_card.get(fp)
+            if card:
+                self.cards_layout.removeWidget(card)
+                self.cards_layout.addWidget(card)
         if refresh_geometry:
             self._refresh_card_layout_geometry()
         if refresh_raw and hasattr(self, "raw_combo"):
@@ -375,9 +332,6 @@ class ViewControllerMixin:
             card = self._path_to_card.get(fp)
             if card:
                 card.set_filter_visible(visible)
-            scard = self._path_to_simple_card.get(fp)
-            if scard:
-                scard.set_filter_visible(visible)
             row = self._row_for_filepath(fp)
             if row is not None and 0 <= row < self.table.rowCount():
                 self.table.setRowHidden(row, not visible)

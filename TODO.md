@@ -125,9 +125,10 @@ replacement for access to the raw generated dump.
 - Revisit the Advanced Viewer layout and interaction model against the supplied
   reference screenshot; treat the current dialog as a functional foundation,
   not the final design.
-- Follow the reference's file-inspector information architecture: a persistent
-  model path/header, dense use of the available window, and separate Metadata
-  and Tensors work areas rather than making summary cards the primary content.
+- Continue aligning with the reference's file-inspector information architecture:
+  add a persistent model path/header and denser use of the available window.
+  Overview, Card Details, Metadata, Tensors, and Embedded Content already have
+  separate peer work areas.
 - Keep the at-a-glance facts and memory estimator as a compact header, sidebar,
   or secondary tab supporting the inspector rather than dominating the window.
 - Show metadata as typed Key / Type / Value rows and tensors as an equivalently

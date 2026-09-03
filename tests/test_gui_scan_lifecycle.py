@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportUnusedExpression=false
 from __future__ import annotations
 
 import os
@@ -47,7 +48,7 @@ def _summary(path: str) -> dict:
     }
 
 
-def test_only_active_card_mode_is_materialized(tmp_path, monkeypatch):
+def test_cards_use_one_compact_mode(tmp_path, monkeypatch):
     monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
     monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
     app = QApplication.instance() or QApplication([])
@@ -58,13 +59,8 @@ def test_only_active_card_mode_is_materialized(tmp_path, monkeypatch):
             window._results.append(data)
             window._add_card(data)
         assert len(window._path_to_card) == 12
-        assert len(window._path_to_simple_card) == 0
-
-        window.cards_simple_view_cb.setChecked(True)
-        for _ in range(20):
-            app.processEvents()
-        assert len(window._path_to_card) == 0
-        assert len(window._path_to_simple_card) == 12
+        assert not hasattr(window, "cards_simple_view_cb")
+        assert not hasattr(window, "simple_cards_scroll")
     finally:
         window.close()
 

@@ -54,6 +54,9 @@ def test_viewer_populates_facts_and_recalculates_projection():
     assert dialog._projection.context_length == 16384
     assert dialog._projection.vram_bytes > initial_vram
 
+    dialog.kv_cache_bits_combo.setCurrentIndex(2)
+    assert dialog._projection.kv_cache_bits == 4
+
     configuration = dialog.copy_configuration()
     assert "Estimated VRAM:" in configuration
     assert QApplication.instance().clipboard().text() == configuration
@@ -87,11 +90,29 @@ def test_viewer_is_parent_owned_window_modal_and_hosts_explorer():
     assert not dialog.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
     assert [dialog.work_area.tabText(index) for index in range(dialog.work_area.count())] == [
         "Overview",
-        "Explorer",
+        "Card Details",
+        "Metadata",
+        "Tensors",
+        "Embedded Content",
     ]
     assert dialog.explorer_tab.tensor_model.rowCount() == 1
     dialog.close()
     parent.close()
+
+
+def test_card_details_honor_detailed_preferences_and_metadata_stays_spacious():
+    app = _app()
+    dialog = AdvancedViewerDialog(
+        {"filepath": "R:/model.safetensors", "total_params": 100, "metadata": {"long": "value\n" * 20}},
+        card_fields={"parameters": True, "file_size": False, "tensors": False},
+    )
+    dialog.show()
+    app.processEvents()
+    assert dialog._card_details_card is not None
+    assert dialog._card_details_card.select_cb.isHidden()
+    assert dialog.explorer_tab.metadata_table.wordWrap()
+    assert dialog.explorer_tab.metadata_table.columnWidth(1) > 300
+    dialog.close()
 
 
 def test_overview_cards_reserve_padding_and_usable_minimum_geometry():

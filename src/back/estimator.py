@@ -326,8 +326,12 @@ def project_resources(
     if layers and kv_heads and head_dim:
         kv_cache_bytes = int(2 * layers * kv_heads * head_dim * context * batch * kv_bits / 8)
     else:
-        kv_cache_bytes = int(weight_bytes * 0.12 * (context / 4096) * batch)
-        assumptions.append("layer/head metadata unavailable; conservative KV-cache fallback used")
+        kv_cache_bytes = int(
+            weight_bytes * 0.12 * (context / 4096) * batch * (kv_bits / 16.0)
+        )
+        assumptions.append(
+            "layer/head metadata unavailable; conservative 16-bit KV-cache fallback scaled by selected precision"
+        )
     activation_bytes = int(weight_bytes * 0.08 * batch)
     overhead_bytes = int(weight_bytes * 0.12)
     vram_bytes = weight_bytes + kv_cache_bytes + activation_bytes + overhead_bytes

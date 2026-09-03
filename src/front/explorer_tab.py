@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QHeaderView,
-    QSplitter,
+    QTabWidget,
     QTableView,
     QTableWidget,
     QTableWidgetItem,
@@ -124,11 +124,10 @@ class ExplorerTab(QWidget):
         self.status_label.setToolTip("Explorer status: this widget reads headers and emits requests only.")
         root.addWidget(self.status_label)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        root.addWidget(splitter, 1)
-        upper = QWidget()
-        upper_layout = QVBoxLayout(upper)
-
+        self.work_area = QTabWidget()
+        root.addWidget(self.work_area, 1)
+        self.metadata_page = QWidget()
+        metadata_page_layout = QVBoxLayout(self.metadata_page)
         metadata_group = QGroupBox("Metadata")
         metadata_group.setToolTip("Searchable metadata from the inspection header; values are safely previewed.")
         metadata_layout = QVBoxLayout(metadata_group)
@@ -146,12 +145,17 @@ class ExplorerTab(QWidget):
         self.metadata_table.setColumnWidth(0, 300)
         self.metadata_table.setColumnWidth(1, 2000)
         self.metadata_table.setSortingEnabled(False)
+        self.metadata_table.setWordWrap(True)
+        vertical_header = self.metadata_table.verticalHeader()
+        assert vertical_header is not None
+        vertical_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.metadata_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.metadata_table.setToolTip("Read-only metadata rows. Long values are truncated for safety.")
         metadata_layout.addWidget(self.metadata_table)
-        upper_layout.addWidget(metadata_group, 1)
-        splitter.addWidget(upper)
+        metadata_page_layout.addWidget(metadata_group)
 
+        self.tensors_page = QWidget()
+        tensor_page_layout = QVBoxLayout(self.tensors_page)
         tensor_group = QGroupBox("Tensors (header descriptors)")
         tensor_group.setToolTip("Sortable tensor headers only; no tensor payload is loaded by Explorer.")
         tensor_layout = QVBoxLayout(tensor_group)
@@ -185,9 +189,10 @@ class ExplorerTab(QWidget):
         self.tensor_detail.setPlaceholderText("Select a tensor row to preview its descriptor.")
         self.tensor_detail.setToolTip("Read-only bounded preview of the selected tensor descriptor.")
         tensor_layout.addWidget(self.tensor_detail, 1)
-        upper_layout.addWidget(tensor_group, 3)
-        splitter.addWidget(tensor_group)
-    
+        tensor_page_layout.addWidget(tensor_group)
+
+        self.embedded_page = QWidget()
+        embedded_page_layout = QVBoxLayout(self.embedded_page)
         embedded_group = QGroupBox("Embedded content candidates")
         embedded_group.setToolTip("Detected VAE, LoRA, text-encoder, and template candidates from headers and metadata.")
         embedded_layout = QVBoxLayout(embedded_group)
@@ -217,8 +222,23 @@ class ExplorerTab(QWidget):
             actions.addWidget(button)
         actions.addStretch()
         embedded_layout.addLayout(actions)
-        splitter.addWidget(embedded_group)
-        splitter.setSizes([650, 0, 0])
+        embedded_page_layout.addWidget(embedded_group)
+        self.work_area.addTab(self.metadata_page, "Metadata")
+        self.work_area.addTab(self.tensors_page, "Tensors")
+        self.work_area.addTab(self.embedded_page, "Embedded Content")
+
+    def detach_pages(self) -> list[tuple[str, QWidget]]:
+        """Transfer Explorer's existing read-only pages into a host tab bar."""
+        pages: list[tuple[str, QWidget]] = []
+        while self.work_area.count():
+            title = self.work_area.tabText(0)
+            page = self.work_area.widget(0)
+            self.work_area.removeTab(0)
+            if page is not None:
+                pages.append((title, page))
+        self.status_label.setVisible(False)
+        self.work_area.setVisible(False)
+        return pages
         
     def set_inspection(self, inspection: Mapping[str, Any] | None, tensor_data: Any = None, *, payload_available: bool | None = None) -> None:
         """Display an inspection result and optional header tensor descriptors."""

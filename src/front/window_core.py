@@ -114,6 +114,8 @@ class WindowCoreMixin:
         self._raw_loaded_filepath: str | None = None
         self._cards: list[ModelCard] = []
         self._path_to_card: dict[str, ModelCard] = {}
+        # Compatibility state for lifecycle/cache code; compact Cards no longer
+        # materialize a second detailed-card view.
         self._path_to_simple_card: dict[str, ModelCard] = {}
         self._path_to_row: dict[str, int] = {}
         self._selected_paths: set[str] = set()
@@ -142,7 +144,6 @@ class WindowCoreMixin:
         self._analysis_threads = 2
         self._add_mode = "replace"
         self._default_tab = "cards"
-        self._simple_cards_view = False
         self._card_field_visibility = {
             "parameters": True,
             "file_size": True,
@@ -240,7 +241,7 @@ class WindowCoreMixin:
     def _on_copy_shortcut(self):
         tab = self.tabs.currentIndex()
         if tab == 0:
-            self._copy_selected_cards_info(self._simple_cards_view)
+            self._copy_selected_cards_info(True)
             return
         if tab == 1:
             self._copy_selected_table_cells()

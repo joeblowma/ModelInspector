@@ -217,7 +217,7 @@ class SettingsDialog(QDialog):
         cards_row = QHBoxLayout()
         cards_row.setSpacing(10)
 
-        simple_group = QGroupBox("Simple Cards")
+        simple_group = QGroupBox("Cards")
         s_layout = QVBoxLayout(simple_group)
         self.simple_card_field_checks = {}
         simple_card_fields = simple_card_fields or {}
@@ -238,7 +238,7 @@ class SettingsDialog(QDialog):
         s_layout.addStretch()
         cards_row.addWidget(simple_group, 1)
 
-        detailed_group = QGroupBox("Detailed Cards")
+        detailed_group = QGroupBox("Advanced Viewer Card Details")
         d_layout = QVBoxLayout(detailed_group)
         self.card_field_checks = {}
         card_fields = card_fields or {}

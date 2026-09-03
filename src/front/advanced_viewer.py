@@ -101,6 +101,7 @@ from back.estimator import (
     runtime_configuration,
 )
 from front.explorer_tab import ExplorerTab
+from front.model_card import ModelCard
 
 __all__ = ["AdvancedViewer", "AdvancedViewerDialog", "AdvancedViewerPopup"]
 
@@ -117,7 +118,13 @@ _BADGE_COLORS = {
 class AdvancedViewerDialog(QDialog):
     """Parent-owned, window-modal viewer for model facts and exploration."""
 
-    def __init__(self, parent: QWidget | Mapping[str, Any] | None = None, inspection: Mapping[str, Any] | None = None):
+    def __init__(
+        self,
+        parent: QWidget | Mapping[str, Any] | None = None,
+        inspection: Mapping[str, Any] | None = None,
+        *,
+        card_fields: Mapping[str, bool] | None = None,
+    ):
         # Accept ``AdvancedViewerDialog(inspection)`` as a convenient, safe
         # shorthand while retaining normal QDialog(parent, ...) semantics.
         if inspection is None and isinstance(parent, Mapping):
@@ -131,6 +138,13 @@ class AdvancedViewerDialog(QDialog):
         self._inspection: dict[str, Any] = {}
         self._facts = ModelFacts()
         self._projection: ResourceProjection | None = None
+        self._card_fields = {
+            "parameters": True, "file_size": True, "precision": True,
+            "tensors": True, "lora_rank": True, "extra_meta": True,
+            "training_meta": True,
+        }
+        self._card_fields.update(card_fields or {})
+        self._card_details_card: ModelCard | None = None
         self._capability_badges: list[QLabel] = []
         self._domain_badges: list[QLabel] = []
         self._build_ui()
@@ -286,9 +300,24 @@ class AdvancedViewerDialog(QDialog):
             card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
             card.setMinimumHeight(max(_MINIMUM_OVERVIEW_CARD_HEIGHT, card.minimumSizeHint().height()))
 
+        self.card_details_page = QWidget()
+        card_details_layout = QVBoxLayout(self.card_details_page)
+        card_details_layout.setContentsMargins(0, 0, 0, 0)
+        self._card_details_layout = card_details_layout
+        card_details_scroll = QScrollArea()
+        card_details_scroll.setWidgetResizable(True)
+        card_details_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._card_details_content = QWidget()
+        self._card_details_content_layout = QVBoxLayout(self._card_details_content)
+        self._card_details_content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        card_details_scroll.setWidget(self._card_details_content)
+        card_details_layout.addWidget(card_details_scroll)
+
         self.explorer_tab = ExplorerTab()
         self.work_area.addTab(facts_page, "Overview")
-        self.work_area.addTab(cast(QWidget, self.explorer_tab), "Explorer")
+        self.work_area.addTab(self.card_details_page, "Card Details")
+        for title, page in self.explorer_tab.detach_pages():
+            self.work_area.addTab(cast(Any, page), title)
         root.addWidget(self.work_area, 1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
@@ -309,6 +338,7 @@ class AdvancedViewerDialog(QDialog):
         """Replace inspected metadata and refresh facts, badges, and projection."""
         self._inspection = dict(inspection) if isinstance(inspection, Mapping) else {}
         self._facts = facts_from_inspection(self._inspection)
+        self._update_card_details()
         tensors = self._inspection.get(
             "tensor_info", self._inspection.get("tensors", self._inspection.get("tensor_data", {}))
         )
@@ -328,6 +358,25 @@ class AdvancedViewerDialog(QDialog):
         self.batch_spin.blockSignals(False)
         self._set_initial_quantization()
         self._recalculate()
+
+    def _update_card_details(self) -> None:
+        if self._card_details_card is not None:
+            self._card_details_content_layout.removeWidget(cast(Any, self._card_details_card))
+            self._card_details_card.deleteLater()
+        data = dict(self._inspection)
+        data.setdefault("filename", str(data.get("filepath") or "Unknown model").replace("\\", "/").rsplit("/", 1)[-1])
+        data.setdefault("architecture", "Unknown")
+        data.setdefault("model_type", "Unknown")
+        data.setdefault("components", {})
+        data.setdefault("named_text_encoders", {})
+        data.setdefault("total_params_friendly", self._facts.total_params_display)
+        data.setdefault("file_size_friendly", "-")
+        data.setdefault("tensor_count", "-")
+        data.setdefault("training_meta", {})
+        data.setdefault("extra", {})
+        self._card_details_card = ModelCard(data, card_fields=self._card_fields)
+        self._card_details_card.select_cb.hide()
+        self._card_details_content_layout.addWidget(cast(Any, self._card_details_card))
 
     def _update_summary(self) -> None:
         facts = self._facts

@@ -121,6 +121,14 @@ def test_projection_records_conservative_fallbacks_when_metadata_is_missing() ->
     assert "Estimated VRAM:" in runtime_configuration(projection)
 
 
+def test_fallback_kv_cache_scales_with_selected_precision() -> None:
+    inspection = {"total_params": 1_000_000}
+    fp16 = project_resources(inspection, kv_cache_bits=16)
+    int4 = project_resources(inspection, kv_cache_bits=4)
+    assert int4.kv_cache_bytes == fp16.kv_cache_bytes // 4
+    assert int4.vram_bytes < fp16.vram_bytes
+
+
 def test_cache_verifier_classifies_active_historic_and_changed_entries() -> None:
     entries = [
         {"identity": {"resolved_filepath": "active.bin", "file_size": 10, "mtime_ns": 2}},

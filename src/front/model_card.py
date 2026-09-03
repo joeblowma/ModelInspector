@@ -17,7 +17,7 @@ __all__ = ["ModelCard"]
 
 
 class ModelCard(QFrame):
-    selection_requested = pyqtSignal(str, object)
+    advanced_requested = pyqtSignal(str)
     checkbox_toggled = pyqtSignal(str, bool)
     drag_over_requested = pyqtSignal(str)
     context_requested = pyqtSignal(str, bool, object)
@@ -28,7 +28,6 @@ class ModelCard(QFrame):
         self.filepath = data.get("filepath", "")
         self._selected = False
         self._filter_visible = True
-        self._simple_view = bool(simple_view)
         self._card_fields = card_fields or {}
         precision_text = (
             data.get("precision_display")
@@ -67,7 +66,7 @@ class ModelCard(QFrame):
         self.select_cb.clicked.connect(self._on_checkbox_clicked)
         header_row.addWidget(self.select_cb)
 
-        name_label = QLabel(data["filename"])
+        name_label = QLabel(data.get("filename", "Unknown model"))
         name_label.setWordWrap(True)
         name_label.setStyleSheet(
             "font-size: 14px; font-weight: bold; color: #f5c2e7; background: transparent; border: none;"
@@ -82,8 +81,8 @@ class ModelCard(QFrame):
             arch_row.addWidget(
                 self._make_tag(str(file_format).upper(), "#f38ba8", "#1e1e2e")
             )
-        arch_tag = self._make_tag(data["architecture"], "#74c7ec", "#1e1e2e")
-        type_tag = self._make_tag(data["model_type"], "#a6e3a1", "#1e1e2e")
+        arch_tag = self._make_tag(str(data.get("architecture", "Unknown")), "#74c7ec", "#1e1e2e")
+        type_tag = self._make_tag(str(data.get("model_type", "Unknown")), "#a6e3a1", "#1e1e2e")
         arch_row.addWidget(arch_tag)
         arch_row.addWidget(type_tag)
         quantization = data.get("quantization")
@@ -118,7 +117,7 @@ class ModelCard(QFrame):
             "text_encoder_2": "Text Enc 2",
         }
         for key, label in comp_labels.items():
-            if data["components"].get(key):
+            if (data.get("components") or {}).get(key):
                 fg, bg = comp_colors.get(key, ("#cdd6f4", "#1e1e2e"))
                 arch_row.addWidget(self._make_tag(label, fg, bg))
 
@@ -127,62 +126,16 @@ class ModelCard(QFrame):
         arch_row.addStretch()
         layout.addLayout(arch_row)
 
-        if self._simple_view:
-            simple_stats = []
-            if self._card_fields.get("parameters", True):
-                simple_stats.append(("Parameters", data["total_params_friendly"]))
-            if self._card_fields.get("precision", True):
-                added_component_precision = False
-                for comp_key, comp_label in component_precision_labels:
-                    comp_precision = component_precisions.get(comp_key)
-                    if not comp_precision:
-                        continue
-                    simple_stats.append((comp_label, comp_precision))
-                    added_component_precision = True
-                if not added_component_precision:
-                    simple_stats.append(("Precision", precision_text))
-            if self._card_fields.get("file_size", False):
-                simple_stats.append(("File Size", data["file_size_friendly"]))
-            if self._card_fields.get("tensors", False):
-                simple_stats.append(("Tensors", str(data["tensor_count"])))
-            lora_rank = data.get("lora_rank")
-            if lora_rank and self._card_fields.get("lora_rank", False):
-                simple_stats.append(("LoRA Rank", str(lora_rank)))
-            if self._card_fields.get("extra_meta", False):
-                for key, val in data.get("extra", {}).items():
-                    simple_stats.append((key.replace("_", " ").title(), str(val)))
-            if self._card_fields.get("training_meta", False):
-                for key, val in data.get("training_meta", {}).items():
-                    simple_stats.append((key.replace("_", " ").title(), str(val)))
-
-            if simple_stats:
-                mini_grid = QGridLayout()
-                mini_grid.setSpacing(6)
-                for i, (label, value) in enumerate(simple_stats):
-                    lbl = QLabel(label)
-                    lbl.setStyleSheet(
-                        "color: #6c7086; font-size: 11px; background: transparent; border: none;"
-                    )
-                    val = QLabel(value)
-                    if "Precision" in label:
-                        val.setWordWrap(True)
-                    val.setStyleSheet(
-                        "color: #cdd6f4; font-size: 13px; font-weight: bold; background: transparent; border: none;"
-                    )
-                    mini_grid.addWidget(lbl, i // 2, (i % 2) * 2)
-                    mini_grid.addWidget(val, i // 2, (i % 2) * 2 + 1)
-                layout.addLayout(mini_grid)
-            return
-
-        # Stats grid
+        # Main Cards intentionally remain compact. Detailed fields live in the
+        # Advanced Viewer Card Details tab and retain their own preferences.
         grid = QGridLayout()
         grid.setSpacing(6)
 
         stats = []
         if self._card_fields.get("parameters", True):
-            stats.append(("Parameters", data["total_params_friendly"]))
-        if self._card_fields.get("file_size", True):
-            stats.append(("File Size", data["file_size_friendly"]))
+            stats.append(("Parameters", data.get("total_params_friendly", "-")))
+        if self._card_fields.get("file_size", False):
+            stats.append(("File Size", data.get("file_size_friendly", "-")))
         if self._card_fields.get("precision", True):
             added_component_precision = False
             for comp_key, comp_label in component_precision_labels:
@@ -193,19 +146,19 @@ class ModelCard(QFrame):
                 added_component_precision = True
             if not added_component_precision:
                 stats.append(("Precision", precision_text))
-        if self._card_fields.get("tensors", True):
-            stats.append(("Tensors", str(data["tensor_count"])))
+        if self._card_fields.get("tensors", False):
+            stats.append(("Tensors", str(data.get("tensor_count", "-"))))
         # Add LoRA rank if present
         lora_rank = data.get("lora_rank")
-        if lora_rank and self._card_fields.get("lora_rank", True):
+        if lora_rank and self._card_fields.get("lora_rank", False):
             stats.append(("LoRA Rank", str(lora_rank)))
         # Add extra metadata
-        if self._card_fields.get("extra_meta", True):
+        if self._card_fields.get("extra_meta", False):
             for key, val in data.get("extra", {}).items():
                 label = key.replace("_", " ").title()
                 stats.append((label, str(val)))
         # Training metadata
-        if self._card_fields.get("training_meta", True):
+        if self._card_fields.get("training_meta", False):
             for key, val in data.get("training_meta", {}).items():
                 label = key.replace("_", " ").title()
                 stats.append((label, str(val)))
@@ -215,7 +168,7 @@ class ModelCard(QFrame):
             lbl.setStyleSheet(
                 "color: #6c7086; font-size: 11px; background: transparent; border: none;"
             )
-            val = QLabel(value)
+            val = QLabel(str(value))
             if "Precision" in label:
                 val.setWordWrap(True)
             val.setStyleSheet(
@@ -233,7 +186,7 @@ class ModelCard(QFrame):
             return
         event = a0
         if event.button() == Qt.MouseButton.LeftButton and self.filepath:
-            self.selection_requested.emit(self.filepath, event.modifiers())
+            self.advanced_requested.emit(self.filepath)
             event.accept()
             return
         super().mousePressEvent(event)
@@ -249,7 +202,7 @@ class ModelCard(QFrame):
         event = a0
         if self.filepath:
             self.context_requested.emit(
-                self.filepath, self._simple_view, event.globalPos()
+                self.filepath, True, event.globalPos()
             )
             event.accept()
             return

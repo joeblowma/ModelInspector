@@ -134,3 +134,20 @@ completed foundation does not imply that every refinement in `TODO.md` is done.
 - [x] Keep richer layout, shard visualization, sidecar integration, template
   validation, and screenshot-aligned redesign work explicitly open in
   `TODO.md`.
+
+## 2026-09-03 — Integrated Card and Advanced Viewer Pass
+
+- [x] Consolidate the main Cards tab into one compact, viewport-bounded,
+  top-aligned card mode; clicking a card body opens that exact model in
+  Advanced Viewer.
+- [x] Keep card checkboxes as the only card-selection control and add an exact
+  model Advanced Viewer action to the Data-row context menu.
+- [x] Remove the ambiguous standalone Advanced Viewer button and route openings
+  through deterministic filepath-based helpers.
+- [x] Re-layout Advanced Viewer into peer Overview, Card Details, Metadata,
+  Tensors, and Embedded Content tabs while retaining Explorer's read-only
+  request signals and detailed-card field preferences.
+- [x] Scale conservative KV-cache fallback projections by the selected KV-cache
+  bit precision from their 16-bit baseline, with estimator and dialog coverage.
+- [x] Verify the integrated pass with focused UI/backend coverage, clean
+  Pyright, and the full 94-test pytest suite.

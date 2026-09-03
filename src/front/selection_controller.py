@@ -26,41 +26,6 @@ class SelectionControllerMixin:
             self._selected_paths.discard(filepath)
         self._sync_selection_visuals()
 
-    def _on_card_selection_requested(self, filepath: str, modifiers):
-        if not filepath:
-            return
-        visible = self._visible_paths()
-        if filepath not in visible:
-            return
-        idx = visible.index(filepath)
-
-        ctrl = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
-        shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
-
-        if (
-            shift
-            and self._last_selected_card_index >= 0
-            and self._last_selected_card_index < len(visible)
-        ):
-            lo = min(self._last_selected_card_index, idx)
-            hi = max(self._last_selected_card_index, idx)
-            for fp in visible[lo : hi + 1]:
-                self._selected_paths.add(fp)
-        elif ctrl:
-            if filepath in self._selected_paths:
-                self._selected_paths.remove(filepath)
-            else:
-                self._selected_paths.add(filepath)
-            self._last_selected_card_index = idx
-        else:
-            # Single-click behaves like ctrl-click toggle.
-            if filepath in self._selected_paths:
-                self._selected_paths.remove(filepath)
-            else:
-                self._selected_paths.add(filepath)
-            self._last_selected_card_index = idx
-        self._sync_selection_visuals()
-
     def _on_card_drag_over(self, filepath: str):
         if not filepath:
             return
@@ -161,6 +126,7 @@ class SelectionControllerMixin:
         if not data:
             return
         menu = QMenu(self)
+        advanced_viewer = menu.addAction("Advanced Viewer")
         view_raw = menu.addAction("View Raw")
         copy_info = menu.addAction("Copy Info")
         copy_selected = None
@@ -234,6 +200,13 @@ class SelectionControllerMixin:
         # Keep this lightweight: item selection is mainly for Ctrl+C cells.
         pass
 
+    def _open_table_row_in_advanced_viewer(self, row: int) -> None:
+        """Open the exact model represented by a Data row."""
+        item = self.table.item(row, 1)
+        filepath = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if filepath:
+            self._show_advanced_viewer_for_path(str(filepath))
+
     def _on_table_context_menu(self, pos):
         item = self.table.itemAt(pos)
         if not item:
@@ -243,13 +216,16 @@ class SelectionControllerMixin:
         filepath = fp_item.data(Qt.ItemDataRole.UserRole) if fp_item else None
 
         menu = QMenu(self)
+        advanced_viewer = menu.addAction("Advanced Viewer")
         view_raw = menu.addAction("View Raw")
         copy_folder_path = menu.addAction("Copy Folder Path")
         copy_sel = menu.addAction("Copy Selected Entries")
         viewport = self.table.viewport()
         assert viewport is not None
         chosen = menu.exec(viewport.mapToGlobal(pos))
-        if chosen == view_raw and filepath:
+        if chosen == advanced_viewer and filepath:
+            self._open_table_row_in_advanced_viewer(row)
+        elif chosen == view_raw and filepath:
             self._show_raw_for_filepath(filepath)
         elif chosen == copy_folder_path and filepath:
             _clipboard().setText(str(Path(filepath).parent))
@@ -260,8 +236,6 @@ class SelectionControllerMixin:
         self._syncing_selection = True
         try:
             for fp, card in self._path_to_card.items():
-                card.set_selected(fp in self._selected_paths)
-            for fp, card in self._path_to_simple_card.items():
                 card.set_selected(fp in self._selected_paths)
             for fp, row in self._path_to_row.items():
                 row = self._row_for_filepath(fp)

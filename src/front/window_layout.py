@@ -59,11 +59,6 @@ class WindowLayoutMixin:
         settings_btn.clicked.connect(self._open_settings)
         btn_row_1.addWidget(settings_btn)
 
-        self.advanced_viewer_btn = QPushButton("Advanced Viewer")
-        self.advanced_viewer_btn.setToolTip("Open live model facts and runtime resource projections for the selected model.")
-        self.advanced_viewer_btn.clicked.connect(self._show_advanced_viewer)
-        btn_row_1.addWidget(self.advanced_viewer_btn)
-
         self.open_btn = QToolButton()
         self.open_btn.setObjectName("openBtn")
         self.open_btn.setText("Open ▼")
@@ -135,32 +130,11 @@ class WindowLayoutMixin:
         self.cards_select_all_cb = QCheckBox("Select All")
         self.cards_select_all_cb.stateChanged.connect(self._on_cards_select_all_changed)
         cards_toolbar.addWidget(self.cards_select_all_cb)
-        self.cards_simple_view_cb = QCheckBox("Simple View")
-        self.cards_simple_view_cb.stateChanged.connect(self._on_cards_view_changed)
-        cards_toolbar.addWidget(self.cards_simple_view_cb)
         self.selected_count_label = QLabel("0 selected")
         self.selected_count_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
         cards_toolbar.addWidget(self.selected_count_label)
         cards_toolbar.addStretch()
         cards_tab_layout.addLayout(cards_toolbar)
-
-        self.simple_cards_scroll = QScrollArea()
-        self.simple_cards_scroll.setWidgetResizable(True)
-        self.simple_cards_container = QWidget()
-        self.simple_cards_layout = QVBoxLayout(self.simple_cards_container)
-        self.simple_cards_layout.setSpacing(12)
-        self.simple_cards_layout.setContentsMargins(8, 8, 8, 8)
-        self.simple_cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.simple_cards_scroll.setWidget(self.simple_cards_container)
-
-        self.simple_cards_placeholder = QLabel(
-            "No models analyzed yet.\nDrop files anywhere or click Open."
-        )
-        self.simple_cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.simple_cards_placeholder.setStyleSheet(
-            "color: #45475a; font-size: 14px; padding: 60px;"
-        )
-        self.simple_cards_layout.insertWidget(0, self.simple_cards_placeholder)
 
         self.cards_scroll = QScrollArea()
         self.cards_scroll.setWidgetResizable(True)
@@ -181,9 +155,7 @@ class WindowLayoutMixin:
         self.cards_layout.insertWidget(0, self.cards_placeholder)
 
         cards_tab_layout.addWidget(self.cards_scroll)
-        cards_tab_layout.addWidget(self.simple_cards_scroll)
         self.tabs.addTab(cards_tab, "Cards")
-        self._apply_cards_view_mode()
 
         # Data table tab
         data_tab = QWidget()

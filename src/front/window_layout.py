@@ -170,6 +170,9 @@ class WindowLayoutMixin:
         self.show_full_path_cb = QCheckBox("Show Full Path")
         self.show_full_path_cb.stateChanged.connect(self._on_show_full_path_changed)
         data_toolbar.addWidget(self.show_full_path_cb)
+        self.table_selected_count_label = QLabel("0 selected")
+        self.table_selected_count_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        data_toolbar.addWidget(self.table_selected_count_label)
         data_toolbar.addStretch()
         data_tab_layout.addLayout(data_toolbar)
 

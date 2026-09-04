@@ -22,7 +22,7 @@ class ModelCard(QFrame):
     drag_over_requested = pyqtSignal(str)
     context_requested = pyqtSignal(str, bool, object)
 
-    def __init__(self, data: dict, simple_view=False, card_fields=None):
+    def __init__(self, data: dict, simple_view=False, card_fields=None, *, vertical_stats=False):
         super().__init__()
         self.data = data
         self.filepath = data.get("filepath", "")
@@ -129,6 +129,7 @@ class ModelCard(QFrame):
         # Main Cards intentionally remain compact. Detailed fields live in the
         # Advanced Viewer Card Details tab and retain their own preferences.
         grid = QGridLayout()
+        self.stats_layout = grid
         grid.setSpacing(6)
 
         stats = []
@@ -174,8 +175,11 @@ class ModelCard(QFrame):
             val.setStyleSheet(
                 "color: #cdd6f4; font-size: 13px; font-weight: bold; background: transparent; border: none;"
             )
-            grid.addWidget(lbl, i // 2, (i % 2) * 2)
-            grid.addWidget(val, i // 2, (i % 2) * 2 + 1)
+            row, column = (i, 0) if vertical_stats else divmod(i, 2)
+            grid.addWidget(lbl, row, column * 2)
+            grid.addWidget(val, row, column * 2 + 1)
+        if vertical_stats:
+            grid.setColumnStretch(1, 1)
 
         layout.addLayout(grid)
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -68,6 +69,29 @@ def _cached_identity(path: Path, *, size: int | None, mtime_ns: int | None) -> d
     if mtime_ns is not None:
         identity["mtime_ns"] = mtime_ns
     return {"filepath": str(path), "identity": identity}
+
+
+def _summary(path: str, architecture: str, model_type: str) -> dict:
+    return {
+        "filepath": path,
+        "filename": Path(path).name,
+        "format": Path(path).suffix.lstrip(".").upper(),
+        "file_size": 1,
+        "file_size_friendly": "1 B",
+        "tensor_count": 1,
+        "total_params": 1,
+        "total_params_friendly": "1",
+        "architecture": architecture,
+        "model_type": model_type,
+        "components": {},
+        "named_text_encoders": {},
+        "precision_summary": "FP16",
+        "component_precision_summary": "FP16",
+        "component_precisions": {},
+        "precision_display": "FP16",
+        "training_meta": {},
+        "extra": {},
+    }
 
 
 def test_jsonc_store_migrates_ini_and_recovers_malformed_content(tmp_path: Path) -> None:
@@ -152,6 +176,86 @@ def test_missing_cache_entry_is_historic_and_never_schedules_sync(monkeypatch, t
     assert entry.classification == "historic"
     assert entry.action == "archive"
     assert started_paths == []
+
+
+def test_settings_cache_load_reconciles_filters_and_preserves_active_selection(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    from gui import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    existing_a = "R:/existing/a.safetensors"
+    existing_b = "R:/existing/b.gguf"
+    cached = "R:/cached/c.ckpt"
+    existing_results = [
+        _summary(existing_a, "Architecture A", "Checkpoint"),
+        _summary(existing_b, "Architecture B", "LoRA"),
+    ]
+    snapshots = {
+        existing_a: _summary(existing_a, "Architecture A", "Checkpoint"),
+        cached: _summary(cached, "Architecture C", "Text Encoder"),
+    }
+    try:
+        for data in existing_results:
+            window._normalize_result_data(data)
+            window._results.append(data)
+            window._add_card(data)
+            window._add_table_row(data)
+        window.arch_filter_btn.replace_items(
+            data["architecture"] for data in window._results
+        )
+        window.tag_filter_btn.replace_items(
+            tag for data in window._results for tag in window._filter_tags_for_data(data)
+        )
+        window.format_filter_btn.replace_items(
+            window._format_filter_for_data(data) for data in window._results
+        )
+        window.arch_filter_btn._arch_checks["Architecture B"].setChecked(False)
+        window.tag_filter_btn._arch_checks["LoRA"].setChecked(False)
+        window.format_filter_btn._arch_checks[".gguf"].setChecked(False)
+        window._selected_paths.add(existing_a)
+        monkeypatch.setattr(
+            window,
+            "_cache_report",
+            lambda: SimpleNamespace(
+                entries=[
+                    SimpleNamespace(path=existing_a, classification="active"),
+                    SimpleNamespace(path=cached, classification="active"),
+                ]
+            ),
+        )
+        monkeypatch.setattr(
+            window,
+            "_get_cached_inspection_summary_snapshots",
+            lambda _paths: snapshots,
+        )
+
+        window._load_cache()
+
+        assert set(window.arch_filter_btn._arch_checks) == {
+            "Architecture A", "Architecture B", "Architecture C"
+        }
+        assert set(window.tag_filter_btn._arch_checks) == {
+            "Checkpoint", "LoRA", "Text Encoder"
+        }
+        assert set(window.format_filter_btn._arch_checks) == {
+            ".safetensors", ".gguf", ".ckpt"
+        }
+        assert window.arch_filter_btn._arch_checks["Architecture A"].isChecked()
+        assert not window.arch_filter_btn._arch_checks["Architecture C"].isChecked()
+        assert window.tag_filter_btn._arch_checks["Checkpoint"].isChecked()
+        assert not window.tag_filter_btn._arch_checks["Text Encoder"].isChecked()
+        assert window.format_filter_btn._arch_checks[".safetensors"].isChecked()
+        assert not window.format_filter_btn._arch_checks[".ckpt"].isChecked()
+        assert window.table.isRowHidden(window._row_for_filepath(cached))
+        assert window.raw_combo.findData(existing_a) >= 0
+        assert window.raw_combo.findData(cached) == -1
+        assert window.selected_count_label.text() == window.table_selected_count_label.text() == "1 selected"
+        assert window.progress_label.text() == "Loaded 1 cached summaries"
+    finally:
+        window.close()
 
 
 def test_theme_application_and_mainwindow_explorer_wiring(monkeypatch, tmp_path: Path) -> None:

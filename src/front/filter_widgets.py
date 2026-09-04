@@ -134,6 +134,19 @@ class CheckFilterButton(QToolButton):
             self._rebuild_item_actions()
             self._update_label()
 
+    def replace_items(self, values):
+        """Atomically refresh discovered values without discarding a filter."""
+        previous = set(self._arch_checks)
+        preserve_all = not previous or self._active == previous
+        counts: dict[str, int] = {}
+        for value in values:
+            if value:
+                counts[value] = counts.get(value, 0) + 1
+        self._counts = counts
+        self._active = set(counts) if preserve_all else self._active & set(counts)
+        self._rebuild_item_actions()
+        self._update_label()
+
     def ensure_item(self, arch: str, count: int = 0):
         if not arch or arch in self._counts:
             return

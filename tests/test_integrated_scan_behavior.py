@@ -4,6 +4,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -13,11 +14,11 @@ sys.path.insert(0, str(ROOT / "src"))
 import background_tasks
 import gui
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QWidgetAction
 
 
 def _app() -> QApplication:
-    return QApplication.instance() or QApplication([])
+    return cast(QApplication, QApplication.instance() or QApplication([]))
 
 
 def _full_result(filepath: str, index: int) -> dict:
@@ -73,6 +74,14 @@ def _wait_for_analysis(window: gui.MainWindow, timeout: float = 10.0) -> None:
     raise AssertionError("analysis did not reach terminal projected state")
 
 
+def _filter_actions(button) -> list[str]:
+    actions = []
+    for action in button._menu.actions():
+        if isinstance(action, QWidgetAction) and action.defaultWidget() is not None:
+            actions.append(cast(Any, action.defaultWidget()).text())
+    return actions
+
+
 def test_integrated_worker_projection_filters_sorting_and_raw_summary(
     tmp_path, monkeypatch
 ):
@@ -113,6 +122,18 @@ def test_integrated_worker_projection_filters_sorting_and_raw_summary(
         assert worker.peak_in_flight <= max(2, 2 * worker.threads)
         assert worker.peak_outstanding_events <= max(8, 2 * worker.threads)
         assert worker.outstanding_events == 0
+        assert {"Architecture A (12)", "Architecture B (11)", "ERROR (1)"} <= set(
+            _filter_actions(window.arch_filter_btn)
+        )
+        assert {"Checkpoint (23)", "ERROR (1)"} <= set(
+            _filter_actions(window.tag_filter_btn)
+        )
+        window.arch_filter_btn._arch_checks["Architecture A"].setChecked(False)
+        window._rebuild_views_from_results()
+        assert not window.arch_filter_btn._arch_checks["Architecture A"].isChecked()
+        assert {"Architecture A (12)", "Architecture B (11)", "ERROR (1)"} <= set(
+            _filter_actions(window.arch_filter_btn)
+        )
 
         successful = [
             result
@@ -143,6 +164,7 @@ def test_integrated_worker_projection_filters_sorting_and_raw_summary(
         window._selected_paths.add(selected)
         window._sync_selection_visuals()
         assert window.selected_count_label.text().startswith("1 selected")
+        assert window.table_selected_count_label.text() == window.selected_count_label.text()
 
         window._show_raw_summary(selected)
         raw_text = window.raw_text.toPlainText()

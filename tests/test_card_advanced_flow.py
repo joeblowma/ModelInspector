@@ -12,6 +12,7 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
+from front import selection_controller
 from gui import MainWindow
 
 
@@ -27,7 +28,7 @@ def _summary(path: str) -> dict:
     }
 
 
-def test_card_body_opens_exact_model_while_checkbox_owns_selection(tmp_path, monkeypatch):
+def test_card_actions_open_exact_model_while_checkbox_owns_selection(tmp_path, monkeypatch):
     monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
     monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
     app = QApplication.instance() or QApplication([])
@@ -44,8 +45,21 @@ def test_card_body_opens_exact_model_while_checkbox_owns_selection(tmp_path, mon
         app.processEvents()
         window._refresh_card_layout_geometry()
         card = window._path_to_card[path]
+
+        def choose_advanced_viewer(menu: Any, _global_pos: QPoint) -> Any:
+            return next(
+                action
+                for action in menu.actions()
+                if action.text() == "Advanced Viewer"
+            )
+
+        monkeypatch.setattr(selection_controller.QMenu, "exec", choose_advanced_viewer)
+        window._on_card_context_menu(path, False, QPoint(0, 0))
+        assert opened == [path]
+
         card.select_cb.click()
         assert window._selected_paths == {path}
+        assert window.selected_count_label.text() == window.table_selected_count_label.text() == "1 selected"
 
         cast(Any, QTest).mouseClick(
             card,
@@ -53,7 +67,7 @@ def test_card_body_opens_exact_model_while_checkbox_owns_selection(tmp_path, mon
             Qt.KeyboardModifier.NoModifier,
             QPoint(4, card.height() - 4),
         )
-        assert opened == [path]
+        assert opened == [path, path]
         assert window._selected_paths == {path}
         assert not hasattr(window, "advanced_viewer_btn")
         assert not hasattr(window, "cards_simple_view_cb")
@@ -67,6 +81,15 @@ def test_card_body_opens_exact_model_while_checkbox_owns_selection(tmp_path, mon
         window._results.append(second_data)
         window._add_table_row(second_data)
         window._open_table_row_in_advanced_viewer(1)
-        assert opened == [path, second]
+        assert opened == [path, path, second]
+        second_checkbox = window.table.cellWidget(1, 0)
+        assert second_checkbox is not None
+        cast(Any, second_checkbox).click()
+        assert window.selected_count_label.text() == window.table_selected_count_label.text() == "2 selected"
+        window.cards_select_all_cb.setChecked(False)
+        assert window.selected_count_label.text() == window.table_selected_count_label.text() == "0 selected"
+        card.select_cb.click()
+        window._remove_selected_results()
+        assert window.selected_count_label.text() == window.table_selected_count_label.text() == "0 selected"
     finally:
         window.close()

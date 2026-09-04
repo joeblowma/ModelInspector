@@ -137,7 +137,9 @@ class SelectionControllerMixin:
                 f"Copy Info from selected files [{len(selected_visible)}]"
             )
         chosen = menu.exec(global_pos)
-        if chosen == view_raw:
+        if chosen == advanced_viewer:
+            self._show_advanced_viewer_for_path(filepath)
+        elif chosen == view_raw:
             self._show_raw_for_filepath(filepath)
         elif chosen == copy_info:
             _clipboard().setText(self._build_card_info_text(data, simple_view))
@@ -256,12 +258,12 @@ class SelectionControllerMixin:
         visible_selected_count = len(self._selected_paths & visible)
         total_selected_count = len(self._selected_paths)
         if total_selected_count == visible_selected_count:
-            self.selected_count_label.setText(f"{visible_selected_count} selected")
+            count_text = f"{visible_selected_count} selected"
         else:
             hidden_count = total_selected_count - visible_selected_count
-            self.selected_count_label.setText(
-                f"{visible_selected_count} selected ({hidden_count} hidden)"
-            )
+            count_text = f"{visible_selected_count} selected ({hidden_count} hidden)"
+        self.selected_count_label.setText(count_text)
+        self.table_selected_count_label.setText(count_text)
         enabled = visible_selected_count > 0
         self.selected_action_btn.setEnabled(enabled)
         self.selected_action_menu_btn.setEnabled(True)
@@ -352,18 +354,19 @@ class SelectionControllerMixin:
         self._path_to_row.clear()
         self._clear_cards()
         self.table.setRowCount(0)
-        self.arch_filter_btn.clear_items()
-        self.tag_filter_btn.clear_items()
         self._reset_format_filter_items()
         self.raw_combo.clear()
         for data in current_results:
             self._normalize_result_data(data)
             self._add_card(data)
             self._add_table_row(data)
-            self.arch_filter_btn.add_item(data.get("architecture", "Unknown"))
-            for tag in self._filter_tags_for_data(data):
-                self.tag_filter_btn.add_item(tag)
             self.format_filter_btn.add_item(self._format_filter_for_data(data))
+        self.arch_filter_btn.replace_items(
+            data.get("architecture", "Unknown") for data in current_results
+        )
+        self.tag_filter_btn.replace_items(
+            tag for data in current_results for tag in self._filter_tags_for_data(data)
+        )
         header.setSortIndicator(sort_column, sort_order)
         self.table.setSortingEnabled(sorting_enabled)
         self._apply_arch_filter()

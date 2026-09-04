@@ -202,6 +202,12 @@ class AnalysisControllerMixin:
         self._pending_filter_formats.clear()
         if not final:
             return
+        self.arch_filter_btn.replace_items(
+            data.get("architecture", "Unknown") for data in self._results
+        )
+        self.tag_filter_btn.replace_items(
+            tag for data in self._results for tag in self._filter_tags_for_data(data)
+        )
         self._apply_arch_filter(
             refresh_raw=False,
             refresh_geometry=False,

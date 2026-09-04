@@ -110,8 +110,12 @@ def test_card_details_honor_detailed_preferences_and_metadata_stays_spacious():
     app.processEvents()
     assert dialog._card_details_card is not None
     assert dialog._card_details_card.select_cb.isHidden()
+    assert dialog._card_details_card.stats_layout.columnCount() == 2
+    assert dialog._card_details_card.stats_layout.rowCount() >= 2
     assert dialog.explorer_tab.metadata_table.wordWrap()
     assert dialog.explorer_tab.metadata_table.columnWidth(1) > 300
+    assert dialog.width() >= 840
+    assert not dialog.work_area.tabBar().usesScrollButtons()
     dialog.close()
 
 

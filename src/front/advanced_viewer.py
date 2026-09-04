@@ -134,7 +134,7 @@ class AdvancedViewerDialog(QDialog):
         self.setWindowTitle("Advanced Model Viewer")
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setMinimumSize(620, 620)
-        self.resize(760, 760)
+        self.resize(840, 760)
         self._inspection: dict[str, Any] = {}
         self._facts = ModelFacts()
         self._projection: ResourceProjection | None = None
@@ -156,6 +156,7 @@ class AdvancedViewerDialog(QDialog):
         root.setSpacing(10)
 
         self.work_area = QTabWidget()
+        self.work_area.tabBar().setUsesScrollButtons(False)
         facts_page = QWidget()
         facts_layout = QVBoxLayout(facts_page)
         facts_layout.setContentsMargins(0, 0, 0, 0)
@@ -374,7 +375,9 @@ class AdvancedViewerDialog(QDialog):
         data.setdefault("tensor_count", "-")
         data.setdefault("training_meta", {})
         data.setdefault("extra", {})
-        self._card_details_card = ModelCard(data, card_fields=self._card_fields)
+        self._card_details_card = ModelCard(
+            data, card_fields=self._card_fields, vertical_stats=True
+        )
         self._card_details_card.select_cb.hide()
         self._card_details_content_layout.addWidget(cast(Any, self._card_details_card))
 

@@ -312,6 +312,7 @@ class IntegrationMixin:
         report = self._cache_report()
         paths = [entry.path for entry in report.entries if wanted is None or entry.classification == wanted]
         snapshots = self._get_cached_inspection_summary_snapshots(paths)
+        loaded_count = 0
         for path in paths:
             data = snapshots.get(path)
             if not data or self._result_for_filepath(path):
@@ -323,8 +324,26 @@ class IntegrationMixin:
             self._results.append(data)
             self._add_card(data)
             self._add_table_row(data)
+            loaded_count += 1
+        if loaded_count:
+            self.arch_filter_btn.replace_items(
+                data.get("architecture", "Unknown") for data in self._results
+            )
+            self.tag_filter_btn.replace_items(
+                tag for data in self._results for tag in self._filter_tags_for_data(data)
+            )
+            self.format_filter_btn.replace_items(
+                self._format_filter_for_data(data) for data in self._results
+            )
+            self._apply_arch_filter(
+                refresh_raw=False,
+                refresh_geometry=False,
+                update_selection=False,
+            )
         self._refresh_raw_combo_filtered()
-        self._set_progress_status(f"Loaded {len(snapshots)} cached {'historic ' if wanted == 'historic' else ''}summaries")
+        self._sync_selection_visuals()
+        self._refresh_card_layout_geometry()
+        self._set_progress_status(f"Loaded {loaded_count} cached {'historic ' if wanted == 'historic' else ''}summaries")
 
     def _load_cache(self) -> None:
         self._load_cache_status(None)

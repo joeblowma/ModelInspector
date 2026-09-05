@@ -66,5 +66,5 @@ Existing tests:
 ### Guardrails & Limits
 
 - **Hard Module Ceiling (500 Lines)**: Any generated or extracted file exceeding 500 lines is automatically flagged as an invalid God Node. It must immediately be queued for a second split by a worker before progressing to linkage repair. No "cohesive file exceptions" without explicit Lead Architect approval.
-- **Model Type Enforcement**: Before spawning subagents, verify that requested subagent models map strictly to `luna-medium`, `luna-xhigh`, `terra-medium`, `terra-high`, `deepseek-v4-pro-medium`, `deepseek-v4-flash-high` or `Qwen3_6-27B-A3B-Coder-MTP_Q5_K-medium`. If a model alias resolves incorrectly or defaults to `sol-medium`, halt execution immediately.
+- **Model Type Enforcement**: Before spawning subagents, verify that requested subagent models map strictly to `glm-5.3-flash`, `deepseek-v4-flash-high`, `luna-medium`, `luna-xhigh`, `terra-medium`, `terra-high`, or `deepseek-v4-pro-medium` . If a model alias resolves incorrectly or defaults to `sol-medium`, halt execution immediately.
 - **Wrapper Boundary Policy**: Entry-point wrappers (`gui.py`, `inspect_model.py`) may contain thin re-exports, MRO composition, and compatibility hooks, but zero domain logic.

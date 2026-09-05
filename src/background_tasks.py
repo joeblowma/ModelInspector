@@ -12,7 +12,9 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from back.inspection_summary import compact_inspection_summary
 from back.inspection_pipeline import inspect_file
-from model_readers import SUPPORTED_MODEL_EXTENSIONS
+from model_readers import CHECKPOINT_MODEL_EXTENSIONS, SUPPORTED_MODEL_EXTENSIONS
+from back.shard_discovery import discoverable_primary_path, is_safetensors_index_path
+from back.sidecar_discovery import is_probable_sidecar_path
 
 
 class DiscoveryWorker(QThread):
@@ -26,10 +28,15 @@ class DiscoveryWorker(QThread):
         self,
         root: str,
         extensions: Iterable[str] = SUPPORTED_MODEL_EXTENSIONS,
+        checkpoint_safety: str = "reject",
     ):
         super().__init__()
         self.root = str(root)
-        self.extensions = tuple(str(ext).lower() for ext in extensions)
+        selected_extensions = tuple(str(ext).lower() for ext in extensions)
+        if checkpoint_safety == "metadata":
+            selected_extensions += CHECKPOINT_MODEL_EXTENSIONS
+        self.extensions = tuple(dict.fromkeys(selected_extensions))
+        self.checkpoint_safety = checkpoint_safety
         self._cancel_requested = threading.Event()
 
     def cancel(self) -> None:
@@ -61,22 +68,30 @@ class DiscoveryWorker(QThread):
                 if self._cancelled():
                     break
                 filepath = Path(dirpath) / filename
-                if filepath.suffix.lower() not in self.extensions:
+                is_index = is_safetensors_index_path(filepath)
+                if is_index:
+                    matches_extension = ".safetensors" in self.extensions
+                else:
+                    matches_extension = filepath.suffix.lower() in self.extensions
+                if not matches_extension or is_probable_sidecar_path(filepath):
                     continue
                 try:
                     if not filepath.is_file() and not filepath.is_symlink():
                         continue
+                    canonical = discoverable_primary_path(filepath)
+                    if canonical is None:
+                        continue
                     try:
-                        resolved = str(filepath.resolve(strict=True))
+                        resolved = str(Path(canonical).resolve(strict=True))
                     except OSError:
-                        resolved = str(filepath.absolute())
+                        resolved = str(Path(canonical).absolute())
                 except OSError as exc:
                     self.error_occurred.emit(str(filepath), str(exc))
                     continue
                 if resolved in seen:
                     continue
                 seen.add(resolved)
-                paths.append(str(filepath))
+                paths.append(str(canonical))
 
             now = time.monotonic()
             if now - last_progress >= 0.1:
@@ -96,6 +111,7 @@ class DiscoveryWorker(QThread):
                 "paths": tuple(paths),
                 "scanned_directories": scanned_directories,
                 "cancelled": self._cancelled(),
+                "checkpoint_safety": self.checkpoint_safety,
                 "elapsed_seconds": time.monotonic() - started,
             }
         )
@@ -126,10 +142,13 @@ class AnalysisWorker(QThread):
         filepaths: list[str],
         inspect_options: Optional[dict[str, Any]] = None,
         threads: int = 1,
+        checkpoint_safety: Optional[str] = None,
     ):
         super().__init__()
         self.filepaths = filepaths
-        self.inspect_options = inspect_options or {}
+        self.inspect_options = dict(inspect_options or {})
+        if checkpoint_safety is not None:
+            self.inspect_options["checkpoint_safety"] = checkpoint_safety
         self.threads = max(1, int(threads or 1))
         self.max_in_flight = max(2, 2 * self.threads)
         self.max_outstanding_events = max(8, 2 * self.threads)

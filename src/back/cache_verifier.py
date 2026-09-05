@@ -12,6 +12,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
+from .shard_discovery import discover_shard_set
+from .sidecar_discovery import discover_sidecars, sidecar_identity_snapshot
+
 
 TOTAL = "total"
 ACTIVE = "active"
@@ -38,6 +41,8 @@ class CacheEntryVerification:
     cached_mtime_ns: int | None = None
     current_size: int | None = None
     current_mtime_ns: int | None = None
+    shard_identity_changed: bool = False
+    sidecar_identity_changed: bool = False
 
     @property
     def is_active(self) -> bool:
@@ -199,6 +204,78 @@ def _provider_from_mapping(filesystem: Mapping[str, Any] | None) -> StatProvider
     return provider
 
 
+def _companion_value(entry: Mapping[str, Any], key: str) -> Any:
+    for source in (entry, entry.get("data")):
+        if isinstance(source, Mapping) and key in source:
+            return source[key]
+    return None
+
+
+def _member_changed(member: Mapping[str, Any], provider: StatProvider) -> bool:
+    path = _text_path(member.get("path") or member.get("filepath"))
+    if not path:
+        return True
+    current = provider(path)
+    expected_exists = member.get("exists")
+    if current is None:
+        return expected_exists is not False
+    if expected_exists is False:
+        return True
+    expected_size = member.get("file_size", member.get("size"))
+    expected_mtime = member.get("mtime_ns", member.get("modified_ns"))
+    try:
+        size_changed = expected_size is not None and current.size is not None and int(expected_size) != current.size
+    except (TypeError, ValueError, OverflowError):
+        size_changed = True
+    try:
+        mtime_changed = expected_mtime is not None and current.mtime_ns is not None and int(expected_mtime) != current.mtime_ns
+    except (TypeError, ValueError, OverflowError):
+        mtime_changed = True
+    return size_changed or mtime_changed
+
+
+def _shard_identity_changed(
+    entry: Mapping[str, Any], primary_path: str, provider: StatProvider, use_discovery: bool
+) -> bool:
+    expected = _companion_value(entry, "shard_identity")
+    if not isinstance(expected, Mapping):
+        return False
+    members = expected.get("members")
+    if not isinstance(members, list):
+        return True
+    if use_discovery:
+        current_set = discover_shard_set(primary_path)
+        if current_set is not None:
+            return current_set.identity() != dict(expected)
+    return any(isinstance(member, Mapping) and _member_changed(member, provider) for member in members)
+
+
+def _sidecar_identity_changed(
+    entry: Mapping[str, Any], primary_path: str, provider: StatProvider, use_discovery: bool
+) -> bool:
+    expected = _companion_value(entry, "sidecar_identities")
+    if not isinstance(expected, list):
+        return False
+    if use_discovery:
+        shard_set = discover_shard_set(primary_path)
+        sidecar_base = shard_set.primary_path if shard_set else primary_path
+        current_records = discover_sidecars(sidecar_base)
+        if current_records:
+            return expected != sidecar_identity_snapshot(current_records)
+    if expected:
+        return any(isinstance(item, Mapping) and _member_changed(item, provider) for item in expected)
+    return False
+
+
+def _companion_identity_changes(
+    entry: Mapping[str, Any], primary_path: str, provider: StatProvider, use_discovery: bool
+) -> tuple[bool, bool]:
+    return (
+        _shard_identity_changed(entry, primary_path, provider, use_discovery),
+        _sidecar_identity_changed(entry, primary_path, provider, use_discovery),
+    )
+
+
 def verify_cache_entry(
     entry: Mapping[str, Any],
     *,
@@ -263,6 +340,30 @@ def verify_cache_entry(
             cached_mtime,
             current.size,
             current.mtime_ns,
+        )
+    shard_changed, sidecar_changed = _companion_identity_changes(
+        entry, current.path, provider, filesystem is None and stat_provider is None
+    )
+    if shard_changed or sidecar_changed:
+        changed_parts = []
+        if shard_changed:
+            changed_parts.append("shard identity changed")
+        if sidecar_changed:
+            changed_parts.append("sidecar identity changed")
+        return CacheEntryVerification(
+            display_path,
+            current.path,
+            aliases,
+            "active",
+            "refresh",
+            True,
+            "; ".join(changed_parts) + "; refresh/sync candidate",
+            cached_size,
+            cached_mtime,
+            current.size,
+            current.mtime_ns,
+            shard_changed,
+            sidecar_changed,
         )
     return CacheEntryVerification(
         display_path,

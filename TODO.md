@@ -7,38 +7,7 @@ The legacy Raw Dump view remains useful and should be retained alongside the
 read-only Explorer. The Explorer is an expansion of model inspection, not a
 replacement for access to the raw generated dump.
 
-## 1. File Readers, Model Formats, Sharding, and Sidecars
-
-### Additional model formats
-
-- Add `.onnx` metadata inspection.
-- Add `.ckpt`, `.pt`, and `.pth` dispatch only behind an explicit safety model.
-  Prefer metadata-only paths and never silently enable pickle deserialization.
-- Keep optional third-party reader libraries behind the shared reader
-  abstraction and add them only when they improve safety or coverage.
-
-### Sharded models and original ordering
-
-- Support sharded `.gguf` and `.safetensors` sets such as
-  `*00001-of-00004*`.
-- Preserve original tensor/layer/block order in addition to the current sorted
-  presentation.
-- Record the shard index for every tensor or block (`shard_id = 0` for
-  non-sharded models).
-- In Explorer and Advanced Viewer, allow sorted versus original-order display
-  and visually group original-order rows by shard.
-- Calculate tensor or block size for raw output and tool-tip in advanced view.
-
-### Sidecar discovery and association
-
-- Detect `mmproj`, `dflash`, `dspark`, `eagle`, `draft`, and MTP sidecars beside
-  the primary model.
-- Store full sidecar inspection records separately while keeping enough
-  identity metadata on the primary model to detect changes quickly.
-- Tag the primary model with discovered sidecar roles and include associated
-  paths in copied runtime configurations.
-
-## 2. Library Linking and Path Resolution
+## 1. Library Linking and Path Resolution
 
 - Add symbolic-link creation alongside existing move-file actions.
 - Support editable destination templates such as
@@ -49,7 +18,7 @@ replacement for access to the raw generated dump.
 - Show resolved source and planned destination paths before bulk operations.
 - Detect existing destinations and offer Skip, Overwrite, or Open Location.
 
-## 3. Cache Follow-ups
+## 2. Cache Follow-ups
 
 - Move `Load Cache`, `Load Cache All`, and `Load Cache Archived` out of Settings
   into a menu attached to the main-window Open button.
@@ -67,7 +36,7 @@ replacement for access to the raw generated dump.
 - Surface verification progress and a concise result summary when a manual
   verification archives missing entries or schedules changed entries.
 
-## 4. Settings, Themes, and General UI Refinement
+## 3. Settings, Themes, and General UI Refinement
 
 - Remove the obsolete `Load default libraries on startup` setting and its
   startup-cache path now that cache loading has explicit actions.
@@ -95,7 +64,7 @@ replacement for access to the raw generated dump.
 - Keep smart-group behavior distinct from the persisted per-column visibility
   settings and define which preference wins after an automatic enable.
 
-## 5. Explorer and Raw Dump Refinement
+## 4. Explorer and Raw Dump Refinement
 
 - Keep both Explorer and Raw Dump views available in the current shared tab;
   external context-menu View Raw actions must select the target model and load
@@ -120,7 +89,7 @@ replacement for access to the raw generated dump.
 - Constrain filter popups to the available window or screen bounds and make
   long option lists scrollable instead of allowing an oversized popup.
 
-## 6. Advanced Model Viewer Redesign and Completion
+## 5. Advanced Model Viewer Redesign and Completion
 
 - Revisit the Advanced Viewer layout and interaction model against the supplied
   reference screenshot; treat the current dialog as a functional foundation,
@@ -158,7 +127,7 @@ replacement for access to the raw generated dump.
   Advanced Viewer; path-specific actions must copy exact full paths, while
   `File:` labels remain only in Copy Info output.
 
-## 7. CLI, Packaging, and CI/CD
+## 6. CLI, Packaging, and CI/CD
 
 - Accept files/folders passed to the packaged executable and queue them after
   the GUI is ready, as if dropped onto the window.
@@ -168,7 +137,7 @@ replacement for access to the raw generated dump.
 - Add GitHub Actions for supported wheel builds, Windows executable packaging,
   optional publishing, and GitHub releases.
 
-## 8. Developer Tooling and Architecture Graph
+## 7. Developer Tooling and Architecture Graph
 
 - Repair `.graphifyignore` ordering so `src/back/*.py` and `src/front/*.py`
   remain unignored after the broad `src/*` rule; the current incremental graph

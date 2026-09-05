@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import math
 import re
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, cast
 
 
 _MISSING = object()
@@ -284,6 +284,60 @@ def _unit(value: int) -> str:
     return f"{amount:.2f} TiB"
 
 
+def _runtime_sidecar_lines(
+    inspection: Mapping[str, Any] | None,
+    sidecars: Iterable[Mapping[str, Any]] | Mapping[str, Any] | None,
+) -> list[str]:
+    """Format associated sidecar role/path pairs without inspecting files."""
+    source = inspection if isinstance(inspection, Mapping) else {}
+    records: list[Mapping[str, Any]]
+    if isinstance(sidecars, Mapping):
+        records = [cast(Mapping[str, Any], sidecars)]
+    elif sidecars is not None:
+        records = []
+        for item in sidecars:
+            if isinstance(item, Mapping):
+                records.append(item)
+            else:
+                role, path = getattr(item, "role", None), getattr(item, "path", None)
+                if role is not None or path is not None:
+                    records.append({"role": role, "path": path})
+    else:
+        records = []
+    if not records:
+        for key in ("sidecars", "sidecar_inspections", "sidecar_records"):
+            value = source.get(key)
+            if isinstance(value, list):
+                records = [item for item in value if isinstance(item, Mapping)]
+                if records:
+                    break
+
+    roles = source.get("sidecar_roles")
+    paths = source.get("sidecar_paths")
+    identities = source.get("sidecar_identities")
+    roles = list(roles) if isinstance(roles, (list, tuple)) else []
+    paths = list(paths) if isinstance(paths, (list, tuple)) else []
+    if not records and isinstance(identities, list):
+        records = [item for item in identities if isinstance(item, Mapping)]
+
+    pairs: list[tuple[str, str]] = []
+    count = max(len(records), len(roles), len(paths))
+    for index in range(count):
+        record: Mapping[str, Any] = records[index] if index < len(records) else {}
+        role = record.get("sidecar_role", record.get("role")) or (
+            roles[index] if index < len(roles) else "unknown"
+        )
+        path = record.get("sidecar_path", record.get("filepath", record.get("path"))) or (
+            paths[index] if index < len(paths) else ""
+        )
+        role_text, path_text = str(role), str(path)
+        if role_text or path_text:
+            pairs.append((role_text or "unknown", path_text or "unknown"))
+    if not pairs:
+        return []
+    return ["Associated sidecars:"] + [f"Sidecar {role}: {path}" for role, path in pairs]
+
+
 def project_resources(
     inspection: Mapping[str, Any] | ModelFacts | None,
     *,
@@ -356,8 +410,17 @@ def project_resources(
     )
 
 
-def runtime_configuration(projection: ResourceProjection, facts: ModelFacts | None = None) -> str:
+def runtime_configuration(
+    projection: ResourceProjection,
+    facts: ModelFacts | None = None,
+    inspection: Mapping[str, Any] | None = None,
+    *,
+    sidecars: Iterable[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+) -> str:
     """Return a plain-text runtime configuration for copy/paste in the GUI."""
+    if inspection is None and isinstance(facts, Mapping):
+        inspection = facts
+        facts = None
     lines = [
         f"Context: {projection.context_length:,} tokens",
         f"Batch size: {projection.batch_size}",
@@ -370,6 +433,7 @@ def runtime_configuration(projection: ResourceProjection, facts: ModelFacts | No
         lines.insert(0, f"Layers: {facts.layer_count}")
     if projection.assumptions:
         lines.append("Assumptions: " + "; ".join(projection.assumptions))
+    lines.extend(_runtime_sidecar_lines(inspection, sidecars))
     return "\n".join(lines)
 
 

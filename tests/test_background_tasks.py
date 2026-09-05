@@ -169,6 +169,57 @@ def test_discovery_deduplicates_and_emits_terminal_progress(tmp_path):
     assert progress[-1]["scanned_directories"] == 3
 
 
+def test_discovery_ignores_stale_safetensors_indexes(tmp_path):
+    index = tmp_path / "model.safetensors.index.json"
+    index.write_text(
+        (
+            '{"weight_map": {"alpha": "model-00001-of-00004.safetensors", '
+            '"beta": "model-00002-of-00004.safetensors"}}'
+        ),
+        encoding="utf-8",
+    )
+    gguf = tmp_path / "unrelated.gguf"
+    gguf.write_bytes(b"")
+    terminal = []
+    worker = background_tasks.DiscoveryWorker(str(tmp_path))
+    worker.discovery_done.connect(terminal.append)
+
+    worker.run()
+
+    assert terminal[0]["paths"] == (str(gguf),)
+
+
+def test_discovery_includes_checkpoints_only_after_metadata_opt_in(tmp_path):
+    checkpoint = tmp_path / "untrusted.pt"
+    checkpoint.write_bytes(b"not deserialized")
+    default_terminal = []
+    default = background_tasks.DiscoveryWorker(str(tmp_path))
+    default.discovery_done.connect(default_terminal.append)
+    default.run()
+    assert default_terminal[0]["paths"] == ()
+
+    metadata_terminal = []
+    metadata = background_tasks.DiscoveryWorker(str(tmp_path), checkpoint_safety="metadata")
+    metadata.discovery_done.connect(metadata_terminal.append)
+    metadata.run()
+    assert metadata_terminal[0]["paths"] == (str(checkpoint),)
+    assert metadata_terminal[0]["checkpoint_safety"] == "metadata"
+
+
+def test_analysis_worker_passes_only_explicit_checkpoint_metadata_opt_in(monkeypatch):
+    options_seen = []
+
+    def inspect(filepath, options=None):
+        options_seen.append(dict(options or {}))
+        return _result(filepath)
+
+    monkeypatch.setattr(background_tasks, "inspect_file", inspect)
+    worker = background_tasks.AnalysisWorker(["model.pt"], checkpoint_safety="metadata")
+    worker.result_ready.connect(lambda _: worker.acknowledge_event())
+    worker.run()
+    assert options_seen == [{"checkpoint_safety": "metadata"}]
+
+
 def test_discovery_cancellation_is_checked_between_directories(monkeypatch):
     def directories(root, onerror=None):
         for index in range(100):

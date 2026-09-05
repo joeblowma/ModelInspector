@@ -14,6 +14,7 @@ from typing import Iterable
 
 from model_readers import (
     CHECKPOINT_FORMAT_WARNING,
+    CHECKPOINT_MODEL_EXTENSIONS,
     SUPPORTED_MODEL_EXTENSIONS,
     iter_checkpoint_paths,
     iter_model_paths,
@@ -43,9 +44,16 @@ def _configure_stdio_encoding():
             stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore
 
 
-def _iter_model_paths(targets: Iterable[str], recursive: bool) -> list[str]:
+def _iter_model_paths(
+    targets: Iterable[str],
+    recursive: bool,
+    checkpoint_safety: str = "reject",
+) -> list[str]:
     """Return supported model files in the requested target order."""
-    return iter_model_paths(targets, recursive, extensions=SUPPORTED_MODEL_EXTENSIONS)
+    extensions = SUPPORTED_MODEL_EXTENSIONS
+    if checkpoint_safety == "metadata":
+        extensions += CHECKPOINT_MODEL_EXTENSIONS
+    return iter_model_paths(targets, recursive, extensions=extensions)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -69,6 +77,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--allow-filename-alias-detection",
         action="store_true",
         help="Allow filename token fallback aliases for SDXL-family names",
+    )
+    parser.add_argument(
+        "--checkpoint-safety",
+        choices=("reject", "metadata"),
+        default="reject",
+        help=(
+            "Checkpoint policy: reject by default, or inspect only safe ZIP "
+            "metadata/version entries (never pickle-deserialize)"
+        ),
     )
     parser.add_argument(
         "--json",
@@ -113,9 +130,9 @@ def main(argv=None):
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
 
-    paths = _iter_model_paths(args.targets, args.recursive)
+    paths = _iter_model_paths(args.targets, args.recursive, args.checkpoint_safety)
     checkpoint_paths = iter_checkpoint_paths(args.targets, args.recursive)
-    if checkpoint_paths:
+    if checkpoint_paths and args.checkpoint_safety == "reject":
         print(
             f"[WARN] {CHECKPOINT_FORMAT_WARNING} Ignored {len(checkpoint_paths)} checkpoint file(s).",
             file=sys.stderr,
@@ -128,17 +145,28 @@ def main(argv=None):
         )
         return 1
 
+    inspect_options = {
+        "allow_filename_alias_detection": args.allow_filename_alias_detection,
+        "checkpoint_safety": args.checkpoint_safety,
+    }
+    if args.checkpoint_safety == "metadata":
+        # The legacy modelinfo writer has no safety argument; retaining the
+        # header triple lets its existing cache fallback remain metadata-only.
+        inspect_options["cache_full_data"] = True
     if args.dump_keys:
         for filepath in paths:
             try:
-                print(generate_modelinfo_dump(filepath))
+                if filepath.lower().endswith(CHECKPOINT_MODEL_EXTENSIONS):
+                    metadata, tensor_info, file_size = read_model_header(
+                        filepath, options=inspect_options
+                    )
+                    print_report(filepath, metadata, tensor_info, file_size)
+                else:
+                    print(generate_modelinfo_dump(filepath))
             except Exception as error:
                 print(f"[ERROR] {filepath}: {error}", file=sys.stderr)
         return 0
 
-    inspect_options = {
-        "allow_filename_alias_detection": args.allow_filename_alias_detection
-    }
     thread_count = max(1, min(int(args.threads or 1), len(paths)))
     results_by_input_path = {}
     if thread_count == 1:
@@ -191,7 +219,9 @@ def main(argv=None):
     results_by_path = {result.get("filepath"): result for result in results}
     for filepath in paths:
         try:
-            metadata, tensor_info, file_size = read_model_header(filepath)
+            metadata, tensor_info, file_size = read_model_header(
+                filepath, options=inspect_options
+            )
             print_report(filepath, metadata, tensor_info, file_size)
             outputs = results_by_path.get(filepath, {}).get("modelinfo_outputs") or []
             if outputs:

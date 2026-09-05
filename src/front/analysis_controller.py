@@ -25,6 +25,16 @@ class AnalysisControllerMixin:
             return
         if self._worker and self._worker.isRunning():
             return
+        checkpoint_paths = [path for path in paths if Path(path).suffix.lower() in {".ckpt", ".pt", ".pth"}]
+        unconfirmed = [path for path in checkpoint_paths if self._checkpoint_path_key(path) not in self._checkpoint_metadata_paths]
+        if unconfirmed:
+            paths = [path for path in paths if path not in unconfirmed]
+            self._set_progress_status(f"Skipped {len(unconfirmed)} checkpoint file(s) without metadata-only confirmation")
+        if not paths:
+            return
+        confirmed_checkpoints = any(
+            Path(path).suffix.lower() in {".ckpt", ".pt", ".pth"} for path in paths
+        )
 
         self._scan_generation = self._projection.begin()
         self.analyze_btn.setEnabled(False)
@@ -80,6 +90,7 @@ class AnalysisControllerMixin:
                 "cache_full_data": self._cache_full_data_on_analyze,
             },
             threads=self._analysis_threads,
+            checkpoint_safety="metadata" if confirmed_checkpoints else None,
         )
         worker = self._worker
         generation = self._scan_generation

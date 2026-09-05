@@ -25,7 +25,6 @@ from background_tasks import DiscoveryWorker
 from front.window_core import _model_file_filter
 from model_cache import store_directory_scan
 from model_readers import (
-    CHECKPOINT_FORMAT_WARNING,
     SUPPORTED_MODEL_EXTENSIONS,
     is_checkpoint_model_path,
     is_supported_model_path,
@@ -41,7 +40,9 @@ class DiscoveryControllerMixin:
 
     _discovery_generation: int
 
-    def _start_discovery(self, roots: list[str], seed_paths: list[str] | None = None):
+    def _start_discovery(
+        self, roots: list[str], seed_paths: list[str] | None = None, *, checkpoint_safety: str = "reject"
+    ):
         if self._worker and self._worker.isRunning():
             return
         if self._discovery_worker and self._discovery_worker.isRunning():
@@ -50,6 +51,7 @@ class DiscoveryControllerMixin:
         self._discovery_roots = list(roots)
         self._discovery_paths = list(seed_paths or [])
         self._discovery_auto_analyze = self._auto_analyze_on_add
+        self._discovery_checkpoint_safety = checkpoint_safety
         self._scan_cancel_requested = False
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
@@ -64,7 +66,10 @@ class DiscoveryControllerMixin:
             self._finish_discovery(generation, False)
             return
         root = self._discovery_roots.pop(0)
-        worker = DiscoveryWorker(root, extensions=SUPPORTED_MODEL_EXTENSIONS)
+        worker = DiscoveryWorker(
+            root, extensions=SUPPORTED_MODEL_EXTENSIONS,
+            checkpoint_safety=self._discovery_checkpoint_safety,
+        )
         self._discovery_worker = worker
         worker.progress_updated.connect(
             lambda progress, g=generation: self._on_discovery_progress(g, progress)
@@ -117,9 +122,17 @@ class DiscoveryControllerMixin:
         }
         self._discovery_terminal = None
         paths = [str(path) for path in terminal.get("paths") or ()]
+        if terminal.get("cancelled"):
+            paths = [path for path in paths if not is_checkpoint_model_path(path)]
         self._discovery_paths.extend(paths)
         root = str(terminal.get("root") or "")
         if paths and not terminal.get("cancelled"):
+            if terminal.get("checkpoint_safety") == "metadata":
+                self._checkpoint_metadata_paths.update(
+                    self._checkpoint_path_key(path)
+                    for path in paths
+                    if is_checkpoint_model_path(path)
+                )
             store_directory_scan(root, paths)
         if terminal.get("cancelled"):
             self._finish_discovery(generation, True)
@@ -177,23 +190,52 @@ class DiscoveryControllerMixin:
         if not paths:
             return
         supported = [p for p in paths if is_supported_model_path(p)]
-        unsupported = [p for p in paths if is_checkpoint_model_path(p)]
-        if unsupported:
-            self._warn_unsupported_checkpoint_files(unsupported)
+        checkpoints = [p for p in paths if is_checkpoint_model_path(p)]
+        supported.extend(self._confirm_checkpoint_metadata_only(checkpoints))
         if supported:
             self._add_files(supported)
 
-    def _warn_unsupported_checkpoint_files(self, paths: list[str]):
+    @staticmethod
+    def _checkpoint_path_key(path: str) -> str:
+        try:
+            return str(Path(path).resolve(strict=False)).casefold()
+        except OSError:
+            return str(path).casefold()
+
+    def _confirm_checkpoint_metadata_only(self, paths: list[str]) -> list[str]:
+        """Ask once per selected/drop batch before opting into checkpoint metadata."""
         if not paths:
-            return
+            return []
         preview = "\n".join(Path(p).name for p in paths[:8])
         if len(paths) > 8:
             preview += f"\n...and {len(paths) - 8} more"
-        QMessageBox.warning(
+        answer = QMessageBox.question(
             self,
-            "Checkpoint Format Not Inspected",
-            f"{CHECKPOINT_FORMAT_WARNING}\n\nIgnored file(s):\n{preview}",
+            "Inspect checkpoints as metadata only?",
+            "PyTorch checkpoint files can contain pickle data. Model Inspector will "
+            "not deserialize pickle or load tensor payloads.\n\nContinue with safe "
+            "metadata-only inspection for:\n" + preview,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
+        if answer != QMessageBox.StandardButton.Yes:
+            return []
+        self._checkpoint_metadata_paths.update(self._checkpoint_path_key(path) for path in paths)
+        return paths
+
+    def _confirm_checkpoint_discovery(self, roots: list[str]) -> bool:
+        if not roots:
+            return False
+        answer = QMessageBox.question(
+            self,
+            "Discover checkpoints as metadata only?",
+            "Search these folders for .ckpt, .pt, and .pth files? Any found files "
+            "will be inspected only after this explicit metadata-only opt-in; pickle "
+            "and tensor payloads will never be deserialized.\n\n" + "\n".join(roots[:8]),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
 
     def _browse_folder_recursive(self):
         folder = QFileDialog.getExistingDirectory(
@@ -201,7 +243,8 @@ class DiscoveryControllerMixin:
         )
         if not folder:
             return
-        self._start_discovery([folder])
+        safety = "metadata" if self._confirm_checkpoint_discovery([folder]) else "reject"
+        self._start_discovery([folder], checkpoint_safety=safety)
 
 
 DiscoveryMixin = DiscoveryControllerMixin

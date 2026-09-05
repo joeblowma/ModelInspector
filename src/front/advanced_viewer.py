@@ -442,7 +442,7 @@ class AdvancedViewerDialog(QDialog):
         if self._projection is None:
             self._recalculate()
         assert self._projection is not None
-        text = runtime_configuration(self._projection, self._facts)
+        text = runtime_configuration(self._projection, self._facts, self._inspection)
         self._last_configuration = text
         app = cast(QApplication | None, QApplication.instance())
         if app is not None and app.clipboard() is not None:

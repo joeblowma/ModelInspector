@@ -58,6 +58,45 @@ completed foundation does not imply that every refinement in `TODO.md` is done.
   `add_k_proj`/`add_q_proj` markers; add header-only regression coverage without
   loading model payloads.
 
+## 2026-09-04 — File Readers, Model Formats, Sharding, and Sidecars
+
+**Completed:** Added bounded metadata-only ONNX inspection; explicit metadata-safe
+checkpoint handling that never deserializes pickle payloads; and a shared reader
+registry abstraction. GGUF and safetensors shard sets retain aggregate and
+original-order data, shard IDs, and byte sizes. Explorer and Advanced Viewer
+support ordering, shard grouping, and size tooltips. Six sidecar roles are
+discovered as separate records with compact primary identities and runtime paths.
+
+### Additional model formats
+
+- [x] Add bounded metadata-only `.onnx` inspection.
+- [x] Add `.ckpt`, `.pt`, and `.pth` dispatch behind an explicit metadata-safety
+  model; never deserialize pickle payloads.
+- [x] Keep optional third-party reader libraries behind the shared reader
+  abstraction when they improve safety or coverage.
+
+### Sharded models and original ordering
+
+- [x] Support sharded `.gguf` and `.safetensors` sets such as
+  `*00001-of-00004*`.
+- [x] Preserve original tensor/layer/block order in addition to the current sorted
+  presentation.
+- [x] Record the shard index for every tensor or block (`shard_id = 0` for
+  non-sharded models).
+- [x] In Explorer and Advanced Viewer, allow sorted versus original-order display
+  and visually group original-order rows by shard.
+- [x] Calculate tensor or block byte size for raw output and tooltips in Advanced
+  Viewer.
+
+### Sidecar discovery and association
+
+- [x] Detect `mmproj`, `dflash`, `dspark`, `eagle`, `draft`, and MTP sidecars beside
+  the primary model.
+- [x] Store full sidecar inspection records separately while keeping enough
+  identity metadata on the primary model to detect changes quickly.
+- [x] Tag the primary model with discovered sidecar roles and include associated
+  paths in copied runtime configurations.
+
 ## Discovery, Filtering, Progress, and Concurrency
 
 - [x] Add separate file-format and architecture/type filters.

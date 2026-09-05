@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from PyQt6.QtCore import QRegularExpression, Qt, QSortFilterProxyModel, pyqtSignal
-from PyQt6.QtGui import QStandardItem, QStandardItemModel
+from PyQt6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -40,7 +40,7 @@ from .explorer_data import (
 
 __all__ = ["ExplorerTab", "TENSOR_COLUMNS", "normalize_tensor_descriptors", "detect_embedded_content"]
 
-TENSOR_COLUMNS = ("Name", "Shape", "Dtype", "Component Bucket", "Parameter Count")
+TENSOR_COLUMNS = ("Name", "Shape", "Dtype", "Component Bucket", "Shard", "Size", "Parameter Count")
 _MAX_DETAIL_TEXT = 8000
 
 
@@ -61,6 +61,21 @@ def _display_count(value: Any) -> str:
     except (TypeError, ValueError, OverflowError):
         return "-"
     return f"{parsed:,}" if abs(parsed) <= 10**30 else "-"
+
+
+def _friendly_bytes(value: int | None) -> str:
+    if value is None:
+        return "-"
+    amount = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if amount < 1024 or unit == "TiB":
+            return f"{int(amount):,} {unit}" if unit == "B" else f"{amount:.2f} {unit}"
+        amount /= 1024
+    return "-"
+
+
+def _display_shard(shard_id: int) -> str:
+    return "Single file (0)" if shard_id == 0 else f"Shard {shard_id}"
 
 
 class _TensorProxy(QSortFilterProxyModel):
@@ -113,6 +128,7 @@ class ExplorerTab(QWidget):
         super().__init__(parent)
         self._inspection: dict[str, Any] = {}
         self._records: list[dict[str, Any]] = []
+        self._all_records: list[dict[str, Any]] = []
         self._metadata_rows: list[dict[str, Any]] = []
         self._embedded_candidates: list[dict[str, Any]] = []
         self._payload_available = False
@@ -170,6 +186,12 @@ class ExplorerTab(QWidget):
         self.tensor_bucket_filter.setToolTip("Limit tensor rows to one detected component bucket.")
         self.tensor_bucket_filter.currentIndexChanged.connect(self._filter_tensor_bucket)
         tensor_controls.addWidget(self.tensor_bucket_filter)
+        self.tensor_order_combo = QComboBox()
+        self.tensor_order_combo.addItem("Sorted", "sorted")
+        self.tensor_order_combo.addItem("Original file order", "original")
+        self.tensor_order_combo.setToolTip("Sorted mode remains sortable; original mode preserves header order and shades shard groups.")
+        self.tensor_order_combo.currentIndexChanged.connect(self._render_tensors)
+        tensor_controls.addWidget(self.tensor_order_combo)
         tensor_layout.addLayout(tensor_controls)
         self.tensor_model = QStandardItemModel(0, len(TENSOR_COLUMNS), self)
         self.tensor_model.setHorizontalHeaderLabels(list(TENSOR_COLUMNS))
@@ -259,48 +281,91 @@ class ExplorerTab(QWidget):
         for key in ("architecture", "model_type", "format", "quantization", "tensor_count", "total_params", "precision_summary"):
             if key in self._inspection:
                 metadata[f"inspection.{key}"] = self._inspection[key]
+        for key in ("sidecar_roles", "sidecar_paths", "sidecar_identities", "sidecars", "sidecar_records", "sidecar_inspections"):
+            if key in self._inspection:
+                metadata[f"associated_sidecars.{key}"] = self._inspection[key]
         self._metadata_rows = flatten_metadata(metadata)
         self._render_metadata()
-        self.set_tensor_data(tensor_data if tensor_data is not None else {})
+        self.set_tensor_data(
+            tensor_data if tensor_data is not None else {},
+            original_tensor_order=self._inspection.get("original_tensor_order"),
+            sorted_tensor_order=self._inspection.get("sorted_tensor_order"),
+        )
         self._embedded_candidates = detect_embedded_content(self._inspection, self._records)
         self._render_embedded()
         self._update_status()
 
-    def set_tensor_data(self, tensor_data: Any, *, payload_available: bool | None = None) -> None:
+    def set_tensor_data(
+        self,
+        tensor_data: Any,
+        *,
+        payload_available: bool | None = None,
+        original_tensor_order: Any = None,
+        sorted_tensor_order: Any = None,
+    ) -> None:
         """Replace displayed tensor headers; this never reads tensor payloads."""
         if payload_available is not None:
             self._payload_available = bool(payload_available)
-        self._records = normalize_tensor_descriptors(tensor_data)
-        self.tensor_model.removeRows(0, self.tensor_model.rowCount())
-        buckets = sorted({str(record["component_bucket"]) for record in self._records if record.get("component_bucket")})
+        self._all_records = normalize_tensor_descriptors(tensor_data)
+        original_positions = self._order_positions(original_tensor_order)
+        sorted_positions = self._order_positions(sorted_tensor_order)
+        for index, record in enumerate(self._all_records):
+            record["original_index"] = record["original_index"] if record["original_index"] is not None else original_positions.get(record["name"], index)
+            record["sorted_index"] = sorted_positions.get(record["name"], index)
+        buckets = sorted({str(record["component_bucket"]) for record in self._all_records if record.get("component_bucket")})
         self.tensor_bucket_filter.blockSignals(True)
         self.tensor_bucket_filter.clear()
         self.tensor_bucket_filter.addItem("All component buckets", "")
         for bucket in buckets:
             self.tensor_bucket_filter.addItem(bucket, bucket)
         self.tensor_bucket_filter.blockSignals(False)
+        self._render_tensors()
+        self._embedded_candidates = detect_embedded_content(self._inspection, self._records)
+        self._render_embedded()
+        self._update_status()
+
+    @staticmethod
+    def _order_positions(order: Any) -> dict[str, int]:
+        if not isinstance(order, (list, tuple)):
+            return {}
+        return {str(name): index for index, name in enumerate(order)}
+
+    def _render_tensors(self, *_args: Any) -> None:
+        original_mode = self.tensor_order_combo.currentData() == "original"
+        if original_mode:
+            self._records = sorted(self._all_records, key=lambda row: (int(row["shard_id"]), int(row["original_index"]), row["name"].casefold()))
+        else:
+            self._records = sorted(self._all_records, key=lambda row: (int(row["sorted_index"]), row["name"].casefold()))
+        self.tensor_table.setSortingEnabled(not original_mode)
+        self.tensor_model.removeRows(0, self.tensor_model.rowCount())
         for record in self._records:
             values = (
                 record["name"],
                 _safe_display(list(record["shape"]), 240) if record["shape"] else "-",
                 record["dtype"],
                 record["component_bucket"],
+                _display_shard(record["shard_id"]),
+                _friendly_bytes(record["n_bytes"]),
                 _display_count(record["parameter_count"]),
             )
             items = [QStandardItem(str(value)) for value in values]
             for index, item in enumerate(items):
-                item.setData(record["parameter_count"] if index == 4 else values[index], Qt.ItemDataRole.UserRole)
-                item.setToolTip("Header-derived value; payload is not loaded.")
+                sort_value = record["parameter_count"] if index == 6 else record["n_bytes"] if index == 5 else record["shard_id"] if index == 4 else values[index]
+                item.setData(sort_value, Qt.ItemDataRole.UserRole)
+                item.setData(record["shard_id"], Qt.ItemDataRole.UserRole + 1)
+                raw_bytes = record["n_bytes"]
+                size_detail = "Raw bytes: unavailable" if raw_bytes is None else f"Raw bytes: {raw_bytes:,} bytes; display: {_friendly_bytes(raw_bytes)}"
+                item.setToolTip(f"{size_detail}. Header-derived value; payload is not loaded.")
+                if original_mode:
+                    item.setBackground(QColor("#25303b") if record["shard_id"] % 2 else QColor("#202a34"))
             self.tensor_model.appendRow(items)
         self.tensor_proxy.invalidateFilter()
-        self._embedded_candidates = detect_embedded_content(self._inspection, self._records)
-        self._render_embedded()
-        self._update_status()
 
     def clear(self) -> None:
         """Clear all displayed inspection, header, and candidate state."""
         self._inspection = {}
         self._records = []
+        self._all_records = []
         self._metadata_rows = []
         self._embedded_candidates = []
         self._payload_available = False

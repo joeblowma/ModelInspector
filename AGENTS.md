@@ -12,7 +12,7 @@ This is a small Python desktop/CLI utility for inspecting various language and d
   - `model_readers.py` Read-only model file readers and discovery helpers
   - `modelinfo.py` Model-info dump helpers for Model Inspector
   - `front/` GUI presentation and application layer: `application` bootstraps Qt and applies themes; `window_core`, `window_layout`, and `window_lifecycle` compose `MainWindow`; `analysis_controller`, `discovery_controller`, `selection_controller`, `startup_cache_controller`, `view_controller`, and `integration_controller` manage UI workflows; `explorer_tab`/`explorer_data` provide header-only inspection exploration; `advanced_viewer` provides live resource projections; `settings_data_tab` owns Data column/theme editing, with `settings_data_support` holding its durable row state and native drag controls; `cache_identity` is the read-only bridge projecting persisted cache identity metadata for cache verification and background sync; `model_card`, `filter_widgets`, `settings_dialog`, and `scan_projection` provide reusable widgets, dialogs, and scan-event delivery.
-  - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `estimator`, `theme_loader`, `settings_store`, and `cache_verifier` provide UI-safe backend services; `reporting` writes reports; `inspection_summary` supplies compact GUI-facing result state.
+  - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `reader_registry`, `checkpoint_reader`, and `onnx_reader` provide safe format-reader dispatch; `shard_discovery` and `sidecar_discovery` discover associated files; `cache_storage` persists cache records; `estimator`, `theme_loader`, `settings_store`, and `cache_verifier` provide UI-safe backend services; `reporting` writes reports; `inspection_summary` supplies compact GUI-facing result state.
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
@@ -51,6 +51,12 @@ Existing tests:
 - `.\tests\test_settings_data_tab.py`
 - `.\tests\test_backend_phase2.py`
 - `.\tests\test_phase4_integration.py`
+- `.\tests\test_reader_registry.py`
+- `.\tests\test_onnx_reader.py`
+- `.\tests\test_shard_discovery.py`
+- `.\tests\test_sidecar_discovery.py`
+- `.\tests\test_cache_sidecar_integration.py`
+- `.\tests\test_reporting_shards.py`
 
 ## Agent-Specific Instructions
 
@@ -60,5 +66,5 @@ Existing tests:
 ### Guardrails & Limits
 
 - **Hard Module Ceiling (500 Lines)**: Any generated or extracted file exceeding 500 lines is automatically flagged as an invalid God Node. It must immediately be queued for a second split by a worker before progressing to linkage repair. No "cohesive file exceptions" without explicit Lead Architect approval.
-- **Model Type Enforcement**: Before spawning subagents, verify that requested subagent models map strictly to `luna-medium`, `luna-xhigh`, `terra-medium`, or `terra-high`. If a model alias resolves incorrectly or defaults to `sol-medium`, halt execution immediately.
+- **Model Type Enforcement**: Before spawning subagents, verify that requested subagent models map strictly to `luna-medium`, `luna-xhigh`, `terra-medium`, `terra-high`, `deepseek-v4-pro-medium`, `deepseek-v4-flash-high` or `Qwen3_6-27B-A3B-Coder-MTP_Q5_K-medium`. If a model alias resolves incorrectly or defaults to `sol-medium`, halt execution immediately.
 - **Wrapper Boundary Policy**: Entry-point wrappers (`gui.py`, `inspect_model.py`) may contain thin re-exports, MRO composition, and compatibility hooks, but zero domain logic.

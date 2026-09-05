@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-SUPPORTED_MODEL_EXTENSIONS = (".safetensors", ".gguf")
+SUPPORTED_MODEL_EXTENSIONS = (".safetensors", ".gguf", ".onnx")
 CHECKPOINT_MODEL_EXTENSIONS = (".ckpt", ".pt", ".pth")
 CHECKPOINT_FORMAT_WARNING = (
     "PyTorch checkpoint formats (.ckpt, .pt, .pth) can require pickle "
@@ -73,7 +73,10 @@ OBSOLETE_GGML_QUANT_IDS = {4, 5, 31, 32, 33, 36, 37, 38}
 
 
 def is_supported_model_path(path: str | Path) -> bool:
-    return Path(path).suffix.lower() in SUPPORTED_MODEL_EXTENSIONS
+    lower = str(path).lower()
+    return lower.endswith(SUPPORTED_MODEL_EXTENSIONS) or lower.endswith(
+        ".safetensors.index.json"
+    )
 
 
 def is_checkpoint_model_path(path: str | Path) -> bool:
@@ -81,12 +84,15 @@ def is_checkpoint_model_path(path: str | Path) -> bool:
 
 
 def model_format_for_path(path: str | Path) -> str:
+    if str(path).lower().endswith(".safetensors.index.json"):
+        return "SAFETENSORS"
     suffix = Path(path).suffix.lower().lstrip(".")
     return suffix.upper() if suffix else "UNKNOWN"
 
 
-def read_safetensors_header(filepath: str):
+def read_safetensors_header(filepath: str, *, options: dict | None = None):
     """Read safetensors header without loading tensor data."""
+    del options
     file_size = os.path.getsize(filepath)
 
     with open(filepath, "rb") as f:
@@ -100,17 +106,58 @@ def read_safetensors_header(filepath: str):
 
     metadata = header.pop("__metadata__", {})
     _add_common_metadata(metadata, filepath)
-    tensor_info = header
+    tensor_info = {}
+    for name, descriptor in header.items():
+        if not isinstance(descriptor, dict):
+            continue
+        normalized = dict(descriptor)
+        offsets = normalized.get("data_offsets")
+        if "n_bytes" not in normalized and isinstance(offsets, (list, tuple)):
+            if len(offsets) == 2:
+                try:
+                    normalized["n_bytes"] = max(0, int(offsets[1]) - int(offsets[0]))
+                except (TypeError, ValueError):
+                    pass
+        normalized.setdefault("shard_id", 0)
+        tensor_info[str(name)] = normalized
     return metadata, tensor_info, file_size
 
 
-def read_model_header(filepath: str):
-    suffix = Path(filepath).suffix.lower()
-    if suffix == ".safetensors":
-        return read_safetensors_header(filepath)
-    if suffix == ".gguf":
-        return read_gguf_header(filepath)
-    raise ValueError(f"Unsupported model format: {suffix or '(none)'}")
+def read_model_header(
+    filepath: str,
+    options: dict | str | None = None,
+    *,
+    checkpoint_safety: str | None = None,
+    safety: str | None = None,
+):
+    """Read a format header through the shared lazy reader registry.
+
+    ``checkpoint_safety`` is intentionally explicit.  It defaults to reject;
+    ``metadata`` is the only supported opt-in and never deserializes pickle.
+    The historical one-argument call remains unchanged.
+    """
+    if isinstance(options, str):
+        if checkpoint_safety is None:
+            checkpoint_safety = options
+        options = None
+    if checkpoint_safety is None:
+        checkpoint_safety = safety or (options or {}).get("checkpoint_safety", "reject")
+    from back.shard_discovery import discover_shard_set, is_safetensors_index_path
+
+    if is_safetensors_index_path(filepath) and not discover_shard_set(filepath):
+        raise ValueError(
+            "Safetensors shard manifest is invalid or has no available in-directory shards"
+        )
+    from back.checkpoint_reader import normalize_checkpoint_safety
+
+    checkpoint_safety = normalize_checkpoint_safety(checkpoint_safety)
+    from back.reader_registry import get_reader_registry
+
+    return get_reader_registry().read(
+        filepath,
+        options=options,
+        checkpoint_safety=checkpoint_safety,
+    )
 
 
 def _add_common_metadata(metadata: dict, filepath: str):
@@ -151,8 +198,9 @@ def _to_jsonable(value):
     return value
 
 
-def read_gguf_header(filepath: str):
+def read_gguf_header(filepath: str, *, options: dict | None = None):
     """Read GGUF metadata and tensor descriptors without touching tensor payloads."""
+    del options
     try:
         return _read_gguf_header_fast(filepath)
     except Exception:
@@ -179,6 +227,7 @@ def _read_gguf_header_with_library(filepath: str):
             "dtype": tensor.tensor_type.name,
             "shape": [int(dim) for dim in tensor.shape.tolist()],
             "n_bytes": int(tensor.n_bytes),
+            "shard_id": 0,
             "data_offsets": [
                 int(tensor.data_offset),
                 int(tensor.data_offset + tensor.n_bytes),
@@ -333,15 +382,13 @@ def _read_gguf_header_fast(filepath: str):
             dtype_name = GGMLQuantizationType(raw_dtype).name
         except ValueError:
             dtype_name = GGML_QUANT_NAMES.get(raw_dtype, f"GGML_TYPE_{raw_dtype}")
-        n_elements = 1
-        for dim in dims:
-            n_elements *= dim
         n_bytes = relative_sizes.get(name, 0)
         start = data_offset + relative_offset
         tensor_info[name] = {
             "dtype": dtype_name,
             "shape": [int(dim) for dim in dims],
             "n_bytes": int(n_bytes),
+            "shard_id": 0,
             "data_offsets": [int(start), int(start + n_bytes)],
         }
 
@@ -391,37 +438,50 @@ def iter_model_paths(
     recursive: bool,
     extensions: tuple[str, ...] = SUPPORTED_MODEL_EXTENSIONS,
 ) -> list[str]:
+    from back.shard_discovery import (
+        discoverable_primary_path,
+        is_safetensors_index_path,
+    )
+    from back.sidecar_discovery import is_probable_sidecar_path
+
     found = []
     seen = set()
     normalized_extensions = tuple(ext.lower() for ext in extensions)
 
+    def matches(path: Path) -> bool:
+        if is_safetensors_index_path(path):
+            return ".safetensors" in normalized_extensions
+        return path.suffix.lower() in normalized_extensions
+
+    def add(path: Path) -> None:
+        if not matches(path) or is_probable_sidecar_path(path):
+            return
+        canonical: str = str(path)
+        try:
+            if not path.is_file() and not path.is_symlink():
+                return
+            discovered = discoverable_primary_path(path)
+            if discovered is None:
+                return
+            canonical = discovered
+            resolved = str(Path(canonical).resolve(strict=True))
+        except OSError:
+            resolved = str(Path(canonical).absolute())
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        found.append(str(canonical if canonical != str(path) else path))
+
     for raw in targets:
         p = Path(raw)
         if p.is_file() or p.is_symlink():
-            if p.suffix.lower() in normalized_extensions:
-                try:
-                    resolved = str(p.resolve(strict=True))
-                except OSError:
-                    resolved = str(p.absolute())
-                if resolved not in seen:
-                    seen.add(resolved)
-                    found.append(str(p))
+            add(p)
             continue
 
         if p.is_dir():
             iterator = p.rglob("*") if recursive else p.glob("*")
             for fp in iterator:
-                if fp.suffix.lower() not in normalized_extensions:
-                    continue
-                if not fp.is_file() and not fp.is_symlink():
-                    continue
-                try:
-                    resolved = str(fp.resolve(strict=True))
-                except OSError:
-                    resolved = str(fp.absolute())
-                if resolved not in seen:
-                    seen.add(resolved)
-                    found.append(str(fp))
+                add(fp)
 
     return found
 

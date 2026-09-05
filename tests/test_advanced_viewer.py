@@ -100,6 +100,49 @@ def test_viewer_is_parent_owned_window_modal_and_hosts_explorer():
     parent.close()
 
 
+def test_viewer_exposes_sidecars_and_copies_their_paths_in_configuration():
+    _app()
+    dialog = AdvancedViewerDialog(
+        {
+            "sidecar_roles": ["mmproj"],
+            "sidecar_paths": ["R:/models/model-mmproj.gguf"],
+            "tensor_info": {"layer.weight": {"shape": [2], "dtype": "F16", "shard_id": 0}},
+        }
+    )
+
+    metadata = {
+        dialog.explorer_tab.metadata_table.item(row, 0).text(): dialog.explorer_tab.metadata_table.item(row, 1).text()
+        for row in range(dialog.explorer_tab.metadata_table.rowCount())
+    }
+    assert metadata["associated_sidecars.sidecar_roles"] == '["mmproj"]'
+    assert "model-mmproj.gguf" in dialog.copy_configuration()
+    assert dialog.explorer_tab.tensor_order_combo.count() == 2
+    dialog.close()
+
+
+def test_embedded_explorer_switches_order_groups_shards_and_keeps_byte_tooltips():
+    _app()
+    dialog = AdvancedViewerDialog({
+        "sidecar_roles": ["mmproj", "draft"],
+        "sidecar_paths": ["R:/models/model-mmproj.gguf", "R:/models/model-draft.gguf"],
+        "original_tensor_order": ["second", "first"],
+        "sorted_tensor_order": ["first", "second"],
+        "tensor_info": {
+            "first": {"shape": [2], "dtype": "F16", "shard_id": 2, "n_bytes": 16},
+            "second": {"shape": [3], "dtype": "F16", "shard_id": 1, "n_bytes": 24},
+        },
+    })
+    explorer = dialog.explorer_tab
+    assert [explorer.tensor_model.item(row, 0).text() for row in range(2)] == ["first", "second"]
+    assert explorer.tensor_model.item(0, 4).text() == "Shard 2"
+    assert "Raw bytes: 16 bytes; display: 16 B" in explorer.tensor_model.item(0, 5).toolTip()
+    explorer.tensor_order_combo.setCurrentIndex(1)
+    assert [explorer.tensor_model.item(row, 0).text() for row in range(2)] == ["second", "first"]
+    copied = dialog.copy_configuration()
+    assert "model-mmproj.gguf" in copied and "model-draft.gguf" in copied
+    dialog.close()
+
+
 def test_card_details_honor_detailed_preferences_and_metadata_stays_spacious():
     app = _app()
     dialog = AdvancedViewerDialog(

@@ -41,6 +41,32 @@ def _resolve_display_path(filepath: str) -> str:
         return str(Path(filepath).absolute())
 
 
+def _descriptor_bytes(descriptor: object) -> int | None:
+    if not isinstance(descriptor, dict):
+        return None
+    value = descriptor.get("n_bytes")
+    if value is None:
+        offsets = descriptor.get("data_offsets")
+        if isinstance(offsets, (list, tuple)) and len(offsets) == 2:
+            try:
+                value = int(offsets[1]) - int(offsets[0])
+            except (TypeError, ValueError, OverflowError):
+                value = None
+    try:
+        return max(0, int(value)) if value is not None else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _descriptor_shard_id(descriptor: object) -> int:
+    if not isinstance(descriptor, dict):
+        return 0
+    try:
+        return int(descriptor.get("shard_id", 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: int):
     """Print the traditional terminal report for an already-read model header."""
     keys = sorted(tensor_info.keys(), key=_numeric_sort_key)
@@ -124,6 +150,21 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
             )
         else:
             print("  >> Mixed precision model")
+
+    print("\n  Original tensor/block order:")
+    for order, key in enumerate(tensor_info, 1):
+        print(f"    {order:>6}. {key}")
+
+    print("\n  Tensor/block details (sorted presentation):")
+    for key in keys:
+        descriptor = tensor_info.get(key, {})
+        shape = descriptor.get("shape", []) if isinstance(descriptor, dict) else []
+        dtype = descriptor.get("dtype", "?") if isinstance(descriptor, dict) else "?"
+        n_bytes = _descriptor_bytes(descriptor)
+        print(
+            f"    {key}  {shape}  [{dtype}]  n_bytes={n_bytes if n_bytes is not None else '?'}"
+            f"  shard_id={_descriptor_shard_id(descriptor)}"
+        )
 
     if metadata:
         print("\n  Embedded metadata:")

@@ -18,7 +18,7 @@ _DESCRIPTOR_KEYS = frozenset(
     {
         "name", "shape", "dims", "dimensions", "dtype", "data_type", "tensor_type", "type",
         "parameter_count", "num_parameters", "numel", "n_elements", "n_params", "n_bytes", "component",
-        "component_bucket",
+        "component_bucket", "shard_id", "original_index", "data_offsets", "offsets", "byte_offsets",
     }
 )
 
@@ -120,6 +120,38 @@ def _looks_like_descriptor(value: Any) -> bool:
     return isinstance(value, Mapping) and bool(_DESCRIPTOR_KEYS.intersection(value))
 
 
+def _dtype_byte_width(dtype: str) -> int | None:
+    """Return a conservative element width for common header dtype spellings."""
+    normalized = dtype.lower().replace("_", "").replace("-", "")
+    widths = {
+        "f64": 8, "float64": 8, "double": 8, "i64": 8, "int64": 8, "u64": 8,
+        "f32": 4, "float32": 4, "float": 4, "i32": 4, "int32": 4, "u32": 4,
+        "f16": 2, "float16": 2, "half": 2, "bf16": 2, "bfloat16": 2,
+        "i16": 2, "int16": 2, "u16": 2,
+        "f8": 1, "float8": 1, "i8": 1, "int8": 1, "u8": 1, "uint8": 1,
+        "bool": 1, "boolean": 1,
+    }
+    return widths.get(normalized)
+
+
+def _descriptor_bytes(fields: Mapping[str, Any], count: int | None, dtype: str) -> int | None:
+    """Use descriptor facts only; never load data to determine a row's size."""
+    explicit = _safe_int(fields.get("n_bytes"))
+    if explicit is not None and explicit >= 0:
+        return explicit
+    for key in ("data_offsets", "offsets", "byte_offsets"):
+        offsets = fields.get(key)
+        if isinstance(offsets, Sequence) and not isinstance(offsets, (str, bytes, bytearray)) and len(offsets) >= 2:
+            start, end = _safe_int(offsets[0]), _safe_int(offsets[1])
+            if start is not None and end is not None and end >= start:
+                return end - start
+    width = _dtype_byte_width(dtype)
+    if count is not None and count >= 0 and width is not None:
+        size = count * width
+        return size if size <= _MAX_INTEGER else None
+    return None
+
+
 def _one_tensor(name: Any, descriptor: Any) -> dict[str, Any]:
     fields = descriptor if isinstance(descriptor, Mapping) else {}
     actual_name = fields.get("name", name)
@@ -136,14 +168,20 @@ def _one_tensor(name: Any, descriptor: Any) -> dict[str, Any]:
             parameter_count = computed if computed <= _MAX_INTEGER else None
         except (OverflowError, ValueError):
             parameter_count = None
+    dtype = _dtype_text(fields.get("dtype", fields.get("data_type", fields.get("tensor_type", fields.get("type")))))
+    shard_id = _safe_int(fields.get("shard_id", 0))
+    original_index = _safe_int(fields.get("original_index"))
     bucket = fields.get("component_bucket", fields.get("component", fields.get("bucket")))
     bucket_text = _safe_text(bucket, 100).strip().lower() if bucket is not None else ""
     return {
         "name": tensor_name,
         "shape": shape,
-        "dtype": _dtype_text(fields.get("dtype", fields.get("data_type", fields.get("tensor_type", fields.get("type"))))),
+        "dtype": dtype,
         "component_bucket": bucket_text or _bucket_for_name(tensor_name),
         "parameter_count": parameter_count,
+        "n_bytes": _descriptor_bytes(fields, parameter_count, dtype),
+        "shard_id": shard_id if shard_id is not None else 0,
+        "original_index": original_index,
         "raw": _bounded_value(descriptor),
     }
 

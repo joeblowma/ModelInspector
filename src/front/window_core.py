@@ -22,9 +22,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication,
-    QFileDialog,
     QMenu,
-    QMessageBox,
 )
 
 from app_paths import legacy_settings_path, settings_path
@@ -55,15 +53,13 @@ def _combo_data_str(value) -> str | None:
 
 
 def _model_file_filter() -> str:
-    patterns = " ".join(f"*{ext}" for ext in SUPPORTED_MODEL_EXTENSIONS)
+    patterns = " ".join((*[f"*{ext}" for ext in SUPPORTED_MODEL_EXTENSIONS], "*.safetensors.index.json"))
     checkpoint_patterns = " ".join(
-        f"*{ext}"
-        for ext in MODEL_FORMAT_FILTERS
-        if ext not in SUPPORTED_MODEL_EXTENSIONS
+        f"*{ext}" for ext in MODEL_FORMAT_FILTERS if ext not in SUPPORTED_MODEL_EXTENSIONS
     )
     return (
         f"Supported Model Files ({patterns});;"
-        f"Checkpoint Files - unsafe/unsupported ({checkpoint_patterns});;"
+        f"Checkpoint Files - metadata-only after safety confirmation ({checkpoint_patterns});;"
         "All Files (*)"
     )
 
@@ -130,6 +126,7 @@ class WindowCoreMixin:
         self._analysis_total_count = 0
         self._analysis_bytes_scanned = 0
         self._scan_cancel_requested = False
+        self._checkpoint_metadata_paths: set[str] = set()
         self._startup_cache_load_cancelled = False
         self._startup_sort_restore: tuple[bool, int, Qt.SortOrder] | None = None
         self._progress_status_generation = 0
@@ -287,7 +284,7 @@ class WindowCoreMixin:
             return
         paths = []
         folders = []
-        unsupported = []
+        checkpoints = []
         for url in mime_data.urls():
             fp = url.toLocalFile()
             if not fp:
@@ -298,11 +295,12 @@ class WindowCoreMixin:
             elif is_supported_model_path(fp):
                 paths.append(fp)
             elif is_checkpoint_model_path(fp):
-                unsupported.append(fp)
-        if unsupported:
-            self._warn_unsupported_checkpoint_files(unsupported)
+                checkpoints.append(fp)
+        confirmed = self._confirm_checkpoint_metadata_only(checkpoints)
+        paths.extend(confirmed)
         if folders:
-            self._start_discovery(folders, paths)
+            safety = "metadata" if self._confirm_checkpoint_discovery(folders) else "reject"
+            self._start_discovery(folders, paths, checkpoint_safety=safety)
             a0.acceptProposedAction()
         elif paths:
             self._add_files(paths)

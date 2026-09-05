@@ -21,12 +21,24 @@ from model_cache import (
 from model_readers import (
     LLAMA_FILE_TYPE_NAMES,
     analyze_tensors,
+    is_checkpoint_model_path,
     model_format_for_path,
     read_model_header,
 )
 
 from .adapter_detection import detect_adapter_type
 from .architecture_metadata import detect_architecture
+from .checkpoint_reader import (
+    CHECKPOINT_SAFETY_REJECT,
+    UnsafeCheckpointError,
+    normalize_checkpoint_safety,
+)
+from .sidecar_discovery import (
+    SidecarRecord,
+    discover_sidecars,
+    sidecar_identity_snapshot,
+)
+from .shard_discovery import discover_shard_set
 from .model_classification import (
     _apply_filename_alias_detection,
     _extract_training_meta,
@@ -140,22 +152,93 @@ def _build_extra_metadata(metadata: dict, training_meta: dict, adapter_type, moe
     return extra
 
 
-def inspect_file(filepath: str, options: dict | None = None) -> dict:
+def _dynamic_identity_matches(
+    cached: dict,
+    shard_set,
+    sidecars: tuple[SidecarRecord, ...],
+    include_sidecars: bool,
+) -> bool:
+    """Keep companion-file changes from being hidden by the primary cache key."""
+    if shard_set and cached.get("shard_identity") != shard_set.identity():
+        return False
+    if not include_sidecars:
+        return True
+    cached_sidecars = cached.get("sidecar_identities")
+    return cached_sidecars == sidecar_identity_snapshot(sidecars)
+
+
+def _attach_sidecars(
+    result: dict,
+    filepath: str,
+    options: dict,
+    sidecars: tuple[SidecarRecord, ...],
+) -> None:
+    """Attach compact identities and separate full records without recursion."""
+    result["sidecar_identities"] = sidecar_identity_snapshot(sidecars)
+    result["sidecar_roles"] = [record.role for record in sidecars]
+    result["sidecar_paths"] = [record.path for record in sidecars]
+    records = []
+    child_options = dict(options)
+    child_options["include_sidecars"] = False
+    child_options["_sidecar_inspection"] = True
+    for record in sidecars:
+        try:
+            child = inspect_file(record.path, options=child_options)
+        except Exception as exc:
+            child = {
+                "filepath": record.path,
+                "filename": Path(record.path).name,
+                "format": model_format_for_path(record.path),
+                "warnings": [f"Sidecar inspection failed: {exc}"],
+            }
+        child["sidecar_role"] = record.role
+        child["sidecar_path"] = record.path
+        records.append(child)
+    result["sidecars"] = records
+    result["sidecar_inspections"] = records
+
+
+def inspect_file(
+    filepath: str,
+    options: dict | None = None,
+    *,
+    checkpoint_safety: str | None = None,
+) -> dict:
     """Analyze one model header and return the structured inspection result."""
-    options = options or {}
+    options = dict(options or {})
+    if checkpoint_safety is not None:
+        options["checkpoint_safety"] = checkpoint_safety
+    checkpoint_safety = normalize_checkpoint_safety(
+        options.get("checkpoint_safety", CHECKPOINT_SAFETY_REJECT)
+    )
+    if is_checkpoint_model_path(filepath) and checkpoint_safety == CHECKPOINT_SAFETY_REJECT:
+        raise UnsafeCheckpointError(
+            f"Refusing checkpoint inspection for {filepath!r}; pass "
+            "checkpoint_safety='metadata' to enable safe metadata-only inspection"
+        )
+    options["checkpoint_safety"] = checkpoint_safety
+    include_sidecars = not options.get("_sidecar_inspection") and options.get(
+        "include_sidecars", True
+    )
+    shard_set = discover_shard_set(filepath)
+    sidecar_base = shard_set.primary_path if shard_set else filepath
+    sidecars = discover_sidecars(sidecar_base) if include_sidecars else ()
     cached = get_cached_inspection(filepath, options)
-    if cached is not None:
+    if cached is not None and _dynamic_identity_matches(
+        cached, shard_set, sidecars, include_sidecars
+    ):
         return _refresh_cached_result(filepath, cached)
 
     allow_aliases = bool(options.get("allow_filename_alias_detection", False))
-    metadata, tensor_info, file_size = read_model_header(filepath)
+    metadata, tensor_info, file_size = read_model_header(filepath, options)
     if options.get("cache_full_data", False):
         store_model_data(filepath, metadata, tensor_info, file_size, options)
 
     resolved_filepath = _resolve_display_path(filepath)
     file_format = metadata.get("smi.format") or model_format_for_path(filepath)
     quantization = metadata.get("smi.quantization")
-    keys = sorted(tensor_info.keys(), key=_numeric_sort_key)
+    original_keys = list(tensor_info.keys())
+    keys = sorted(original_keys, key=_numeric_sort_key)
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
     components["vision"] = has_vision_component(keys)
@@ -198,6 +281,11 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         "file_size": file_size,
         "file_size_friendly": format_size(file_size),
         "tensor_count": len(tensor_info),
+        "tensor_order": original_keys,
+        "original_tensor_order": original_keys,
+        "original_order": original_keys,
+        "sorted_tensor_order": keys,
+        "sorted_order": keys,
         "total_params": total_params,
         "total_params_friendly": format_params(total_params),
         "architecture": architecture,
@@ -221,5 +309,11 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         "extra": extra,
         "warnings": warnings,
     }
+    shard_manifest = metadata.get("smi.shard_manifest")
+    if isinstance(shard_manifest, dict):
+        result["shard_manifest"] = shard_manifest
+        result["shard_identity"] = metadata.get("smi.shard_identity")
+    if include_sidecars:
+        _attach_sidecars(result, filepath, options, sidecars)
     store_cached_inspection(filepath, result, options)
     return result

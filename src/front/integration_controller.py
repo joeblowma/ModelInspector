@@ -357,12 +357,31 @@ class IntegrationMixin:
         self._load_cache_status("historic")
 
     def _verify_cached_file_paths(self) -> None:
-        """Verify cached file paths and surface a completion summary."""
+        """Verify cached file paths and surface a completion summary.
+
+        Shows initial progress, derives missing/archive vs changed/refresh
+        counts from the actual verifier action values, schedules changed
+        entries through the existing background cache sync mechanism (without
+        inspecting missing historic entries), and refreshes cache controls
+        on completion.
+        """
+        self._set_progress_status("Verifying cached file paths...")
         report = self._cache_report()
         availability = report.availability
         action_plan = report.action_plan
-        archived = sum(1 for e in action_plan if e.is_historic)
-        changed = sum(1 for e in action_plan if e.is_active)
+        archived = sum(1 for e in action_plan if e.action == "archive")
+        changed = sum(1 for e in action_plan if e.action == "refresh")
+
+        # Schedule changed entries through the existing sync mechanism.
+        # _schedule_cache_sync guards against duplicate workers internally.
+        if changed:
+            self._schedule_cache_sync()
+            # Refresh cache controls when the sync worker finishes.
+            worker = getattr(self, "_cache_sync_worker", None)
+            if worker is not None:
+                worker.all_done.connect(self._refresh_cache_controls)
+
+        self._refresh_cache_controls()
         self._set_progress_status(
             f"Verify: {availability.total} total, {availability.active} active, "
             f"{availability.historic} historic | "

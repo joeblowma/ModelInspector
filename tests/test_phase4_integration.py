@@ -434,20 +434,149 @@ def test_verify_cache_disabled_when_total_zero(monkeypatch, tmp_path: Path) -> N
                     total_count=2, active_count=1, historic_count=1,
                 ),
                 action_plan=(
-                    SimpleNamespace(path="R:/missing.gguf", classification="historic", is_active=False, is_historic=True),
+                    SimpleNamespace(path="R:/missing.gguf", classification="historic", is_active=False, is_historic=True, action="archive"),
                 ),
             ),
         )
         progress_calls = []
         monkeypatch.setattr(window, "_set_progress_status", lambda t: progress_calls.append(t))
         monkeypatch.setattr(window, "_clear_progress_status", lambda delay_ms=0: None)
+        monkeypatch.setattr(window, "_refresh_cache_controls", lambda: None)
+        monkeypatch.setattr(window, "_schedule_cache_sync", lambda: None)
         window._verify_cached_file_paths()
-        assert len(progress_calls) == 1
-        summary = progress_calls[0]
+        assert len(progress_calls) == 2
+        assert progress_calls[0] == "Verifying cached file paths..."
+        summary = progress_calls[1]
         assert "2 total" in summary
         assert "1 active" in summary
         assert "1 historic" in summary
         assert "archived/missing" in summary
+        assert "0 changed" in summary
+    finally:
+        window.close()
+
+
+def test_verify_cache_schedules_changed_entries(monkeypatch, tmp_path: Path) -> None:
+    """Verify schedules changed (refresh) entries through the sync mechanism."""
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    app = QApplication.instance() or QApplication([])
+    from gui import MainWindow
+    window = MainWindow()
+    try:
+        started = []
+        monkeypatch.setattr(
+            integration_controller, "AnalysisWorker",
+            lambda paths, _opts, _threads: _CacheSyncWorker(paths, _opts, _threads),
+        )
+        _CacheSyncWorker.started_paths = []
+        monkeypatch.setattr(
+            window, "_cache_report",
+            lambda: SimpleNamespace(
+                entries=[
+                    SimpleNamespace(path="R:/changed.safetensors", classification="active", is_active=True, is_historic=False, action="refresh"),
+                    SimpleNamespace(path="R:/unchanged.safetensors", classification="active", is_active=True, is_historic=False, action="none"),
+                ],
+                availability=SimpleNamespace(
+                    total=2, active=2, historic=0, refresh_candidates=1, sync_candidates=1,
+                    load_cache=True, load_cache_all=True, load_cache_archived=False,
+                    total_count=2, active_count=2, historic_count=0,
+                ),
+                action_plan=(
+                    SimpleNamespace(path="R:/changed.safetensors", classification="active", is_active=True, is_historic=False, action="refresh"),
+                ),
+            ),
+        )
+        monkeypatch.setattr(window, "_set_progress_status", lambda t: None)
+        monkeypatch.setattr(window, "_clear_progress_status", lambda delay_ms=0: None)
+        monkeypatch.setattr(window, "_refresh_cache_controls", lambda: None)
+        window._verify_cached_file_paths()
+        assert _CacheSyncWorker.started_paths == [["R:/changed.safetensors"]]
+    finally:
+        window.close()
+
+
+def test_verify_cache_does_not_schedule_historic_entries(monkeypatch, tmp_path: Path) -> None:
+    """Verify does NOT schedule historic/archived entries for inspection."""
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    app = QApplication.instance() or QApplication([])
+    from gui import MainWindow
+    window = MainWindow()
+    try:
+        _CacheSyncWorker.started_paths = []
+        monkeypatch.setattr(
+            integration_controller, "AnalysisWorker",
+            lambda paths, _opts, _threads: _CacheSyncWorker(paths, _opts, _threads),
+        )
+        monkeypatch.setattr(
+            window, "_cache_report",
+            lambda: SimpleNamespace(
+                entries=[
+                    SimpleNamespace(path="R:/missing.gguf", classification="historic", is_active=False, is_historic=True, action="archive"),
+                ],
+                availability=SimpleNamespace(
+                    total=1, active=0, historic=1, refresh_candidates=0, sync_candidates=0,
+                    load_cache=True, load_cache_all=False, load_cache_archived=True,
+                    total_count=1, active_count=0, historic_count=1,
+                ),
+                action_plan=(
+                    SimpleNamespace(path="R:/missing.gguf", classification="historic", is_active=False, is_historic=True, action="archive"),
+                ),
+            ),
+        )
+        monkeypatch.setattr(window, "_set_progress_status", lambda t: None)
+        monkeypatch.setattr(window, "_clear_progress_status", lambda delay_ms=0: None)
+        monkeypatch.setattr(window, "_refresh_cache_controls", lambda: None)
+        window._verify_cached_file_paths()
+        assert _CacheSyncWorker.started_paths == []
+    finally:
+        window.close()
+
+
+def test_verify_cache_shows_progress_then_summary(monkeypatch, tmp_path: Path) -> None:
+    """Verify shows initial progress before verification then completion summary."""
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    app = QApplication.instance() or QApplication([])
+    from gui import MainWindow
+    window = MainWindow()
+    try:
+        _CacheSyncWorker.started_paths = []
+        monkeypatch.setattr(
+            integration_controller, "AnalysisWorker",
+            lambda paths, _opts, _threads: _CacheSyncWorker(paths, _opts, _threads),
+        )
+        monkeypatch.setattr(
+            window, "_cache_report",
+            lambda: SimpleNamespace(
+                entries=[
+                    SimpleNamespace(path="R:/changed.safetensors", classification="active", is_active=True, is_historic=False, action="refresh"),
+                    SimpleNamespace(path="R:/missing.gguf", classification="historic", is_active=False, is_historic=True, action="archive"),
+                    SimpleNamespace(path="R:/unchanged.safetensors", classification="active", is_active=True, is_historic=False, action="none"),
+                ],
+                availability=SimpleNamespace(
+                    total=3, active=2, historic=1, refresh_candidates=1, sync_candidates=1,
+                    load_cache=True, load_cache_all=True, load_cache_archived=True,
+                    total_count=3, active_count=2, historic_count=1,
+                ),
+                action_plan=(
+                    SimpleNamespace(path="R:/changed.safetensors", classification="active", is_active=True, is_historic=False, action="refresh"),
+                    SimpleNamespace(path="R:/missing.gguf", classification="historic", is_active=False, is_historic=True, action="archive"),
+                ),
+            ),
+        )
+        progress_calls = []
+        monkeypatch.setattr(window, "_set_progress_status", lambda t: progress_calls.append(t))
+        monkeypatch.setattr(window, "_clear_progress_status", lambda delay_ms=0: None)
+        monkeypatch.setattr(window, "_refresh_cache_controls", lambda: None)
+        window._verify_cached_file_paths()
+        assert len(progress_calls) == 2
+        assert progress_calls[0] == "Verifying cached file paths..."
+        summary = progress_calls[1]
+        assert "3 total" in summary
+        assert "2 active" in summary
+        assert "1 historic" in summary
+        assert "1 archived/missing" in summary
+        assert "1 changed" in summary
+        assert "scheduled for inspection" in summary
     finally:
         window.close()
 

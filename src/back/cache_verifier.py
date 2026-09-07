@@ -77,11 +77,13 @@ class CacheAvailability:
 
     @property
     def load_cache(self) -> bool:
-        return self.total > 0
+        # "Load Cache" loads active (present-on-disk) entries only.
+        return self.active > 0
 
     @property
     def load_cache_all(self) -> bool:
-        return self.active > 0
+        # "Load Cache All" loads every cached summary, active or historic.
+        return self.total > 0
 
     @property
     def load_cache_archived(self) -> bool:
@@ -94,8 +96,8 @@ class CacheAvailability:
             "historic": self.historic,
             "refresh_candidates": self.refresh_candidates,
             "sync_candidates": self.sync_candidates,
-            "Load Cache": {"available": self.load_cache, "count": self.total},
-            "Load Cache All": {"available": self.load_cache_all, "count": self.active},
+            "Load Cache": {"available": self.load_cache, "count": self.active},
+            "Load Cache All": {"available": self.load_cache_all, "count": self.total},
             "Load Cache Archived": {"available": self.load_cache_archived, "count": self.historic},
         }
 

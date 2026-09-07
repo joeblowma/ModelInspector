@@ -20,6 +20,7 @@ from front.integration_controller import IntegrationMixin
 from front.model_card import ModelCard
 from front.selection_controller import SelectionMixin
 from front.settings_dialog import SettingsDialog
+from front.smart_column_controller import SmartColumnMixin
 from front.startup_cache_controller import StartupCacheMixin
 from front.view_controller import ViewMixin
 from front.window_core import (
@@ -51,6 +52,7 @@ __all__ = [
 class MainWindow(
     CoreMixin,
     WindowLayoutMixin,
+    SmartColumnMixin,
     DiscoveryMixin,
     IntegrationMixin,
     StartupCacheMixin,

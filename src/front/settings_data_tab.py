@@ -1,6 +1,7 @@
-"""Reusable settings widget for Data-table columns and themes.
+"""Reusable settings widget for Data-table columns.
 
 State is JSON-friendly and persistence remains outside this widget.
+Theme editing lives in the dedicated Theme settings tab, not here.
 """
 
 from __future__ import annotations
@@ -350,7 +351,7 @@ class SettingsDataTab(QWidget):
         return True
 
     def reset_to_default(self, *, emit: bool = True) -> None:
-        """Restore the initial column definitions and the first theme choice."""
+        """Restore the initial column definitions."""
         self._updating = True
         try:
             for key in list(self._rows):

@@ -18,28 +18,7 @@ from background_tasks import AnalysisWorker
 from front.advanced_viewer import AdvancedViewerDialog
 from front.cache_identity import get_cached_inspection_identity_snapshots
 from front.settings_data_tab import ColumnDefinition
-from front.window_layout import SMART_COLUMN_GROUPS
 from model_cache import get_cached_inspection_snapshots
-
-
-_DIFFUSION_PARTS = ("unet", "vae", "text_encoder", "text_encoder_2", "transformer")
-
-
-def _result_uses_smart_group(key: str, data: dict) -> bool:
-    """Whether one loaded result genuinely uses a smart group's family columns.
-
-    Mirrors what ``_add_table_row`` renders: only fields producing a real
-    value (not the "-" placeholder) count as genuine usage.
-    """
-    if key == "llm":
-        return bool(data.get("is_moe")) or data.get("expert_count") is not None or data.get("expert_used_count") is not None
-    if key == "diffusion":
-        comps = data.get("components") or {}
-        precs = data.get("component_precisions") or {}
-        return any(precs.get(part) or comps.get(part) for part in _DIFFUSION_PARTS) or bool(data.get("named_text_encoders"))
-    if key == "adapter":
-        return bool(data.get("adapter_type")) or bool(data.get("lora_rank"))
-    return False
 
 
 def _run_deferred_settings_rebuild(window_ref, generation: int) -> None:
@@ -54,6 +33,7 @@ class IntegrationMixin:
 
     def _configure_extended_ui(self) -> None:
         self._advanced_dialog: AdvancedViewerDialog | None = None
+        self._settings_dialog = None
         self._settings_rebuild_generation = 0
         self._data_layout = self._settings_data_layout()
         self._apply_data_layout(self._data_layout)
@@ -77,6 +57,9 @@ class IntegrationMixin:
             data_configuration=self._capture_data_layout(),
             theme_id=self._data_layout.get("theme", "default"),
         )
+        # Track the live dialog so background cache sync can refresh its counts
+        # while it is open, without holding a dangling reference after close.
+        self._settings_dialog = dialog
         dialog.clear_cache_btn.clicked.connect(
             lambda: self._clear_inspection_cache_from_settings(dialog)
         )
@@ -84,7 +67,9 @@ class IntegrationMixin:
         dialog.themeChanged.connect(self._apply_theme)
         dialog.themePreviewChanged.connect(self._apply_theme_preview)
         self._refresh_cache_dialog(dialog)
-        if not dialog.exec():
+        accepted = dialog.exec()
+        self._settings_dialog = None
+        if not accepted:
             return
         self._allow_filename_alias_detection = dialog.alias_checkbox.isChecked()
         self._auto_analyze_on_add = dialog.auto_analyze_checkbox.isChecked()
@@ -202,129 +187,6 @@ class IntegrationMixin:
             for index, label in enumerate(self._table_columns)
         ]
 
-    def _column_key(self, index: int) -> str:
-        return "selection" if index == 0 else f"column_{index}"
-
-    # --- Smart Data-column groups (runtime-only, never persisted) ---------
-
-    def _init_smart_groups(self) -> None:
-        self._smart_group_state: dict[str, bool] = {key: False for key in SMART_COLUMN_GROUPS}
-        self._smart_group_manual: set[str] = set()
-        self._smart_group_indices: dict[str, int] = {}
-        self._smart_group_owner: dict[str, str] = {}
-        for key, spec in SMART_COLUMN_GROUPS.items():
-            for name in spec["columns"]:
-                if name in self._table_columns:
-                    self._smart_group_indices[name] = self._table_columns.index(name)
-                    self._smart_group_owner[name] = key
-        # Snapshot persisted per-column visibility as the mask baseline.
-        self._smart_group_baseline = {
-            name: not self.table.isColumnHidden(index)
-            for name, index in self._smart_group_indices.items()
-        }
-        self._apply_smart_group_masks()
-
-    def _apply_smart_group_masks(self) -> None:
-        """Off masks all group columns; on reveals only baseline-visible ones."""
-        for name, index in self._smart_group_indices.items():
-            visible = (
-                self._smart_group_baseline.get(name, True)
-                and self._smart_group_state[self._smart_group_owner[name]]
-            )
-            self.table.setColumnHidden(index, not visible)
-
-    def _set_smart_group_checkbox(self, key: str, checked: bool) -> None:
-        checkbox = self._smart_group_checkboxes.get(key)
-        if checkbox is not None and checkbox.isChecked() != checked:
-            checkbox.blockSignals(True)
-            checkbox.setChecked(checked)
-            checkbox.blockSignals(False)
-
-    def _on_smart_group_toggled(self, key: str, checked: bool) -> None:
-        if key not in SMART_COLUMN_GROUPS or not hasattr(self, "_smart_group_state"):
-            return
-        self._smart_group_manual.add(key)  # an explicit user toggle wins the session
-        self._smart_group_state[key] = bool(checked)
-        self._set_smart_group_checkbox(key, bool(checked))
-        self._apply_smart_group_masks()
-
-    def _note_result_for_smart_groups(self, data: dict) -> None:
-        """Auto-enable groups whose family columns the loaded result uses."""
-        changed = False
-        for key in SMART_COLUMN_GROUPS:
-            if self._smart_group_state[key] or key in self._smart_group_manual:
-                continue
-            if _result_uses_smart_group(key, data):
-                self._smart_group_state[key] = True
-                self._set_smart_group_checkbox(key, True)
-                changed = True
-        if changed:
-            self._apply_smart_group_masks()
-
-    def _reset_auto_smart_groups(self) -> None:
-        """Revert auto-enabled groups to the session default (unchecked)."""
-        for key in SMART_COLUMN_GROUPS:
-            if self._smart_group_state[key] and key not in self._smart_group_manual:
-                self._smart_group_state[key] = False
-                self._set_smart_group_checkbox(key, False)
-        self._apply_smart_group_masks()
-
-    def _persisted_column_visible(self, index: int) -> bool:
-        """Column visibility for persistence: smart-group masks are excluded."""
-        if index <= 0 or index >= len(self._table_columns):
-            return True
-        name = self._table_columns[index]
-        owner = self._smart_group_owner.get(name)
-        if owner is not None and not self._smart_group_state[owner]:
-            return self._smart_group_baseline.get(name, True)
-        return not self.table.isColumnHidden(index)
-
-    def _apply_data_layout(self, layout: dict[str, Any]) -> None:
-        rows = layout.get("columns", ()) if isinstance(layout, dict) else ()
-        if not isinstance(rows, list):
-            return
-        by_key = {str(row.get("key")): row for row in rows if isinstance(row, dict)}
-        header = self.table.horizontalHeader()
-        assert header is not None
-        for logical in range(self.table.columnCount()):
-            entry = by_key.get(self._column_key(logical))
-            if not entry:
-                continue
-            visible = bool(entry.get("visible", logical == 0 or not self.table.isColumnHidden(logical)))
-            self.table.setColumnHidden(logical, not visible)
-            name = self._table_columns[logical] if logical < len(self._table_columns) else ""
-            if getattr(self, "_smart_group_owner", None) and name in self._smart_group_owner:
-                # Persisted per-column visibility refreshes the mask baseline.
-                self._smart_group_baseline[name] = visible
-            try:
-                self.table.setColumnWidth(logical, max(32, int(entry.get("width", self.table.columnWidth(logical)))))
-            except (TypeError, ValueError):
-                pass
-        for visual, row in enumerate(rows):
-            if not isinstance(row, dict):
-                continue
-            key = str(row.get("key", ""))
-            for logical in range(self.table.columnCount()):
-                if key == self._column_key(logical) and header.visualIndex(logical) != visual:
-                    header.moveSection(header.visualIndex(logical), visual)
-                    break
-        if hasattr(self, "_smart_group_state"):
-            self._apply_smart_group_masks()
-
-    def _capture_data_layout(self) -> dict[str, Any]:
-        header = self.table.horizontalHeader()
-        assert header is not None
-        columns = []
-        for visual in range(self.table.columnCount()):
-            logical = header.logicalIndex(visual)
-            columns.append({
-                "key": self._column_key(logical),
-                "visible": self._persisted_column_visible(logical),
-                "width": self.table.columnWidth(logical),
-            })
-        self._data_layout = {"columns": columns, "theme": self._data_layout.get("theme", "default")}
-        return self._data_layout
-
     def _save_data_layout(self) -> None:
         store = open_settings(self._settings_path(), self._legacy_settings_path())
         store.setValue("data_layout", self._capture_data_layout())
@@ -378,10 +240,9 @@ class IntegrationMixin:
     def _cache_report(self):
         paths = self._list_cached_inspection_paths()
         identities = get_cached_inspection_identity_snapshots(paths)
-        # Do not eagerly materialize summaries: the startup loader owns that
-        # compatibility seam.  Path-only records preserve behavior for entries
-        # that cannot be read, while normal entries retain their persisted
-        # size/mtime identity for verification.
+        # Do not eagerly materialize summaries: path-only records preserve
+        # behavior for entries that cannot be read, while normal entries retain
+        # their persisted size/mtime identity for verification.
         entries = [identities.get(path, {"filepath": path}) for path in paths]
         return verify_cache_entries(entries)
 
@@ -395,17 +256,53 @@ class IntegrationMixin:
 
     def _refresh_cache_menu_actions(self) -> None:
         """Show/hide cache-load actions based on cache population and view state."""
-        report = self._cache_report().availability
+        availability = getattr(self._cache_report(), "availability", None)
         view_nonempty = bool(self._results)
+        if availability is None:
+            # Minimal test mocks may only expose entries; still honor the
+            # view-nonempty disable rule.
+            self._refresh_cache_menu_enabled()
+            return
         actions = (
-            (getattr(self, "_cache_load_active_action", None), report.load_cache),
-            (getattr(self, "_cache_load_all_action", None), report.load_cache_all),
-            (getattr(self, "_cache_load_archived_action", None), report.load_cache_archived),
+            (getattr(self, "_cache_load_active_action", None), availability.load_cache),
+            (getattr(self, "_cache_load_all_action", None), availability.load_cache_all),
+            (getattr(self, "_cache_load_archived_action", None), availability.load_cache_archived),
         )
         for action, available in actions:
             if action is not None:
                 action.setVisible(available)
                 action.setEnabled(not view_nonempty)
+
+    def _refresh_cache_menu_enabled(self) -> None:
+        """Disable cache-load actions whenever the view is non-empty (cheap)."""
+        view_nonempty = bool(getattr(self, "_results", None))
+        for name in (
+            "_cache_load_active_action",
+            "_cache_load_all_action",
+            "_cache_load_archived_action",
+        ):
+            action = getattr(self, name, None)
+            if action is not None:
+                action.setEnabled(not view_nonempty)
+
+    def _refresh_tracked_settings_dialog(self) -> None:
+        """Refresh an open Settings dialog's cache counts without dangling access."""
+        dialog = getattr(self, "_settings_dialog", None)
+        if dialog is None:
+            return
+        if isinstance(dialog, QObject):
+            try:
+                if sip.isdeleted(dialog):
+                    return
+            except (TypeError, RuntimeError):
+                return
+        self._refresh_cache_dialog(dialog)
+
+    def _on_cache_sync_completed(self) -> None:
+        """Refresh cache-driven UI after the background sync worker finishes."""
+        self._cache_sync_worker = None
+        self._refresh_cache_controls()
+        self._refresh_tracked_settings_dialog()
 
     def _schedule_cache_sync(self) -> None:
         """Refresh changed, available headers in a worker without blocking Qt."""
@@ -417,7 +314,7 @@ class IntegrationMixin:
         self._cache_sync_worker = worker
         worker.result_ready.connect(lambda _data, w=worker: w.acknowledge_event())
         worker.error_occurred.connect(lambda _path, _error, w=worker: w.acknowledge_event())
-        worker.all_done.connect(lambda: setattr(self, "_cache_sync_worker", None))
+        worker.all_done.connect(self._on_cache_sync_completed)
         worker.start()
 
     def _load_cache_status(self, wanted: str | None) -> None:
@@ -455,6 +352,7 @@ class IntegrationMixin:
         self._refresh_raw_combo_filtered()
         self._sync_selection_visuals()
         self._refresh_card_layout_geometry()
+        self._refresh_cache_menu_actions()
         self._set_progress_status(f"Loaded {loaded_count} cached {'historic ' if wanted == 'historic' else ''}summaries")
 
     def _load_cache(self) -> None:
@@ -473,7 +371,8 @@ class IntegrationMixin:
         counts from the actual verifier action values, schedules changed
         entries through the existing background cache sync mechanism (without
         inspecting missing historic entries), and refreshes cache controls
-        on completion.
+        on completion.  When a sync worker is already running, the summary
+        distinguishes entries already being synced from newly scheduled ones.
         """
         self._set_progress_status("Verifying cached file paths...")
         report = self._cache_report()
@@ -482,19 +381,20 @@ class IntegrationMixin:
         archived = sum(1 for e in action_plan if e.action == "archive")
         changed = sum(1 for e in action_plan if e.action == "refresh")
 
-        # Schedule changed entries through the existing sync mechanism.
-        # _schedule_cache_sync guards against duplicate workers internally.
+        # A running worker means those changed entries were not newly queued;
+        # report them honestly instead of claiming a fresh schedule.
+        had_sync_worker = getattr(self, "_cache_sync_worker", None) is not None
         if changed:
             self._schedule_cache_sync()
-            # Refresh cache controls when the sync worker finishes.
-            worker = getattr(self, "_cache_sync_worker", None)
-            if worker is not None:
-                worker.all_done.connect(self._refresh_cache_controls)
 
         self._refresh_cache_controls()
+        if changed and had_sync_worker:
+            changed_note = f"{changed} changed entries already being synced"
+        else:
+            changed_note = f"{changed} changed entries scheduled for inspection"
         self._set_progress_status(
             f"Verify: {availability.total} total, {availability.active} active, "
             f"{availability.historic} historic | "
-            f"{archived} archived/missing, {changed} changed entries scheduled for inspection"
+            f"{archived} archived/missing, {changed_note}"
         )
         self._clear_progress_status(delay_ms=8000)

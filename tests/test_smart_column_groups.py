@@ -51,3 +51,31 @@ def test_cache_load_auto_enables_llm_smart_group(monkeypatch, tmp_path: Path) ->
         assert window._smart_group_state["adapter"] is False
     finally:
         window.close()
+
+
+def test_smart_column_engine_is_extracted_as_a_composed_mixin() -> None:
+    """The smart-column engine lives in its own mixin, composed into MainWindow."""
+    from front.smart_column_controller import (
+        SMART_COLUMN_GROUPS,
+        SmartColumnControllerMixin,
+        SmartColumnMixin,
+    )
+    from gui import MainWindow
+
+    assert SmartColumnMixin is SmartColumnControllerMixin
+    assert SmartColumnControllerMixin in MainWindow.__mro__
+    # window_layout re-exports the moved table for backward-compatible imports.
+    from front.window_layout import SMART_COLUMN_GROUPS as reexported
+
+    assert reexported is SMART_COLUMN_GROUPS
+    assert set(SMART_COLUMN_GROUPS) == {"llm", "diffusion", "adapter"}
+
+
+def test_smart_group_tooltip_manual_choice_survives_clear_all() -> None:
+    """The group tooltip states manual choice is not reset by Clear All."""
+    from front.smart_column_controller import SMART_COLUMN_GROUPS
+
+    tooltip = SMART_COLUMN_GROUPS["llm"]["tooltip"].lower()
+    assert "not reset" in tooltip
+    assert "clear all" in tooltip
+    assert "only auto-enabled groups reset" in tooltip

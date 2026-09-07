@@ -29,53 +29,7 @@ from PyQt6.QtWidgets import (
 )
 
 from front.filter_widgets import CheckFilterButton
-
-
-# Runtime-only smart Data-column groups.  Membership is exact: each entry lists
-# the ``_table_columns`` labels it toggles.  Group state is never persisted;
-# it lives for one application/session only.
-def _group_tooltip(summary: str) -> str:
-    return (
-        f"{summary}\n\n"
-        "Turns on automatically while loaded results genuinely use these "
-        "columns. Unchecked masks every column in the group; checked reveals "
-        "only columns that are visible in Settings > Data (the per-column "
-        "baseline always wins: a column hidden there stays hidden). Your "
-        "manual choice sticks for the rest of the session, including later "
-        "loads, and stops automatic enabling for this group until it is "
-        "cleared with Clear All."
-    )
-
-
-SMART_COLUMN_GROUPS: dict[str, dict[str, str]] = {
-    "llm": {
-        "label": "LLM",
-        "columns": ("MoE", "Experts", "Active Experts"),
-        "tooltip": _group_tooltip(
-            "Show LLM columns: MoE, Experts, Active Experts."
-        ),
-    },
-    "diffusion": {
-        "label": "Diffusion",
-        "columns": (
-            "UNet Precision",
-            "VAE Precision",
-            "Text Encoder Precision",
-            "Transformer Precision",
-        ),
-        "tooltip": _group_tooltip(
-            "Show Diffusion columns: UNet Precision, VAE Precision, "
-            "Text Encoder Precision, Transformer Precision."
-        ),
-    },
-    "adapter": {
-        "label": "Adapter",
-        "columns": ("Adapter", "LoRA Rank"),
-        "tooltip": _group_tooltip(
-            "Show Adapter columns: Adapter, LoRA Rank."
-        ),
-    },
-}
+from front.smart_column_controller import SMART_COLUMN_GROUPS
 
 
 class WindowLayoutMixin:

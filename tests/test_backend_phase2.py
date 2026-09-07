@@ -174,9 +174,13 @@ def test_cache_availability_is_conditional_and_serializable() -> None:
     assert availability.total_count == 1
     assert availability.active_count == 0
     assert availability.historic_count == 1
-    assert availability.load_cache
-    assert not availability.load_cache_all
+    # "Load Cache" loads active entries only; a missing file is historic.
+    assert not availability.load_cache
+    # "Load Cache All" loads every cached summary, active or historic.
+    assert availability.load_cache_all
     assert availability.load_cache_archived
+    assert report.as_dict()["availability"]["Load Cache"]["count"] == 0
+    assert report.as_dict()["availability"]["Load Cache All"]["count"] == 1
     assert report.as_dict()["availability"]["Load Cache Archived"]["count"] == 1
 
 

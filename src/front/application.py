@@ -5,6 +5,7 @@ import os
 # Set before Qt is imported so packaged Windows launches stay quiet.
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
@@ -208,11 +209,23 @@ def configure_application(application: QApplication) -> None:
     try:
         from app_paths import legacy_settings_path, settings_path
         from back.settings_store import open_settings
-        selected = open_settings(settings_path(), legacy_settings_path()).value("data_layout", {}).get("theme", "default")
+        selected = str(
+            open_settings(settings_path(), legacy_settings_path())
+            .value("data_layout", {})
+            .get("theme", "default")
+            or "default"
+        )
     except (ImportError, AttributeError, OSError, TypeError, ValueError):
         selected = "default"
-    apply_theme(application, str(selected), notify=False)
+    theme_id, diagnostics = apply_theme(application, selected, notify=False)
     application.setWindowIcon(QIcon(str(asset_path("icon.ico"))))
+    if diagnostics and selected.lower() not in {"default", "builtin"}:
+        # The persisted theme failed to load; the safe default is already
+        # applied.  Defer the deduplicated warning until the event loop can
+        # present a window so the user actually sees it.
+        QTimer.singleShot(
+            0, lambda: _show_theme_diagnostics(None, selected, diagnostics)
+        )
 
 
 def close_startup_splash() -> None:

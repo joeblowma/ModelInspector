@@ -162,7 +162,6 @@ class WindowLifecycleMixin:
             self._projection.invalidate()
             self._card_rebuild_generation += 1
             self._discovery_generation += 1
-            self._startup_cache_load_cancelled = True
             self._restore_table_sorting()
             self._restore_startup_table_sorting()
             self._close_waiting_workers = running_workers
@@ -180,7 +179,6 @@ class WindowLifecycleMixin:
         self._projection.invalidate()
         self._card_rebuild_generation += 1
         self._discovery_generation += 1
-        self._startup_cache_load_cancelled = True
         self._restore_table_sorting()
         self._restore_startup_table_sorting()
         super().closeEvent(event)

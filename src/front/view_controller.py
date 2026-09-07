@@ -270,6 +270,7 @@ class ViewControllerMixin:
         if filepath:
             self._path_to_row[filepath] = row
         self._note_result_for_smart_groups(data)
+        self._refresh_cache_menu_enabled()
     def _visible_paths(self) -> list[str]:
         paths = []
         for row in range(self.table.rowCount()):

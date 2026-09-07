@@ -128,3 +128,31 @@ def test_cancel_restores_live_selection_but_accept_keeps_it(app, theme_data_dir)
     accepted.theme_tab.set_theme("catppuccin")
     accepted.accept()
     assert accepted.current_theme_id() == "catppuccin"
+
+
+def test_configure_application_warns_once_for_malformed_persisted_theme(app, monkeypatch, tmp_path):
+    """A malformed persisted theme falls back safely and warns once at startup."""
+    monkeypatch.setenv("SMI_DATA_DIR", str(tmp_path / "model-inspector"))
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.jsonc"))
+    (tmp_path / "settings.jsonc").write_text(
+        '{"data_layout": {"theme": "broken"}}', encoding="utf-8"
+    )
+    theme_dir = tmp_path / "model-inspector" / "themes"
+    theme_dir.mkdir(parents=True)
+    (theme_dir / "broken.jsonc").write_text("{ invalid", encoding="utf-8")
+
+    from front import application as application_module
+
+    application_module._THEME_DIAGNOSTIC_KEYS.clear()
+    warnings = []
+    monkeypatch.setattr(
+        "front.application.QMessageBox.warning", lambda *args: warnings.append(args)
+    )
+    application_module.configure_application(app)
+    assert app.styleSheet()  # safe default stylesheet applied
+    app.processEvents()
+    assert len(warnings) == 1
+    # A second startup pass must not re-warn for the same failure.
+    application_module.configure_application(app)
+    app.processEvents()
+    assert len(warnings) == 1

@@ -54,7 +54,6 @@ class StartupCacheControllerMixin:
         self.tabs.setCurrentIndex(tab_idx)
 
     def _clear_all(self):
-        self._startup_cache_load_cancelled = True
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
         if self._discovery_worker and self._discovery_worker.isRunning():

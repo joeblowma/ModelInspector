@@ -8,12 +8,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, cast
 
-from PyQt6.QtCore import QSignalBlocker, Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
-    QComboBox,
-    QFormLayout,
     QGroupBox,
     QLabel,
     QPushButton,
@@ -23,11 +21,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from front.settings_data_support import ColumnDefinition, ColumnState, ColumnTree, DragHandle, ThemeChoice
+from front.settings_data_support import ColumnDefinition, ColumnState, ColumnTree, DragHandle
 
 
 class SettingsDataTab(QWidget):
-    """Edit Data-column visibility, ordering, widths, and the active theme.
+    """Edit Data-column visibility, ordering, and widths.
 
     Parameters
     ----------
@@ -35,10 +33,9 @@ class SettingsDataTab(QWidget):
         Column definitions.  Each item may be a :class:`ColumnDefinition`, a
         mapping with ``key``/``label`` fields, a ``(key, label)`` pair, or a
         bare string (used as both key and label).
-    themes / theme_list:
-        Optional theme choices.  Theme objects from ``back.theme_loader`` and
-        mappings with ``id``/``name`` fields are accepted.  If omitted, the
-        loader's ``list_themes`` function is called safely.
+    themes / theme_list / theme_loader:
+        Deprecated compatibility arguments.  Theme editing now lives in the
+        dedicated Theme settings tab, but old callers may still supply them.
     validation_message_hook:
         Optional callback receiving user-readable validation/fallback text.
         The same text is emitted by :attr:`validationMessage` and shown in the
@@ -46,10 +43,8 @@ class SettingsDataTab(QWidget):
     """
 
     configurationChanged = pyqtSignal(dict)
-    themeChanged = pyqtSignal(str)
     validationMessage = pyqtSignal(str)
     configuration_changed = configurationChanged
-    theme_changed = themeChanged
     validation_message = validationMessage
 
     def __init__(
@@ -76,10 +71,6 @@ class SettingsDataTab(QWidget):
         self._states: dict[str, ColumnState] = {}
         self._updating = False
 
-        self._theme_choices = self._normalise_themes(
-            theme_list if theme_list is not None else themes,
-            theme_loader,
-        )
         self._build_ui()
         self.reset_to_default(emit=False)
 
@@ -115,18 +106,6 @@ class SettingsDataTab(QWidget):
         reset_button.clicked.connect(self.reset_to_default)
         columns_layout.addWidget(reset_button, 0, Qt.AlignmentFlag.AlignLeft)
         root.addWidget(columns_group, 1)
-
-        theme_group = QGroupBox("Theme")
-        theme_group.setToolTip("Select the visual theme used by the application.")
-        theme_layout = QFormLayout(theme_group)
-        self.theme_combo = QComboBox()
-        self.theme_combo.setObjectName("themeSelector")
-        self.theme_combo.setToolTip("Select a validated built-in or external JSONC theme.")
-        for choice in self._theme_choices:
-            self.theme_combo.addItem(choice.label, choice.key)
-        self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
-        theme_layout.addRow("Theme:", self.theme_combo)
-        root.addWidget(theme_group)
 
         self.message_label = QLabel("")
         self.message_label.setObjectName("settingsValidationMessage")
@@ -226,43 +205,6 @@ class SettingsDataTab(QWidget):
             self._report("No valid Data columns were supplied.")
         return result
 
-    def _normalise_themes(self, supplied: Iterable[Any] | None, loader: Any) -> list[ThemeChoice]:
-        values: Iterable[Any] | None = supplied
-        if values is None:
-            try:
-                if loader is None:
-                    from back.theme_loader import list_themes
-
-                    values = list_themes()
-                elif callable(loader):
-                    loaded = loader()
-                    values = cast(Iterable[Any], loaded)
-                else:
-                    values = cast(Iterable[Any], loader.list_themes())
-            except (ImportError, OSError, TypeError, ValueError, AttributeError) as exc:
-                self._report(f"Theme list unavailable; using Default Dark: {exc}")
-                values = ()
-        choices: list[ThemeChoice] = []
-        seen: set[str] = set()
-        for value in values or ():
-            try:
-                if isinstance(value, Mapping):
-                    key = str(value.get("id", "")).strip()
-                    label = str(value.get("name", key)).strip() or key
-                elif isinstance(value, str):
-                    key = label = value.strip()
-                else:
-                    key = str(getattr(value, "id")).strip()
-                    label = str(getattr(value, "name", key)).strip() or key
-                if key and key not in seen:
-                    choices.append(ThemeChoice(key, label))
-                    seen.add(key)
-            except (AttributeError, TypeError, ValueError):
-                continue
-        if not choices:
-            choices.append(ThemeChoice("default", "Default Dark"))
-        return choices
-
     # --------------------------------------------------------------- helpers
     def _column_minimum(self, column: ColumnDefinition) -> int:
         return max(self._minimum_width, min(self._maximum_width, column.minimum_width))
@@ -305,12 +247,6 @@ class SettingsDataTab(QWidget):
         self._rebuild_row_controls()
         self._emit_configuration()
 
-    def _on_theme_changed(self, _index: int) -> None:
-        if not self._updating:
-            key = self.current_theme_id()
-            self.themeChanged.emit(key)
-            self._emit_configuration()
-
     # --------------------------------------------------------------- public
     def column_keys(self) -> list[str]:
         """Return current row order by stable key."""
@@ -320,28 +256,6 @@ class SettingsDataTab(QWidget):
             if item is not None:
                 keys.append(str(item.data(0, Qt.ItemDataRole.UserRole)))
         return keys
-
-    def current_theme_id(self) -> str:
-        value = self.theme_combo.currentData()
-        return str(value) if value is not None else "default"
-
-    def _default_theme_id(self) -> str:
-        return "default" if self.theme_combo.findData("default") >= 0 else self._theme_choices[0].key
-
-    def set_theme(self, theme_id: str, *, emit: bool = True) -> bool:
-        index = self.theme_combo.findData(str(theme_id))
-        if index < 0:
-            self._report(f"Theme {theme_id!r} is unavailable; using Default Dark.")
-            index = self.theme_combo.findData("default")
-            index = max(index, 0)
-        changed = index != self.theme_combo.currentIndex()
-        blocker = QSignalBlocker(self.theme_combo)
-        self.theme_combo.setCurrentIndex(index)
-        del blocker
-        if emit and changed:
-            self.themeChanged.emit(self.current_theme_id())
-            self._emit_configuration()
-        return changed
 
     def _rebuild_row_controls(self) -> None:
         """Replace Qt-owned cell controls after a native row move or load."""
@@ -366,7 +280,7 @@ class SettingsDataTab(QWidget):
                     "width": self._states[key].width,
                 }
             )
-        return {"columns": columns, "theme": self.current_theme_id()}
+        return {"columns": columns}
 
     def load_configuration(self, configuration: Mapping[str, Any] | None) -> None:
         """Apply a saved snapshot, safely falling back for invalid entries."""
@@ -399,8 +313,6 @@ class SettingsDataTab(QWidget):
                 width = self._clamp_width(entry.get("width", column.width), column)
                 self._states[key] = ColumnState(visible, width)
             self._rebuild_row_controls()
-            requested_theme = configuration.get("theme", "default")
-            self.set_theme(str(requested_theme), emit=False)
         finally:
             self._updating = False
         self._emit_configuration()
@@ -446,7 +358,6 @@ class SettingsDataTab(QWidget):
             for column in self._defaults:
                 self._add_row(column)
             self.column_tree.refresh_content_height()
-            self.set_theme(self._default_theme_id(), emit=False)
         finally:
             self._updating = False
         if emit:

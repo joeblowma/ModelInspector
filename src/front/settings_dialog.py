@@ -1,5 +1,6 @@
 """Settings dialog widget used by the Model Inspector GUI."""
 
+from PyQt6.QtCore import QSignalBlocker, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -9,17 +10,22 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 from front.settings_data_tab import ColumnDefinition, SettingsDataTab
+from front.theme_tab import ThemeTab
 
 __all__ = ["SettingsDialog"]
 
 
 class SettingsDialog(QDialog):
+    themeChanged = pyqtSignal(str)
+    themePreviewChanged = pyqtSignal(object)
+
     def __init__(
         self,
         parent=None,
@@ -36,6 +42,7 @@ class SettingsDialog(QDialog):
         table_column_visibility=None,
         data_columns=None,
         data_configuration=None,
+        theme_id=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -52,6 +59,19 @@ class SettingsDialog(QDialog):
 
         tabs = QTabWidget()
         root.addWidget(tabs, 1)
+
+        saved_data_configuration = data_configuration if isinstance(data_configuration, dict) else {}
+        selected_theme_id = str(theme_id or saved_data_configuration.get("theme", "default"))
+        self._accepted = False
+        self._theme_restored = False
+        self._theme_restore_id = selected_theme_id
+        self.theme_tab = ThemeTab(selected_theme_id, parent=self)
+        self.theme_editor_tab = self.theme_tab
+        self._theme_restore_id = self.theme_tab.current_theme_id()
+        self.theme_tab.themeChanged.connect(self._on_theme_tab_changed)
+        self.theme_tab.themePreviewChanged.connect(self.themePreviewChanged.emit)
+        self.theme_tab.themeLoadFailed.connect(self._on_theme_load_failed)
+        self.theme_tab.themePersisted.connect(self._on_theme_persisted)
 
         general_tab = QWidget()
         general_tab_layout = QVBoxLayout(general_tab)
@@ -166,6 +186,34 @@ class SettingsDialog(QDialog):
             tab_wrap, "Choose which tab opens by default when the app starts."
         )
 
+        theme_wrap = QWidget()
+        theme_row = QHBoxLayout(theme_wrap)
+        theme_row.setContentsMargins(0, 0, 0, 0)
+        theme_row.setSpacing(6)
+        theme_row.addWidget(QLabel("Theme:"))
+        self.theme_combo = QComboBox()
+        self.general_theme_combo = self.theme_combo
+        self.theme_combo.setObjectName("generalThemeSelector")
+        self.theme_combo.setMinimumWidth(90)
+        self.theme_combo.setMaximumWidth(130)
+        self.theme_combo.setToolTip("Choose the current application theme. Selection is previewed live and retained when accepted.")
+        for key, label in self.theme_tab.theme_choices():
+            self.theme_combo.addItem(label, key)
+        current_theme = self.theme_tab.current_theme_id()
+        current_index = self.theme_combo.findData(current_theme)
+        if current_index >= 0:
+            self.theme_combo.setCurrentIndex(current_index)
+        self.theme_combo.currentIndexChanged.connect(self._on_general_theme_changed)
+        self.theme_tab.themesChanged.connect(self._refresh_general_theme_choices)
+        theme_row.addWidget(self.theme_combo)
+        theme_row.addStretch()
+        theme_cell = make_general_cell(
+            theme_wrap,
+            "Select the application palette. The compact selector is kept in the bottom-right General grid cell; edit colors on the Theme tab.",
+        )
+        theme_cell.setObjectName("generalThemeCell")
+        theme_cell.setMaximumWidth(170)
+
         g_layout.addWidget(alias_cell, 0, 0)
         g_layout.addWidget(analyze_cell, 0, 1)
         g_layout.addWidget(mode_cell, 1, 0)
@@ -174,6 +222,7 @@ class SettingsDialog(QDialog):
         g_layout.addWidget(raw_cell, 2, 0)
         g_layout.addWidget(thread_cell, 2, 1)
         g_layout.addWidget(cache_full_data_cell, 2, 2)
+        g_layout.addWidget(theme_cell, 3, 2)
         general_tab_layout.addWidget(general_group)
 
         cache_group = QGroupBox("Cache")
@@ -258,9 +307,11 @@ class SettingsDialog(QDialog):
             for name, visible in (table_column_visibility or {}).items()
         ]
         self.data_settings_tab = SettingsDataTab(columns)
-        self.data_settings_tab.load_configuration(data_configuration or {})
+        self.data_settings_tab.load_configuration(saved_data_configuration)
         data_tab_layout.addWidget(self.data_settings_tab, 1)
         tabs.addTab(data_tab, "Data Columns")
+
+        tabs.addTab(self.theme_tab, "Theme")
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -268,3 +319,87 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+        initial_result = self.theme_tab.last_load_result
+        if initial_result.used_fallback and selected_theme_id not in {"default", "builtin"}:
+            QTimer.singleShot(
+                0,
+                lambda requested=selected_theme_id, result=initial_result: self._on_theme_load_failed(
+                    requested, result.diagnostics
+                ),
+            )
+
+    # ----------------------------------------------------------- theme bridge
+    def _on_general_theme_changed(self, index: int) -> None:
+        if index < 0:
+            return
+        theme_id = self.theme_combo.itemData(index)
+        if theme_id is not None:
+            self.theme_tab.set_theme(str(theme_id))
+
+    def _refresh_general_theme_choices(self) -> None:
+        """Mirror Theme-tab discovery after Save As or a reset operation."""
+        if not hasattr(self, "theme_combo"):
+            return
+        selected = self.current_theme_id()
+        blocker = QSignalBlocker(self.theme_combo)
+        self.theme_combo.clear()
+        for key, label in self.theme_tab.theme_choices():
+            self.theme_combo.addItem(label, key)
+        index = self.theme_combo.findData(selected)
+        if index >= 0:
+            self.theme_combo.setCurrentIndex(index)
+        del blocker
+
+    def _on_theme_tab_changed(self, theme_id: str) -> None:
+        blocker = QSignalBlocker(self.theme_combo)
+        index = self.theme_combo.findData(theme_id)
+        if index < 0:
+            self.theme_combo.addItem(theme_id, theme_id)
+            index = self.theme_combo.findData(theme_id)
+        self.theme_combo.setCurrentIndex(index)
+        del blocker
+        self.themeChanged.emit(theme_id)
+
+    def _on_theme_load_failed(self, requested: str, diagnostics: object) -> None:
+        details = tuple(str(item) for item in (diagnostics if isinstance(diagnostics, (tuple, list)) else (diagnostics,)))
+        message = "; ".join(details) or "the requested theme could not be loaded"
+        key = (str(requested), message)
+        if not hasattr(self, "_theme_diagnostic_keys"):
+            self._theme_diagnostic_keys: set[tuple[str, str]] = set()
+        if key in self._theme_diagnostic_keys:
+            return
+        self._theme_diagnostic_keys.add(key)
+        QMessageBox.warning(
+            self,
+            "Theme unavailable",
+            f"Theme {requested!r} could not be loaded. The safe default remains active.\n{message}",
+        )
+
+    def _on_theme_persisted(self, theme_id: str) -> None:
+        """Keep explicit Save actions durable even if the dialog is cancelled."""
+        self._theme_restore_id = str(theme_id)
+        self._theme_restored = False
+
+    def current_theme_id(self) -> str:
+        return self.theme_tab.current_theme_id()
+
+    def accept(self) -> None:  # type: ignore[override]
+        self._accepted = True
+        super().accept()
+
+    def _restore_live_theme(self) -> None:
+        if self._theme_restored:
+            return
+        self._theme_restored = True
+        self.theme_tab.set_theme(self._theme_restore_id)
+
+    def reject(self) -> None:  # type: ignore[override]
+        if not self._accepted:
+            self._restore_live_theme()
+        super().reject()
+
+    def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        if not self._accepted:
+            self._restore_live_theme()
+        super().closeEvent(event)

@@ -6,10 +6,10 @@ import os
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from app_paths import asset_path
-from back.theme_loader import load_theme
+from back.theme_loader import Theme, ThemeLoadResult, load_theme
 
 try:
     import pyi_splash  # type: ignore[import-not-found]
@@ -151,24 +151,54 @@ QProgressBar::chunk {
 """
 
 
-def _theme_stylesheet(theme_id: str | None) -> str:
+def _theme_stylesheet(theme_id: str | Theme | None) -> str:
     """Return a complete safe stylesheet using validated external theme colors."""
-    loaded = load_theme(theme_id)
+    loaded = ThemeLoadResult(theme_id) if isinstance(theme_id, Theme) else load_theme(theme_id)
     colors = loaded.theme.colors
-    return DARK_STYLE + (
+    return DARK_STYLE + "\n" + loaded.theme.stylesheet() + (
         "\nQMainWindow, QWidget { background-color: %(background)s; color: %(text)s; }"
         "\nQTableWidget { background-color: %(surface)s; alternate-background-color: %(background)s;"
         " selection-background-color: %(surface_alt)s; }"
         "\nQHeaderView::section, QTabBar::tab { background-color: %(surface)s; color: %(accent)s; }"
         "\nQPushButton { background-color: %(surface)s; border-color: %(border)s; color: %(text)s; }"
         "\nQPushButton:hover { background-color: %(surface_alt)s; border-color: %(accent)s; }"
+        "\nQLabel[themeRole=muted] { color: %(muted)s; }"
+        "\nQLabel[themeRole=success] { color: %(success)s; }"
+        "\nQLabel[themeRole=warning] { color: %(warning)s; }"
+        "\nQLabel[themeRole=error] { color: %(error)s; }"
     ) % colors
 
 
-def apply_theme(application: QApplication, theme_id: str | None = None) -> tuple[str, tuple[str, ...]]:
+_THEME_DIAGNOSTIC_KEYS: set[tuple[str, tuple[str, ...]]] = set()
+
+
+def _show_theme_diagnostics(parent, requested: str, diagnostics: tuple[str, ...]) -> None:
+    """Show one concise fallback warning per requested failure in this process."""
+    key = (requested, diagnostics)
+    if key in _THEME_DIAGNOSTIC_KEYS:
+        return
+    _THEME_DIAGNOSTIC_KEYS.add(key)
+    QMessageBox.warning(
+        parent,
+        "Theme unavailable",
+        f"Theme {requested!r} could not be loaded. The safe default remains active.\n"
+        + "; ".join(diagnostics),
+    )
+
+
+def apply_theme(
+    application: QApplication,
+    theme_id: str | None = None,
+    *,
+    theme: Theme | None = None,
+    parent=None,
+    notify: bool = True,
+) -> tuple[str, tuple[str, ...]]:
     """Apply a validated external theme, retaining the default style on failure."""
-    loaded = load_theme(theme_id)
-    application.setStyleSheet(_theme_stylesheet(loaded.theme.id))
+    loaded = ThemeLoadResult(theme) if theme is not None else load_theme(theme_id)
+    application.setStyleSheet(_theme_stylesheet(loaded.theme))
+    if loaded.used_fallback and theme_id is not None and notify:
+        _show_theme_diagnostics(parent, str(theme_id), loaded.diagnostics)
     return loaded.theme.id, loaded.diagnostics
 
 
@@ -181,7 +211,7 @@ def configure_application(application: QApplication) -> None:
         selected = open_settings(settings_path(), legacy_settings_path()).value("data_layout", {}).get("theme", "default")
     except (ImportError, AttributeError, OSError, TypeError, ValueError):
         selected = "default"
-    apply_theme(application, str(selected))
+    apply_theme(application, str(selected), notify=False)
     application.setWindowIcon(QIcon(str(asset_path("icon.ico"))))
 
 

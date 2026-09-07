@@ -55,8 +55,6 @@ def test_configuration_round_trip_preserves_keys_order_visibility_and_width(app)
     ]
     assert state["columns"][0]["visible"] is False
     assert state["columns"][0]["width"] == 222
-    assert state["theme"] == "github"
-
     restored = SettingsDataTab(_columns(), themes=[{"id": "default", "name": "Default"}, {"id": "github", "name": "GitHub"}])
     restored.load_configuration(state)
     assert restored.export_configuration() == state
@@ -85,9 +83,7 @@ def test_width_validation_clamps_and_reports_fallback(app):
     )
     entry = widget.export_configuration()["columns"][0]
     assert entry["width"] == 100
-    assert widget.current_theme_id() == "default"
     assert any("Invalid width" in message for message in messages)
-    assert any("unavailable" in message for message in messages)
 
 
 def test_reset_restores_initial_state_and_exposes_drag_handle(app):
@@ -107,10 +103,10 @@ def test_reset_restores_initial_state_and_exposes_drag_handle(app):
     assert handle.toolTip()
 
 
-def test_loader_themes_keep_builtin_default_as_reset_theme(app):
+def test_data_tab_has_no_theme_selector_or_theme_configuration(app):
     widget = SettingsDataTab([ColumnDefinition("file", "File")])
-    assert widget.theme_combo.findData("default") >= 0
-    assert widget.current_theme_id() == "default"
+    assert not hasattr(widget, "theme_combo")
+    assert "theme" not in widget.export_configuration()
 
 
 def test_export_uses_durable_state_after_qt_deletes_owned_cell_widget(app):

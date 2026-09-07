@@ -35,14 +35,6 @@ class ColumnState:
     width: int
 
 
-@dataclass(frozen=True)
-class ThemeChoice:
-    """Normalized theme option for the combo box."""
-
-    key: str
-    label: str
-
-
 class ColumnTree(QTreeWidget):
     """Top-level-only tree that notifies after native move cleanup."""
 

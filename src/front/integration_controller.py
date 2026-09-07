@@ -53,12 +53,14 @@ class IntegrationMixin:
             add_mode=self._add_mode, default_tab=self._default_tab, card_fields=self._card_field_visibility,
             simple_card_fields=self._simple_card_field_visibility, data_columns=self._column_definitions(),
             data_configuration=self._capture_data_layout(),
+            theme_id=self._data_layout.get("theme", "default"),
         )
         dialog.clear_cache_btn.clicked.connect(
             lambda: self._clear_inspection_cache_from_settings(dialog)
         )
         dialog.verify_cache_btn.clicked.connect(self._verify_cached_file_paths)
-        dialog.data_settings_tab.themeChanged.connect(self._apply_theme)
+        dialog.themeChanged.connect(self._apply_theme)
+        dialog.themePreviewChanged.connect(self._apply_theme_preview)
         self._refresh_cache_dialog(dialog)
         if not dialog.exec():
             return
@@ -75,6 +77,7 @@ class IntegrationMixin:
         for key, check in dialog.simple_card_field_checks.items():
             self._simple_card_field_visibility[key] = check.isChecked()
         self._data_layout = dialog.data_settings_tab.export_configuration()
+        self._data_layout["theme"] = dialog.current_theme_id()
         self._schedule_settings_rebuild()
 
     def _schedule_settings_rebuild(self) -> None:
@@ -146,12 +149,17 @@ class IntegrationMixin:
         dialog.cache_counts_label.setText(f"Total: {report.total}  Active: {report.active}  Historic: {report.historic}")
         dialog.verify_cache_btn.setEnabled(report.total > 0)
 
-    def _apply_theme(self, theme_id: str) -> None:
+    def _apply_theme(self, theme_id: str, theme=None) -> None:
         from PyQt6.QtWidgets import QApplication
         from front.application import apply_theme
         application = QApplication.instance()
         if application is not None:
-            apply_theme(application, theme_id)
+            apply_theme(application, theme_id, theme=theme, parent=self)
+
+    def _apply_theme_preview(self, theme) -> None:
+        """Apply a validated in-memory palette without requiring a disk round-trip."""
+        if theme is not None:
+            self._apply_theme(str(getattr(theme, "id", "default")), theme)
 
     def _settings_data_layout(self) -> dict[str, Any]:
         store = open_settings(self._settings_path(), self._legacy_settings_path())

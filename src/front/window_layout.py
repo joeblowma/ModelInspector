@@ -31,6 +31,53 @@ from PyQt6.QtWidgets import (
 from front.filter_widgets import CheckFilterButton
 
 
+# Runtime-only smart Data-column groups.  Membership is exact: each entry lists
+# the ``_table_columns`` labels it toggles.  Group state is never persisted;
+# it lives for one application/session only.
+def _group_tooltip(summary: str) -> str:
+    return (
+        f"{summary}\n\n"
+        "Turns on automatically while loaded results genuinely use these "
+        "columns. Unchecked masks every column in the group; checked reveals "
+        "only columns that are visible in Settings > Data (the per-column "
+        "baseline always wins: a column hidden there stays hidden). Your "
+        "manual choice sticks for the rest of the session, including later "
+        "loads, and stops automatic enabling for this group until it is "
+        "cleared with Clear All."
+    )
+
+
+SMART_COLUMN_GROUPS: dict[str, dict[str, str]] = {
+    "llm": {
+        "label": "LLM",
+        "columns": ("MoE", "Experts", "Active Experts"),
+        "tooltip": _group_tooltip(
+            "Show LLM columns: MoE, Experts, Active Experts."
+        ),
+    },
+    "diffusion": {
+        "label": "Diffusion",
+        "columns": (
+            "UNet Precision",
+            "VAE Precision",
+            "Text Encoder Precision",
+            "Transformer Precision",
+        ),
+        "tooltip": _group_tooltip(
+            "Show Diffusion columns: UNet Precision, VAE Precision, "
+            "Text Encoder Precision, Transformer Precision."
+        ),
+    },
+    "adapter": {
+        "label": "Adapter",
+        "columns": ("Adapter", "LoRA Rank"),
+        "tooltip": _group_tooltip(
+            "Show Adapter columns: Adapter, LoRA Rank."
+        ),
+    },
+}
+
+
 class WindowLayoutMixin:
     """Build the widgets and signal wiring owned by ``MainWindow``."""
 
@@ -54,7 +101,7 @@ class WindowLayoutMixin:
 
         button_height = 35
         settings_btn = QPushButton("Settings")
-        settings_btn.setToolTip("Settings")
+        settings_btn.setToolTip("Open application settings (themes, analysis, data columns)")
         settings_btn.setFixedHeight(35)
         settings_btn.clicked.connect(self._open_settings)
         btn_row_1.addWidget(settings_btn)
@@ -72,6 +119,7 @@ class WindowLayoutMixin:
         btn_row_1.addStretch()
 
         self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setToolTip("Cancel the running scan or analysis")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.setVisible(False)
         self.cancel_btn.clicked.connect(self._cancel_current_operation)
@@ -90,6 +138,7 @@ class WindowLayoutMixin:
         btn_row_1.addWidget(self.progress_label, 1)
 
         self.analyze_btn = QPushButton("Analyze")
+        self.analyze_btn.setToolTip("Inspect every queued model and add the results to Cards and Data")
         self.analyze_btn.setObjectName("analyzeBtn")
         self.analyze_btn.clicked.connect(self._analyze_all)
         self.analyze_btn.setStyleSheet("font-weight: 800;")
@@ -128,6 +177,7 @@ class WindowLayoutMixin:
 
         cards_toolbar = QHBoxLayout()
         self.cards_select_all_cb = QCheckBox("Select All")
+        self.cards_select_all_cb.setToolTip("Select or deselect every visible model card")
         self.cards_select_all_cb.stateChanged.connect(self._on_cards_select_all_changed)
         cards_toolbar.addWidget(self.cards_select_all_cb)
         self.selected_count_label = QLabel("0 selected")
@@ -165,15 +215,31 @@ class WindowLayoutMixin:
 
         data_toolbar = QHBoxLayout()
         self.table_select_all_cb = QCheckBox("Select All")
+        self.table_select_all_cb.setToolTip("Select or deselect every visible Data row")
         self.table_select_all_cb.stateChanged.connect(self._on_table_select_all_changed)
         data_toolbar.addWidget(self.table_select_all_cb)
         self.show_full_path_cb = QCheckBox("Show Full Path")
+        self.show_full_path_cb.setToolTip(
+            "Show complete file paths in the File column instead of file names"
+        )
         self.show_full_path_cb.stateChanged.connect(self._on_show_full_path_changed)
         data_toolbar.addWidget(self.show_full_path_cb)
         self.table_selected_count_label = QLabel("0 selected")
         self.table_selected_count_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
         data_toolbar.addWidget(self.table_selected_count_label)
         data_toolbar.addStretch()
+        # Pinned smart-column group toggles (right side of the Data toolbar).
+        self._smart_group_checkboxes: dict[str, QCheckBox] = {}
+        for group_key, spec in SMART_COLUMN_GROUPS.items():
+            checkbox = QCheckBox(spec["label"])
+            checkbox.setToolTip(spec["tooltip"])
+            checkbox.stateChanged.connect(
+                lambda state, key=group_key: self._on_smart_group_toggled(
+                    key, state == Qt.CheckState.Checked.value
+                )
+            )
+            data_toolbar.addWidget(checkbox)
+            self._smart_group_checkboxes[group_key] = checkbox
         data_tab_layout.addLayout(data_toolbar)
 
         self.table = QTableWidget()
@@ -279,6 +345,7 @@ class WindowLayoutMixin:
         self.raw_next_btn.clicked.connect(lambda: self._step_raw_selection(1))
         raw_top.addWidget(self.raw_next_btn)
         self.raw_load_btn = QPushButton("Load Full Dump")
+        self.raw_load_btn.setToolTip("Load the full tensor-key dump for the selected model")
         self.raw_load_btn.clicked.connect(self._load_selected_raw_dump)
         raw_top.addWidget(self.raw_load_btn)
         self._update_raw_controls()
@@ -349,6 +416,10 @@ class WindowLayoutMixin:
 
         self.clear_results_btn = QPushButton("Clear All")
         self.clear_results_btn.setObjectName("clearBtn")
+        self.clear_results_btn.setToolTip(
+            "Remove all analyzed results and queued models from the window "
+            "(cached summaries stay on disk). Auto-enabled column groups reset."
+        )
         self.clear_results_btn.clicked.connect(self._clear_all)
         bottom_actions.addWidget(self.clear_results_btn)
         self._refresh_selected_action_button()

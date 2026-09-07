@@ -150,6 +150,14 @@ def test_integrated_worker_projection_filters_sorting_and_raw_summary(
         assert header.sortIndicatorSection() == expected_sort_column
         assert header.sortIndicatorOrder() == expected_sort_order
 
+        # Loaded results genuinely use UNet Precision -> Diffusion auto-enables;
+        # LLM/Adapter families stay off for this synthetic dataset.
+        assert window._smart_group_state["diffusion"] is True
+        assert window._smart_group_checkboxes["diffusion"].isChecked()
+        assert window._smart_group_state["llm"] is False
+        assert window._smart_group_state["adapter"] is False
+        assert not window.table.isColumnHidden(window._table_columns.index("UNet Precision"))
+
         window._active_arch_filter = {"Architecture A"}
         window._apply_arch_filter()
         visible = set(window._visible_paths())
@@ -181,6 +189,13 @@ def test_integrated_worker_projection_filters_sorting_and_raw_summary(
         assert cached_raw_text.count("CURRENT MODEL / OUTPUT") == 1
         assert cached_raw_text.endswith("cached full dump")
         app.processEvents()
+
+        # Clear transition: auto-enabled groups reset, columns re-masked.
+        window._clear_all()
+        app.processEvents()
+        assert all(not state for state in window._smart_group_state.values())
+        assert not window._smart_group_checkboxes["diffusion"].isChecked()
+        assert window.table.isColumnHidden(window._table_columns.index("UNet Precision"))
     finally:
         window.close()
 

@@ -82,6 +82,10 @@ class ViewControllerMixin:
             )
         QTimer.singleShot(3000, self._refresh_selected_action_button)
     def _clear_cards(self):
+        if not self._results:
+            # Real clear transitions drain results before clearing cards;
+            # rebuild passes keep ``_results`` populated.
+            self._reset_auto_smart_groups()
         while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)
             if item is None:
@@ -265,6 +269,7 @@ class ViewControllerMixin:
             self.table.setItem(row, col, item)
         if filepath:
             self._path_to_row[filepath] = row
+        self._note_result_for_smart_groups(data)
     def _visible_paths(self) -> list[str]:
         paths = []
         for row in range(self.table.rowCount()):

@@ -402,7 +402,7 @@ class WindowCoreMixin:
         for idx, name in enumerate(self._table_columns):
             if idx == 0:
                 continue
-            col_vis[name] = not self.table.isColumnHidden(idx)
+            col_vis[name] = self._persisted_column_visible(idx)
         s.setValue("table_columns", json.dumps(col_vis))
 
     def _apply_table_column_visibility(self):

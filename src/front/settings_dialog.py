@@ -79,6 +79,7 @@ class SettingsDialog(QDialog):
         general_tab_layout.setSpacing(10)
 
         general_group = QGroupBox("General")
+        general_group.setToolTip("General application behavior settings.")
         g_layout = QGridLayout(general_group)
         g_layout.setHorizontalSpacing(14)
         g_layout.setVerticalSpacing(14)
@@ -264,9 +265,19 @@ class SettingsDialog(QDialog):
             "extra_meta": "Show Extra Metadata",
             "training_meta": "Show Training Metadata",
         }
+        simple_field_tooltips = {
+            "parameters": "Show total parameter count on card.",
+            "precision": "Show precision summary on card.",
+            "file_size": "Show file size on card.",
+            "tensors": "Show tensor count on card.",
+            "lora_rank": "Show LoRA rank on card.",
+            "extra_meta": "Show extra metadata fields on card.",
+            "training_meta": "Show training metadata fields on card.",
+        }
         for key, label in simple_field_labels.items():
             cb = QCheckBox(label)
             cb.setChecked(bool(simple_card_fields.get(key, False)))
+            cb.setToolTip(simple_field_tooltips.get(key, ""))
             self.simple_card_field_checks[key] = cb
             s_layout.addWidget(cb)
         s_layout.addStretch()
@@ -285,9 +296,19 @@ class SettingsDialog(QDialog):
             "extra_meta": "Show Extra Metadata",
             "training_meta": "Show Training Metadata",
         }
+        card_field_tooltips = {
+            "parameters": "Show total parameter count in Advanced Viewer card details.",
+            "file_size": "Show file size in Advanced Viewer card details.",
+            "precision": "Show precision summary in Advanced Viewer card details.",
+            "tensors": "Show tensor count in Advanced Viewer card details.",
+            "lora_rank": "Show LoRA rank in Advanced Viewer card details.",
+            "extra_meta": "Show extra metadata fields in Advanced Viewer card details.",
+            "training_meta": "Show training metadata fields in Advanced Viewer card details.",
+        }
         for key, label in card_field_labels.items():
             cb = QCheckBox(label)
             cb.setChecked(bool(card_fields.get(key, True)))
+            cb.setToolTip(card_field_tooltips.get(key, ""))
             self.card_field_checks[key] = cb
             d_layout.addWidget(cb)
         d_layout.addStretch()

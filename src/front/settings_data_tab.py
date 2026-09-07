@@ -88,6 +88,10 @@ class SettingsDataTab(QWidget):
         self.column_tree = ColumnTree()
         self.column_tree.setObjectName("dataColumnList")
         self.column_tree.setHeaderLabels(["", "Visible", "Column", "Width"])
+        header = self.column_tree.headerItem()
+        if header is not None:
+            header.setToolTip(1, "Toggle column visibility in the Data table.")
+            header.setToolTip(3, "Set column width in pixels.")
         self.column_tree.setRootIsDecorated(False)
         self.column_tree.setIndentation(0)
         self.column_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)

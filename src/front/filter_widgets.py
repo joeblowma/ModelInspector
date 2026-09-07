@@ -29,11 +29,13 @@ class CheckFilterButton(QToolButton):
         super().__init__()
         self._label = label
         self.setText(f"{self._label}: All")
+        self.setToolTip(f"Filter by {self._label.lower()} model family.")
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._menu = QMenu(self)
         self.setMenu(self._menu)
 
         self._all_cb = QCheckBox("Select All")
+        self._all_cb.setToolTip("Select or deselect all model family filters.")
         self._all_cb.setChecked(True)
         self._all_cb.stateChanged.connect(self._toggle_all)
         all_action = QWidgetAction(self)
@@ -92,6 +94,7 @@ class CheckFilterButton(QToolButton):
             checked = checked_state.get(arch, arch in self._active)
             cb = QCheckBox(f"{arch} ({self._counts.get(arch, 0)})")
             cb.setChecked(checked)
+            cb.setToolTip(f"Filter by {arch} model family.")
             cb.stateChanged.connect(self._on_arch_toggled)
             self._arch_checks[arch] = cb
             act = QWidgetAction(self)

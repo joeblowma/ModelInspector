@@ -156,6 +156,7 @@ class AdvancedViewerDialog(QDialog):
         root.setSpacing(10)
 
         self.work_area = QTabWidget()
+        self.work_area.setToolTip("Browse Overview, Card Details, Metadata, Tensors, and Embedded Content pages.")
         self.work_area.tabBar().setUsesScrollButtons(False)
         facts_page = QWidget()
         facts_layout = QVBoxLayout(facts_page)
@@ -308,6 +309,7 @@ class AdvancedViewerDialog(QDialog):
         card_details_scroll = QScrollArea()
         card_details_scroll.setWidgetResizable(True)
         card_details_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        card_details_scroll.setToolTip("Scroll through the card details view of the inspected model.")
         self._card_details_content = QWidget()
         self._card_details_content_layout = QVBoxLayout(self._card_details_content)
         self._card_details_content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)

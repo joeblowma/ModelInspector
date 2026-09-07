@@ -53,6 +53,7 @@ class ModelCard(QFrame):
             }
         """)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.setToolTip("Click to open the Advanced Viewer. Right-click for context actions.")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)

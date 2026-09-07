@@ -141,6 +141,7 @@ class ExplorerTab(QWidget):
         root.addWidget(self.status_label)
 
         self.work_area = QTabWidget()
+        self.work_area.setToolTip("Browse Metadata, Tensors, and Embedded Content pages from the inspection header.")
         root.addWidget(self.work_area, 1)
         self.metadata_page = QWidget()
         metadata_page_layout = QVBoxLayout(self.metadata_page)

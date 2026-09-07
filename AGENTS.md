@@ -51,12 +51,16 @@ Existing tests:
 - `.\tests\test_settings_data_tab.py`
 - `.\tests\test_backend_phase2.py`
 - `.\tests\test_phase4_integration.py`
+- `.\tests\test_cache_menu_integration.py`
+- `.\tests\test_smart_column_groups.py`
 - `.\tests\test_reader_registry.py`
 - `.\tests\test_onnx_reader.py`
 - `.\tests\test_shard_discovery.py`
 - `.\tests\test_sidecar_discovery.py`
 - `.\tests\test_cache_sidecar_integration.py`
 - `.\tests\test_reporting_shards.py`
+- `.\tests\test_theme_tab.py`
+- `.\tests\test_tooltip_audit.py`
 
 ## Agent-Specific Instructions
 

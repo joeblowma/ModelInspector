@@ -48,16 +48,16 @@ class IntegrationMixin:
         dialog = SettingsDialog(
             self, allow_filename_alias_detection=self._allow_filename_alias_detection,
             auto_analyze_on_add=self._auto_analyze_on_add, dump_json_modelinfo=self._dump_json_modelinfo,
-            auto_load_raw_dump=self._auto_load_raw_dump, load_default_libraries_on_startup=self._load_default_libraries_on_startup,
+            auto_load_raw_dump=self._auto_load_raw_dump,
             cache_full_data_on_analyze=self._cache_full_data_on_analyze, analysis_threads=self._analysis_threads,
             add_mode=self._add_mode, default_tab=self._default_tab, card_fields=self._card_field_visibility,
             simple_card_fields=self._simple_card_field_visibility, data_columns=self._column_definitions(),
             data_configuration=self._capture_data_layout(),
         )
-        dialog.clear_cache_btn.clicked.connect(self._clear_inspection_cache_from_settings)
-        dialog.load_cache_btn.clicked.connect(self._load_cache)
-        dialog.load_cache_all_btn.clicked.connect(self._load_cache_all)
-        dialog.load_cache_archived_btn.clicked.connect(self._load_cache_archived)
+        dialog.clear_cache_btn.clicked.connect(
+            lambda: self._clear_inspection_cache_from_settings(dialog)
+        )
+        dialog.verify_cache_btn.clicked.connect(self._verify_cached_file_paths)
         dialog.data_settings_tab.themeChanged.connect(self._apply_theme)
         self._refresh_cache_dialog(dialog)
         if not dialog.exec():
@@ -66,7 +66,6 @@ class IntegrationMixin:
         self._auto_analyze_on_add = dialog.auto_analyze_checkbox.isChecked()
         self._dump_json_modelinfo = dialog.dump_json_checkbox.isChecked()
         self._auto_load_raw_dump = dialog.auto_load_raw_checkbox.isChecked()
-        self._load_default_libraries_on_startup = dialog.default_libraries_checkbox.isChecked()
         self._cache_full_data_on_analyze = dialog.cache_full_data_checkbox.isChecked()
         self._analysis_threads = int(dialog.analysis_threads_combo.currentData() or 1)
         self._add_mode = str(dialog.add_mode_combo.currentData() or "replace")
@@ -131,7 +130,6 @@ class IntegrationMixin:
                 "auto_analyze_on_add": str(self._auto_analyze_on_add).lower(),
                 "dump_json_modelinfo": str(self._dump_json_modelinfo).lower(),
                 "auto_load_raw_dump": str(self._auto_load_raw_dump).lower(),
-                "load_default_libraries_on_startup": str(self._load_default_libraries_on_startup).lower(),
                 "cache_full_data_on_analyze": str(self._cache_full_data_on_analyze).lower(),
                 "analysis_threads": str(self._analysis_threads),
                 "add_mode": self._add_mode,
@@ -146,9 +144,7 @@ class IntegrationMixin:
     def _refresh_cache_dialog(self, dialog) -> None:
         report = self._cache_report().availability
         dialog.cache_counts_label.setText(f"Total: {report.total}  Active: {report.active}  Historic: {report.historic}")
-        dialog.load_cache_btn.setEnabled(report.load_cache)
-        dialog.load_cache_all_btn.setEnabled(report.load_cache_all)
-        dialog.load_cache_archived_btn.setEnabled(report.load_cache_archived)
+        dialog.verify_cache_btn.setEnabled(report.total > 0)
 
     def _apply_theme(self, theme_id: str) -> None:
         from PyQt6.QtWidgets import QApplication
@@ -282,18 +278,24 @@ class IntegrationMixin:
     def _refresh_cache_controls(self) -> None:
         report = self._cache_report()
         availability = report.availability
-        buttons = (
-            ("load_cache_btn", availability.load_cache),
-            ("load_cache_all_btn", availability.load_cache_all),
-            ("load_cache_archived_btn", availability.load_cache_archived),
-        )
-        for name, enabled in buttons:
-            button = getattr(self, name, None)
-            if button is not None:
-                button.setEnabled(enabled)
         label = getattr(self, "cache_counts_label", None)
         if label is not None:
             label.setText(f"Total: {availability.total}  Active: {availability.active}  Historic: {availability.historic}")
+        self._refresh_cache_menu_actions()
+
+    def _refresh_cache_menu_actions(self) -> None:
+        """Show/hide cache-load actions based on cache population and view state."""
+        report = self._cache_report().availability
+        view_nonempty = bool(self._results)
+        actions = (
+            (getattr(self, "_cache_load_active_action", None), report.load_cache),
+            (getattr(self, "_cache_load_all_action", None), report.load_cache_all),
+            (getattr(self, "_cache_load_archived_action", None), report.load_cache_archived),
+        )
+        for action, available in actions:
+            if action is not None:
+                action.setVisible(available)
+                action.setEnabled(not view_nonempty)
 
     def _schedule_cache_sync(self) -> None:
         """Refresh changed, available headers in a worker without blocking Qt."""
@@ -346,10 +348,24 @@ class IntegrationMixin:
         self._set_progress_status(f"Loaded {loaded_count} cached {'historic ' if wanted == 'historic' else ''}summaries")
 
     def _load_cache(self) -> None:
-        self._load_cache_status(None)
+        self._load_cache_status("active")
 
     def _load_cache_all(self) -> None:
-        self._load_cache_status("active")
+        self._load_cache_status(None)
 
     def _load_cache_archived(self) -> None:
         self._load_cache_status("historic")
+
+    def _verify_cached_file_paths(self) -> None:
+        """Verify cached file paths and surface a completion summary."""
+        report = self._cache_report()
+        availability = report.availability
+        action_plan = report.action_plan
+        archived = sum(1 for e in action_plan if e.is_historic)
+        changed = sum(1 for e in action_plan if e.is_active)
+        self._set_progress_status(
+            f"Verify: {availability.total} total, {availability.active} active, "
+            f"{availability.historic} historic | "
+            f"{archived} archived/missing, {changed} changed entries scheduled for inspection"
+        )
+        self._clear_progress_status(delay_ms=8000)

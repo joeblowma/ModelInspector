@@ -135,7 +135,6 @@ class WindowCoreMixin:
         self._auto_analyze_on_add = True
         self._dump_json_modelinfo = False
         self._auto_load_raw_dump = False
-        self._load_default_libraries_on_startup = False
         self._cache_full_data_on_analyze = False
         self._selected_action = "copy_files"
         self._analysis_threads = 2
@@ -190,6 +189,16 @@ class WindowCoreMixin:
         menu = QMenu(self)
         self._add_menu_action(menu, "Open Files", self._browse_files)
         self._add_menu_action(menu, "Open Folder", self._browse_folder_recursive)
+        menu.addSeparator()
+        self._cache_load_active_action = self._add_menu_action(
+            menu, "Load Cache", self._load_cache
+        )
+        self._cache_load_all_action = self._add_menu_action(
+            menu, "Load Cache All", self._load_cache_all
+        )
+        self._cache_load_archived_action = self._add_menu_action(
+            menu, "Load Cache Archived", self._load_cache_archived
+        )
         return menu
 
     def _selected_actions(self):
@@ -324,10 +333,6 @@ class WindowCoreMixin:
         self._auto_load_raw_dump = (
             str(s.value("auto_load_raw_dump", "false")).lower() == "true"
         )
-        self._load_default_libraries_on_startup = (
-            str(s.value("load_default_libraries_on_startup", "false")).lower()
-            == "true"
-        )
         self._cache_full_data_on_analyze = (
             str(s.value("cache_full_data_on_analyze", "false")).lower() == "true"
         )
@@ -385,10 +390,6 @@ class WindowCoreMixin:
         s.setValue("auto_analyze_on_add", str(self._auto_analyze_on_add).lower())
         s.setValue("dump_json_modelinfo", str(self._dump_json_modelinfo).lower())
         s.setValue("auto_load_raw_dump", str(self._auto_load_raw_dump).lower())
-        s.setValue(
-            "load_default_libraries_on_startup",
-            str(self._load_default_libraries_on_startup).lower(),
-        )
         s.setValue(
             "cache_full_data_on_analyze", str(self._cache_full_data_on_analyze).lower()
         )

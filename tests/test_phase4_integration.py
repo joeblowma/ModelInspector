@@ -232,7 +232,7 @@ def test_settings_cache_load_reconciles_filters_and_preserves_active_selection(
             lambda _paths: snapshots,
         )
 
-        window._load_cache()
+        window._load_cache_all()
 
         assert set(window.arch_filter_btn._arch_checks) == {
             "Architecture A", "Architecture B", "Architecture C"
@@ -288,3 +288,171 @@ def test_theme_application_and_mainwindow_explorer_wiring(monkeypatch, tmp_path:
         assert window.table.horizontalHeader().visualIndex(2) == 0
     finally:
         window.close()
+
+
+def test_cache_load_menu_labels_and_semantics(monkeypatch, tmp_path: Path) -> None:
+    """Load Cache = active-only, Load Cache All = all, Load Cache Archived = historic-only."""
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    app = QApplication.instance() or QApplication([])
+    from gui import MainWindow
+    window = MainWindow()
+    try:
+        active_path = "R:/active/model.safetensors"
+        historic_path = "R:/historic/missing.gguf"
+        monkeypatch.setattr(
+            window, "_cache_report",
+            lambda: SimpleNamespace(
+                entries=[
+                    SimpleNamespace(path=active_path, classification="active", is_active=True, is_historic=False),
+                    SimpleNamespace(path=historic_path, classification="historic", is_active=False, is_historic=True),
+                ],
+                availability=SimpleNamespace(
+                    total=2, active=1, historic=1, refresh_candidates=0, sync_candidates=0,
+                    load_cache=True, load_cache_all=True, load_cache_archived=True,
+                    total_count=2, active_count=1, historic_count=1,
+                ),
+            ),
+        )
+        calls = []
+        monkeypatch.setattr(window, "_load_cache_status", lambda w: calls.append(w))
+        window._load_cache()
+        window._load_cache_all()
+        window._load_cache_archived()
+        assert calls == ["active", None, "historic"]
+    finally:
+        window.close()
+
+
+def test_cache_menu_actions_hidden_disabled_states(monkeypatch, tmp_path: Path) -> None:
+    """Cache-load QActions hidden when population absent; disabled when view nonempty."""
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    app = QApplication.instance() or QApplication([])
+    from gui import MainWindow
+    window = MainWindow()
+    try:
+        assert hasattr(window, "_cache_load_active_action")
+        assert hasattr(window, "_cache_load_all_action")
+        assert hasattr(window, "_cache_load_archived_action")
+        monkeypatch.setattr(
+            window, "_cache_report",
+            lambda: SimpleNamespace(
+                entries=[],
+                availability=SimpleNamespace(
+                    total=0, active=0, historic=0, refresh_candidates=0, sync_candidates=0,
+                    load_cache=False, load_cache_all=False, load_cache_archived=False,
+                    total_count=0, active_count=0, historic_count=0,
+                ),
+            ),
+        )
+        window._refresh_cache_menu_actions()
+        assert not window._cache_load_active_action.isVisible()
+        assert not window._cache_load_all_action.isVisible()
+        assert not window._cache_load_archived_action.isVisible()
+        window._results.append({"filepath": "R:/dummy.safetensors"})
+        monkeypatch.setattr(
+            window, "_cache_report",
+            lambda: SimpleNamespace(
+                entries=[SimpleNamespace(path="R:/dummy.safetensors", classification="active", is_active=True, is_historic=False)],
+                availability=SimpleNamespace(
+                    total=1, active=1, historic=0, refresh_candidates=0, sync_candidates=0,
+                    load_cache=True, load_cache_all=True, load_cache_archived=False,
+                    total_count=1, active_count=1, historic_count=0,
+                ),
+            ),
+        )
+        window._refresh_cache_menu_actions()
+        assert window._cache_load_active_action.isVisible()
+        assert not window._cache_load_archived_action.isVisible()
+        assert not window._cache_load_active_action.isEnabled()
+        assert not window._cache_load_all_action.isEnabled()
+    finally:
+        window.close()
+
+
+def test_clear_cache_refreshes_counts_and_menu(monkeypatch, tmp_path: Path) -> None:
+    """After confirmed clear, counts reset and menu actions hide."""
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    from gui import MainWindow
+    window = MainWindow()
+    try:
+        monkeypatch.setattr(
+            window, "_cache_report",
+            lambda: SimpleNamespace(
+                entries=[],
+                availability=SimpleNamespace(
+                    total=0, active=0, historic=0, refresh_candidates=0, sync_candidates=0,
+                    load_cache=False, load_cache_all=False, load_cache_archived=False,
+                    total_count=0, active_count=0, historic_count=0,
+                ),
+            ),
+        )
+        refresh_calls = []
+        monkeypatch.setattr(window, "_refresh_cache_menu_actions", lambda: refresh_calls.append(True))
+        from PyQt6.QtWidgets import QMessageBox
+        monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.StandardButton.Yes)
+        monkeypatch.setattr(QMessageBox, "information", lambda *a, **kw: None)
+        import model_cache as _mc
+        monkeypatch.setattr(_mc, "clear_inspection_cache", lambda: 0)
+        window._clear_inspection_cache_from_settings()
+        assert refresh_calls == [True]
+    finally:
+        window.close()
+
+
+def test_verify_cache_disabled_when_total_zero(monkeypatch, tmp_path: Path) -> None:
+    """Verify Cached File Paths button disabled when total cache is zero."""
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    app = QApplication.instance() or QApplication([])
+    from gui import MainWindow
+    window = MainWindow()
+    try:
+        monkeypatch.setattr(
+            window, "_cache_report",
+            lambda: SimpleNamespace(
+                entries=[],
+                availability=SimpleNamespace(
+                    total=0, active=0, historic=0, refresh_candidates=0, sync_candidates=0,
+                    load_cache=False, load_cache_all=False, load_cache_archived=False,
+                    total_count=0, active_count=0, historic_count=0,
+                ),
+            ),
+        )
+        report = window._cache_report()
+        assert report.availability.total == 0
+        monkeypatch.setattr(
+            window, "_cache_report",
+            lambda: SimpleNamespace(
+                entries=[
+                    SimpleNamespace(path="R:/active.safetensors", classification="active", is_active=True, is_historic=False),
+                    SimpleNamespace(path="R:/missing.gguf", classification="historic", is_active=False, is_historic=True),
+                ],
+                availability=SimpleNamespace(
+                    total=2, active=1, historic=1, refresh_candidates=0, sync_candidates=0,
+                    load_cache=True, load_cache_all=True, load_cache_archived=True,
+                    total_count=2, active_count=1, historic_count=1,
+                ),
+                action_plan=(
+                    SimpleNamespace(path="R:/missing.gguf", classification="historic", is_active=False, is_historic=True),
+                ),
+            ),
+        )
+        progress_calls = []
+        monkeypatch.setattr(window, "_set_progress_status", lambda t: progress_calls.append(t))
+        monkeypatch.setattr(window, "_clear_progress_status", lambda delay_ms=0: None)
+        window._verify_cached_file_paths()
+        assert len(progress_calls) == 1
+        summary = progress_calls[0]
+        assert "2 total" in summary
+        assert "1 active" in summary
+        assert "1 historic" in summary
+        assert "archived/missing" in summary
+    finally:
+        window.close()
+
+
+def test_settings_store_default_no_load_default_libraries(tmp_path: Path) -> None:
+    """load_default_libraries_on_startup is removed from defaults."""
+    from back.settings_store import DEFAULTS
+    assert "load_default_libraries_on_startup" not in DEFAULTS

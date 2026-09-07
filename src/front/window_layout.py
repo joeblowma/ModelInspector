@@ -356,4 +356,3 @@ class WindowLayoutMixin:
 
         self.copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self)
         self.copy_shortcut.activated.connect(self._on_copy_shortcut)
-        QTimer.singleShot(0, self._load_default_libraries_from_cache_on_startup)

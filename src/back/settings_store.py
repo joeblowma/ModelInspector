@@ -14,7 +14,6 @@ DEFAULTS: dict[str, Any] = {
     "auto_analyze_on_add": True,
     "dump_json_modelinfo": False,
     "auto_load_raw_dump": False,
-    "load_default_libraries_on_startup": False,
     "cache_full_data_on_analyze": False,
     "analysis_threads": 2,
     "add_mode": "replace",

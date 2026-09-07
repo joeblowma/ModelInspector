@@ -27,7 +27,6 @@ class SettingsDialog(QDialog):
         auto_analyze_on_add=True,
         dump_json_modelinfo=False,
         auto_load_raw_dump=False,
-        load_default_libraries_on_startup=False,
         cache_full_data_on_analyze=False,
         analysis_threads=2,
         add_mode="replace",
@@ -113,13 +112,6 @@ class SettingsDialog(QDialog):
             "Store compact metadata and tensor descriptors while scanning so details remain available without the model file.",
         )
 
-        self.default_libraries_checkbox = QCheckBox("Load default libraries on startup")
-        self.default_libraries_checkbox.setChecked(load_default_libraries_on_startup)
-        default_libraries_cell = make_general_cell(
-            self.default_libraries_checkbox,
-            "Load cached model summaries and cached folder scans when the app starts.",
-        )
-
         thread_wrap = QWidget()
         thread_row = QHBoxLayout(thread_wrap)
         thread_row.setContentsMargins(0, 0, 0, 0)
@@ -180,9 +172,8 @@ class SettingsDialog(QDialog):
         g_layout.addWidget(tab_cell, 1, 1)
         g_layout.addWidget(dump_json_cell, 1, 2)
         g_layout.addWidget(raw_cell, 2, 0)
-        g_layout.addWidget(default_libraries_cell, 2, 1)
-        g_layout.addWidget(thread_cell, 2, 2)
-        g_layout.addWidget(cache_full_data_cell, 3, 0)
+        g_layout.addWidget(thread_cell, 2, 1)
+        g_layout.addWidget(cache_full_data_cell, 2, 2)
         general_tab_layout.addWidget(general_group)
 
         cache_group = QGroupBox("Cache")
@@ -194,18 +185,12 @@ class SettingsDialog(QDialog):
         self.clear_cache_btn = QPushButton("Clear Cache")
         self.clear_cache_btn.setToolTip("Permanently remove cached inspection data after confirmation.")
         cache_layout.addWidget(self.clear_cache_btn)
+        self.verify_cache_btn = QPushButton("Verify Cached File Paths")
+        self.verify_cache_btn.setToolTip("Check cached file paths for availability and changes; no inspection is started for missing files.")
+        cache_layout.addWidget(self.verify_cache_btn)
         self.cache_counts_label = QLabel("Total: 0  Active: 0  Historic: 0")
         self.cache_counts_label.setToolTip("Cached summaries by file availability. Historic files remain viewable without loading model payloads.")
         cache_layout.addWidget(self.cache_counts_label)
-        self.load_cache_btn = QPushButton("Load Cache")
-        self.load_cache_btn.setToolTip("Load all cached summaries without reading model tensor payloads.")
-        cache_layout.addWidget(self.load_cache_btn)
-        self.load_cache_all_btn = QPushButton("Load Cache All")
-        self.load_cache_all_btn.setToolTip("Load summaries whose source files are currently available.")
-        cache_layout.addWidget(self.load_cache_all_btn)
-        self.load_cache_archived_btn = QPushButton("Load Cache Archived")
-        self.load_cache_archived_btn.setToolTip("Load historic summaries for missing model files; no inspection is started.")
-        cache_layout.addWidget(self.load_cache_archived_btn)
         general_tab_layout.addWidget(cache_group)
         general_tab_layout.addStretch()
         tabs.addTab(general_tab, "General")

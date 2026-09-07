@@ -7,12 +7,15 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import app_paths
 from back import theme_loader
+from back import theme_store
 
 
 _COLORS = {
@@ -56,13 +59,14 @@ def test_resource_paths_use_pyinstaller_extraction_root(monkeypatch, tmp_path):
 def test_default_theme_discovery_uses_extracted_assets(monkeypatch, tmp_path):
     theme_path = _write_theme(tmp_path)
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    monkeypatch.setenv("SMI_DATA_DIR", str(tmp_path / "app-data"))
 
     themes = theme_loader.list_themes()
     loaded = theme_loader.load_theme("packaged")
 
     assert any(theme.id == "packaged" for theme in themes)
     assert loaded.theme.id == "packaged"
-    assert loaded.theme.source == str(theme_path)
+    assert loaded.theme.source == str(tmp_path / "app-data" / "themes" / theme_path.name)
     assert not loaded.used_fallback
 
 
@@ -92,3 +96,99 @@ def test_pyinstaller_theme_data_entries_target_themes_directory():
 
     assert theme_entries
     assert {destination for _source, destination in theme_entries} == {"assets/themes"}
+
+
+def test_bundled_themes_are_exported_once_without_overwriting_edits(tmp_path):
+    source = tmp_path / "bundled"
+    user = tmp_path / "app-data" / "themes"
+    source.mkdir()
+    source_file = source / "base.jsonc"
+    source_file.write_text('{"id": "base", "name": "Base", "colors": %s}\n' % json.dumps(_COLORS))
+
+    exported = theme_store.ensure_bundled_themes(source, user)
+    assert exported == (user / "base.jsonc",)
+    user_file = user / "base.jsonc"
+    user_file.write_text("// user edit\n" + user_file.read_text(encoding="utf-8"), encoding="utf-8")
+    source_file.write_text("// changed bundle\n" + source_file.read_text(encoding="utf-8"), encoding="utf-8")
+
+    assert theme_store.ensure_bundled_themes(source, user) == exported
+    assert user_file.read_text(encoding="utf-8").startswith("// user edit")
+
+
+def test_user_theme_enumeration_skips_invalid_files_and_uses_first_duplicate(tmp_path):
+    user = tmp_path / "themes"
+    user.mkdir()
+    first = user / "01-first.jsonc"
+    second = user / "02-second.jsonc"
+    first.write_text(
+        json.dumps({"id": "duplicate", "name": "First", "colors": _COLORS}), encoding="utf-8"
+    )
+    second.write_text(
+        json.dumps({"id": "duplicate", "name": "Second", "colors": _COLORS}), encoding="utf-8"
+    )
+    (user / "broken.jsonc").write_text("{ not json", encoding="utf-8")
+
+    themes = theme_loader.list_themes(user)
+    assert themes[0].id == "default"
+    duplicates = [theme for theme in themes if theme.id == "duplicate"]
+    assert len(duplicates) == 1
+    assert duplicates[0].name == "First"
+    assert duplicates[0].source == str(first)
+
+
+def test_malformed_and_missing_user_themes_return_diagnostics_and_builtin_fallback(tmp_path):
+    user = tmp_path / "themes"
+    user.mkdir()
+    (user / "broken.jsonc").write_text("{ not json", encoding="utf-8")
+
+    malformed = theme_loader.load_theme("broken", user)
+    missing = theme_loader.load_theme("does-not-exist", user)
+
+    assert malformed.used_fallback and malformed.theme.id == "default"
+    assert any("could not load theme broken" in item for item in malformed.diagnostics)
+    assert missing.used_fallback and missing.theme.id == "default"
+    assert any("could not load theme does-not-exist" in item for item in missing.diagnostics)
+
+
+def test_save_save_as_and_theme_id_path_safety(tmp_path):
+    user = tmp_path / "themes"
+    theme = {"id": "saved", "name": "Saved", "colors": _COLORS}
+    outside = tmp_path / "outside.jsonc"
+    outside.write_text(json.dumps({"id": "outside", "name": "Outside", "colors": _COLORS}), encoding="utf-8")
+
+    saved = theme_store.save_user_theme(theme, user)
+    renamed = theme_store.save_user_theme(
+        {**theme, "id": "save-as", "name": "Save As"}, user, filename="palette.jsonc"
+    )
+
+    assert saved == user / "saved.jsonc"
+    assert renamed == user / "palette.jsonc"
+    assert theme_loader.load_theme("saved", user).theme.name == "Saved"
+    assert theme_loader.load_theme("save-as", user).theme.name == "Save As"
+    with pytest.raises(ValueError):
+        theme_store.save_user_theme(theme, user, filename="../escaped.jsonc")
+    assert not (tmp_path / "escaped.jsonc").exists()
+    unsafe_load = theme_loader.load_theme("../outside", user)
+    assert unsafe_load.used_fallback and unsafe_load.theme.id == "default"
+
+
+def test_reset_user_themes_removes_only_user_files_and_reextracts(tmp_path):
+    source = tmp_path / "bundled"
+    app_data = tmp_path / "app-data"
+    user = app_data / "themes"
+    source.mkdir()
+    app_data.mkdir()
+    sentinel = app_data / "settings.jsonc"
+    sentinel.write_text("keep", encoding="utf-8")
+    bundled = source / "base.jsonc"
+    bundled.write_text(json.dumps({"id": "base", "name": "Base", "colors": _COLORS}), encoding="utf-8")
+    theme_store.ensure_bundled_themes(source, user)
+    theme_store.save_user_theme({"id": "custom", "name": "Custom", "colors": _COLORS}, user)
+    (user / "base.jsonc").write_text("edited", encoding="utf-8")
+
+    reset = theme_store.reset_user_themes(user, source)
+
+    assert reset == (user / "base.jsonc",)
+    assert not (user / "custom.jsonc").exists()
+    assert (user / "base.jsonc").read_text(encoding="utf-8") == bundled.read_text(encoding="utf-8")
+    assert sentinel.read_text(encoding="utf-8") == "keep"

@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import tempfile
 from typing import Any
 
+import app_paths
 from back.theme_loader import parse_jsonc
 
 DEFAULTS: dict[str, Any] = {
@@ -27,8 +29,21 @@ DEFAULTS: dict[str, Any] = {
 _TEMPLATE = (
     "// Model Inspector settings (JSONC: comments and trailing commas are accepted).\n"
     "// This file is written atomically; malformed content safely falls back to defaults.\n"
-    "{\n  \"settings_version\": 1,\n  \"values\": %s\n}\n"
+    "// Editable themes are stored in: {themes_path}\n"
+    "// Bundled themes are copied there on first use and existing user files are never overwritten.\n"
+    "// Each theme is a JSONC object with id, name, colors, optional description, and optional variables.\n"
+    "// id is 2-64 lowercase letters, digits, '_' or '-'; name must be non-empty.\n"
+    "// Required colors: background, surface, surface_alt, text, muted, accent, accent_text,\n"
+    "// border, success, warning, and error; values are #RRGGBB or #RRGGBBAA.\n"
+    "// The selected theme is the string setting values.data_layout.theme (for example, \"default\").\n"
+    "{\n  \"settings_version\": 1,\n  \"values\": {payload}\n}\n"
 )
+
+
+def _render_template(payload: str) -> str:
+    return _TEMPLATE.replace("{themes_path}", str(app_paths.user_themes_dir())).replace(
+        "{payload}", payload
+    )
 
 
 class SettingsStore:
@@ -104,9 +119,28 @@ class SettingsStore:
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(self.values, indent=2, ensure_ascii=False, sort_keys=True)
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(_TEMPLATE % payload, encoding="utf-8")
-        os.replace(temporary, self.path)
+        temporary_name: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.path.parent,
+                prefix=f".{self.path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                temporary_name = temporary.name
+                temporary.write(_render_template(payload))
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_name, self.path)
+            temporary_name = None
+        finally:
+            if temporary_name:
+                try:
+                    Path(temporary_name).unlink()
+                except OSError:
+                    pass
 
 
 def open_settings(

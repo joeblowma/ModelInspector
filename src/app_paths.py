@@ -41,6 +41,11 @@ def themes_dir() -> Path:
     return asset_path("themes")
 
 
+def user_themes_dir() -> Path:
+    """Return the writable user theme directory below application data."""
+    return app_data_dir() / "themes"
+
+
 def app_data_dir() -> Path:
     override = os.environ.get("SMI_DATA_DIR")
     if override:

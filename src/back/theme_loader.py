@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 from typing import Any, Iterable, Mapping
 
-from app_paths import themes_dir
+from app_paths import user_themes_dir
 
 
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
@@ -203,18 +203,72 @@ def _theme_from_mapping(raw: Mapping[str, Any], source: str) -> Theme:
 def _theme_files(directory: Path) -> Iterable[Path]:
     if not directory.is_dir():
         return ()
-    return sorted(directory.glob("*.jsonc"))
+    resolved_directory = directory.resolve(strict=False)
+    return tuple(
+        path
+        for path in sorted(directory.glob("*.jsonc"), key=lambda item: (item.name.casefold(), item.name))
+        if path.is_file()
+        and not path.is_symlink()
+        and _is_within(path, resolved_directory)
+    )
+
+
+def _is_within(path: Path, directory: Path) -> bool:
+    try:
+        path.resolve(strict=False).relative_to(directory)
+    except ValueError:
+        return False
+    return True
+
+
+def _user_theme_directory() -> Path:
+    """Ensure the editable theme projection exists before default discovery."""
+    from back.theme_store import ensure_bundled_themes
+
+    ensure_bundled_themes()
+    return user_themes_dir()
+
+
+def _theme_path_for_id(theme_id: str, directory: Path) -> Path:
+    """Find the first deterministic file containing ``theme_id``."""
+    candidate = directory / f"{theme_id}.jsonc"
+    if candidate.exists():
+        return _safe_requested_filename(directory, candidate.name)
+    for path in _theme_files(directory):
+        try:
+            raw = parse_jsonc(path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(raw, Mapping) and raw.get("id") == theme_id:
+            return path
+    return candidate
+
+
+def _safe_requested_filename(directory: Path, filename: str) -> Path:
+    if not filename or Path(filename).name != filename or filename in {".", ".."}:
+        raise ValueError("theme filename must be a direct child of the theme directory")
+    path = directory / filename
+    if not _is_within(path, directory.resolve(strict=False)):
+        raise ValueError("theme filename escapes the theme directory")
+    if path.is_symlink():
+        raise ValueError("refusing to load a theme through a symlink")
+    return path
 
 
 def list_themes(directory: str | Path | None = None) -> tuple[Theme, ...]:
-    """Enumerate valid external themes; invalid files are skipped safely."""
-    folder = Path(directory) if directory is not None else themes_dir()
+    """Enumerate validated user themes with deterministic duplicate handling."""
+    folder = Path(directory) if directory is not None else _user_theme_directory()
     themes: list[Theme] = [BUILTIN_THEME]
+    seen_ids = {BUILTIN_THEME.id}
     for path in _theme_files(folder):
         try:
-            themes.append(_theme_from_mapping(parse_jsonc(path.read_text(encoding="utf-8")), str(path)))
+            theme = _theme_from_mapping(parse_jsonc(path.read_text(encoding="utf-8")), str(path))
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             continue
+        if theme.id in seen_ids:
+            continue
+        seen_ids.add(theme.id)
+        themes.append(theme)
     return tuple(sorted(themes, key=lambda theme: (theme.name.lower(), theme.id)))
 
 
@@ -223,12 +277,22 @@ def load_theme(theme_id_or_path: str | Path | None, directory: str | Path | None
     if theme_id_or_path is None:
         return ThemeLoadResult(BUILTIN_THEME)
     if str(theme_id_or_path).lower() in {"default", "builtin"}:
+        if directory is None:
+            _user_theme_directory()
         return ThemeLoadResult(BUILTIN_THEME)
-    requested = Path(str(theme_id_or_path))
-    folder = Path(directory) if directory is not None else themes_dir()
-    path = requested if requested.suffix else folder / (str(theme_id_or_path) + ".jsonc")
     diagnostics: list[str] = []
     try:
+        explicit_path = isinstance(theme_id_or_path, Path)
+        requested = Path(str(theme_id_or_path))
+        folder = Path(directory) if directory is not None else _user_theme_directory()
+        if explicit_path or requested.is_absolute():
+            path = requested
+        elif requested.suffix.lower() == ".jsonc" and requested.name == str(theme_id_or_path):
+            path = _safe_requested_filename(folder, requested.name)
+        elif re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,63}", str(theme_id_or_path)):
+            path = _theme_path_for_id(str(theme_id_or_path), folder)
+        else:
+            raise ValueError("requested theme id is not a safe theme identifier")
         raw = parse_jsonc(path.read_text(encoding="utf-8"))
         theme = _theme_from_mapping(raw, str(path))
         return ThemeLoadResult(theme)

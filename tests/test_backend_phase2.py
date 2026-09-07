@@ -67,7 +67,8 @@ def test_theme_schema_rejects_missing_and_invalid_colors() -> None:
     assert BUILTIN_THEME.colors["background"].startswith("#")
 
 
-def test_external_themes_are_enumerated_and_default_is_safe() -> None:
+def test_external_themes_are_enumerated_and_default_is_safe(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("SMI_DATA_DIR", str(tmp_path / "app-data"))
     ids = {theme.id for theme in list_themes()}
     assert {"default", "catppuccin", "cursor", "github", "gruvbox"} <= ids
     loaded = load_theme("catppuccin")

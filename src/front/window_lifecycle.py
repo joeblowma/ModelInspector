@@ -163,7 +163,6 @@ class WindowLifecycleMixin:
             self._card_rebuild_generation += 1
             self._discovery_generation += 1
             self._restore_table_sorting()
-            self._restore_startup_table_sorting()
             self._close_waiting_workers = running_workers
             for worker in running_workers:
                 worker.finished.connect(
@@ -180,7 +179,6 @@ class WindowLifecycleMixin:
         self._card_rebuild_generation += 1
         self._discovery_generation += 1
         self._restore_table_sorting()
-        self._restore_startup_table_sorting()
         super().closeEvent(event)
 
     def _on_close_worker_finished(self, worker):

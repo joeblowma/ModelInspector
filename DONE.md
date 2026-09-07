@@ -3,6 +3,60 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-09-07 — Cache, Settings, Themes, and Smart Columns
+
+### Cache actions and verification
+
+- [x] Move `Load Cache`, `Load Cache All`, and `Load Cache Archived` from
+  Settings to the main-window Open menu. Actions are shown only for a matching
+  cache population and enabled only when the current model view is empty.
+- [x] Define cache actions exactly: `Load Cache` loads active summaries only;
+  `Load Cache All` loads active and Historic summaries; `Load Cache Archived`
+  loads Historic summaries only. Loading Historic summaries never reads or
+  inspects unavailable model files.
+- [x] Refresh Total / Active / Historic cache counts immediately after Clear
+  Cache, and provide an explicit `Verify Cached File Paths` control that is
+  disabled when the cache is empty.
+- [x] Surface verification progress and its concise outcome. Verification
+  derives current classifications from filesystem identity (including shard and
+  sidecar identity): missing entries are Historic and retained for viewing;
+  changed or legacy active entries are scheduled for background refresh without
+  inspecting missing Historic entries.
+- [x] Product decision: Historic classification remains dynamically derived
+  from verified filesystem identity. No separately persisted archive index is
+  needed because it risks staleness; cached summaries remain preserved and
+  viewable without their source files.
+
+### Settings and themes
+
+- [x] Remove the obsolete `Load default libraries on startup` setting and its
+  dead startup-cache sorting path now that cache loading has explicit actions.
+- [x] Place the compact current-theme dropdown in the General tab's
+  bottom-right cell at roughly one third of the column width.
+- [x] Export bundled themes to the user theme directory, enumerate user themes,
+  and document the editable theme schema in `settings.jsonc`.
+- [x] Show a user-facing error for a malformed requested external theme while
+  retaining the validated default fallback.
+- [x] Add a dedicated Theme tab with live editing and `Save`, `Save As`, and
+  `Reset to Defaults` actions.
+- [x] Require explicit confirmation before Theme `Reset to Defaults`, then
+  clear the user theme directory and re-extract bundled themes.
+- [x] Complete the tooltip/content audit across existing controls, not only
+  Explorer and settings additions.
+
+### Data-table smart column groups
+
+- [x] Add pinned `LLM`, `Diffusion`, and `Adapter` controls to the right of
+  Select All and Show Full Path in the Data toolbar.
+- [x] Keep groups runtime-only and initially off; automatically enable a group
+  when loaded results genuinely use its family columns, while preserving a
+  manual toggle for the rest of the session. Clear All resets only groups that
+  were auto-enabled.
+- [x] Define smart-column precedence: a user's manual group choice overrides
+  later automatic enabling for that session, while persisted Settings > Data
+  per-column visibility is the baseline and always wins. A checked group shows
+  only baseline-visible columns; an unchecked group masks every column it owns.
+
 ## 2026-08-24 — Immediate UI Glitches and Performance
 
 - [x] Fix bottom-item Data-column reordering so the moved row remains visible,

@@ -127,7 +127,6 @@ class WindowCoreMixin:
         self._analysis_bytes_scanned = 0
         self._scan_cancel_requested = False
         self._checkpoint_metadata_paths: set[str] = set()
-        self._startup_sort_restore: tuple[bool, int, Qt.SortOrder] | None = None
         self._progress_status_generation = 0
         self._allow_filename_alias_detection = False
         self._show_full_paths = False
@@ -460,7 +459,6 @@ class WindowCoreMixin:
 
     def _cancel_current_operation(self):
         self._scan_cancel_requested = True
-        self._restore_startup_table_sorting()
         if self._discovery_worker and self._discovery_worker.isRunning():
             self._discovery_worker.cancel()
         if self._worker and self._worker.isRunning():

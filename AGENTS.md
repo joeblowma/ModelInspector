@@ -11,8 +11,8 @@ This is a small Python desktop/CLI utility for inspecting various language and d
   - `model_cache.py` Persistent inspection-result cache
   - `model_readers.py` Read-only model file readers and discovery helpers
   - `modelinfo.py` Model-info dump helpers for Model Inspector
-  - `front/` GUI presentation and application layer: `application` bootstraps Qt and applies themes; `window_core`, `window_layout`, and `window_lifecycle` compose `MainWindow`; `analysis_controller`, `discovery_controller`, `selection_controller`, `startup_cache_controller`, `view_controller`, and `integration_controller` manage UI workflows; `explorer_tab`/`explorer_data` provide header-only inspection exploration; `advanced_viewer` provides live resource projections; `settings_data_tab` owns Data column/theme editing, with `settings_data_support` holding its durable row state and native drag controls; `cache_identity` is the read-only bridge projecting persisted cache identity metadata for cache verification and background sync; `model_card`, `filter_widgets`, `settings_dialog`, and `scan_projection` provide reusable widgets, dialogs, and scan-event delivery.
-  - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `reader_registry`, `checkpoint_reader`, and `onnx_reader` provide safe format-reader dispatch; `shard_discovery` and `sidecar_discovery` discover associated files; `cache_storage` persists cache records; `estimator`, `theme_loader`, `settings_store`, and `cache_verifier` provide UI-safe backend services; `reporting` writes reports; `inspection_summary` supplies compact GUI-facing result state.
+  - `front/` GUI presentation and application layer: `application` bootstraps Qt and applies themes; `window_core`, `window_layout`, and `window_lifecycle` compose `MainWindow`; `analysis_controller`, `discovery_controller`, `selection_controller`, `startup_cache_controller`, `view_controller`, and `integration_controller` manage UI workflows; `explorer_tab`/`explorer_data` provide header-only inspection exploration; `advanced_viewer` provides live resource projections; `settings_data_tab` owns Data-column editing, with `settings_data_support` holding its durable row state and native drag controls; `theme_tab` provides live theme editing; `smart_column_controller` applies runtime smart-column masks; `cache_identity` is the read-only bridge projecting persisted cache identity metadata for cache verification and background sync; `model_card`, `filter_widgets`, `settings_dialog`, and `scan_projection` provide reusable widgets, dialogs, and scan-event delivery.
+  - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `reader_registry`, `checkpoint_reader`, and `onnx_reader` provide safe format-reader dispatch; `shard_discovery` and `sidecar_discovery` discover associated files; `cache_storage` persists cache records; `estimator`, `theme_loader`, `theme_store`, `settings_store`, and `cache_verifier` provide UI-safe backend services; `reporting` writes reports; `inspection_summary` supplies compact GUI-facing result state.
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
@@ -41,16 +41,18 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
 Existing tests:
-- `.\test_gui_scan_lifecycle.py`
-- `.\test_inspection_summary.py`
-- `.\test_integrated_scan_behavior.py`
-- `.\test_background_tasks.py`
-- `.\test_gui_projection.py`
+- `.\tests\conftest.py` — documented shared test helpers.
+- `.\tests\test_gui_scan_lifecycle.py`
+- `.\tests\test_inspection_summary.py`
+- `.\tests\test_integrated_scan_behavior.py`
+- `.\tests\test_background_tasks.py`
+- `.\tests\test_gui_projection.py`
 - `.\tests\test_explorer_tab.py`
 - `.\tests\test_advanced_viewer.py`
 - `.\tests\test_settings_data_tab.py`
 - `.\tests\test_backend_phase2.py`
 - `.\tests\test_phase4_integration.py`
+- `.\tests\test_cache_sync_ui.py`
 - `.\tests\test_cache_menu_integration.py`
 - `.\tests\test_smart_column_groups.py`
 - `.\tests\test_reader_registry.py`

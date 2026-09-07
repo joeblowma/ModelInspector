@@ -1,6 +1,6 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false
 # pylint: disable=no-member
-"""Startup cache hydration and settings actions for the main window."""
+"""Settings cache-clear and default-tab actions for the main window."""
 
 from PyQt6.QtWidgets import QMessageBox
 
@@ -10,20 +10,10 @@ from model_cache import (
 
 
 class StartupCacheControllerMixin:
-    """Load compact cached results and manage settings/cache reset actions."""
+    """Manage settings cache clearing, default-tab selection, and UI resets."""
 
     _discovery_generation: int
     _card_rebuild_generation: int
-
-    def _restore_startup_table_sorting(self):
-        if self._startup_sort_restore is None:
-            return
-        sorting_enabled, column, order = self._startup_sort_restore
-        self._startup_sort_restore = None
-        header = self.table.horizontalHeader()
-        assert header is not None
-        header.setSortIndicator(column, order)
-        self.table.setSortingEnabled(sorting_enabled)
 
     def _clear_inspection_cache_from_settings(self, dialog=None):
         reply = QMessageBox.question(
@@ -63,7 +53,6 @@ class StartupCacheControllerMixin:
         self._scan_generation = self._projection.generation
         self._card_rebuild_generation += 1
         self._restore_table_sorting()
-        self._restore_startup_table_sorting()
         self._pending_filter_arches.clear()
         self._pending_filter_tags.clear()
         self._pending_filter_formats.clear()

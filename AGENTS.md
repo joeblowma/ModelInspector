@@ -39,6 +39,7 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 ## Testing Guidelines
 
 - Settings data tests cover single-row selection, side-button reordering, persistence, and embedded-control cleanup.
+- Settings dialog tests cover compact fixed 840x460 sizing with screen clamping, dedicated Theme-tab selection, and bounded Data-list/scrollbar geometry; Theme owns its color-editor scroll area.
 
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
@@ -51,6 +52,7 @@ Existing tests:
 - `.\tests\test_gui_projection.py`
 - `.\tests\test_explorer_tab.py`
 - `.\tests\test_advanced_viewer.py`
+- `.\tests\test_model_card_fields.py` — planned fixed simple/advanced card-field contracts; legacy masks are ignored.
 - `.\tests\test_settings_data_tab.py`
 - `.\tests\test_backend_phase2.py`
 - `.\tests\test_phase4_integration.py`
@@ -70,6 +72,9 @@ Existing tests:
 
 - When project structure changes or tests are added, update this file.
 - When spawning subagents use `fork_turns = "none"`. Provide specific scoped tasks and their context for subagents.
+- ModelInspector implementation files live under `src/`; start with `rg --files src` and read `src/model_cache.py` or `src/modelinfo.py`, never root-level names.
+- Establish session environment state once in a reusable command or wrapper: package-cache variables, `PYTHONPATH`, and Qt headless variables. Reuse that canonical invocation rather than prepending environment setup to every command.
+
 
 ### Guardrails & Limits
 

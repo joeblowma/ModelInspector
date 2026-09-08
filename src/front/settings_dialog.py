@@ -1,9 +1,10 @@
 """Settings dialog widget used by the Model Inspector GUI."""
 
-from PyQt6.QtCore import QSignalBlocker, QTimer, pyqtSignal
+from PyQt6.QtCore import QSize, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QGridLayout,
@@ -20,6 +21,10 @@ from front.settings_data_tab import ColumnDefinition, SettingsDataTab
 from front.theme_tab import ThemeTab
 
 __all__ = ["SettingsDialog"]
+
+_DIALOG_FIXED_WIDTH = 840
+_DIALOG_FIXED_HEIGHT = 460
+_DIALOG_SCREEN_MARGIN = 24
 
 
 class SettingsDialog(QDialog):
@@ -47,8 +52,9 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setModal(True)
-        self.setMinimumWidth(840)
-        self.setMinimumHeight(460)
+        # These legacy arguments remain accepted for direct callers, but card
+        # fields are now fixed by the view mode rather than Settings.
+        del card_fields, simple_card_fields
 
         root = QVBoxLayout(self)
         root.setSpacing(10)
@@ -187,34 +193,6 @@ class SettingsDialog(QDialog):
             tab_wrap, "Choose which tab opens by default when the app starts."
         )
 
-        theme_wrap = QWidget()
-        theme_row = QHBoxLayout(theme_wrap)
-        theme_row.setContentsMargins(0, 0, 0, 0)
-        theme_row.setSpacing(6)
-        theme_row.addWidget(QLabel("Theme:"))
-        self.theme_combo = QComboBox()
-        self.general_theme_combo = self.theme_combo
-        self.theme_combo.setObjectName("generalThemeSelector")
-        self.theme_combo.setMinimumWidth(90)
-        self.theme_combo.setMaximumWidth(130)
-        self.theme_combo.setToolTip("Choose the current application theme. Selection is previewed live and retained when accepted.")
-        for key, label in self.theme_tab.theme_choices():
-            self.theme_combo.addItem(label, key)
-        current_theme = self.theme_tab.current_theme_id()
-        current_index = self.theme_combo.findData(current_theme)
-        if current_index >= 0:
-            self.theme_combo.setCurrentIndex(current_index)
-        self.theme_combo.currentIndexChanged.connect(self._on_general_theme_changed)
-        self.theme_tab.themesChanged.connect(self._refresh_general_theme_choices)
-        theme_row.addWidget(self.theme_combo)
-        theme_row.addStretch()
-        theme_cell = make_general_cell(
-            theme_wrap,
-            "Select the application palette. The compact selector is kept in the bottom-right General grid cell; edit colors on the Theme tab.",
-        )
-        theme_cell.setObjectName("generalThemeCell")
-        theme_cell.setMaximumWidth(170)
-
         g_layout.addWidget(alias_cell, 0, 0)
         g_layout.addWidget(analyze_cell, 0, 1)
         g_layout.addWidget(mode_cell, 1, 0)
@@ -223,7 +201,6 @@ class SettingsDialog(QDialog):
         g_layout.addWidget(raw_cell, 2, 0)
         g_layout.addWidget(thread_cell, 2, 1)
         g_layout.addWidget(cache_full_data_cell, 2, 2)
-        g_layout.addWidget(theme_cell, 3, 2)
         general_tab_layout.addWidget(general_group)
 
         cache_group = QGroupBox("Cache")
@@ -244,78 +221,6 @@ class SettingsDialog(QDialog):
         general_tab_layout.addWidget(cache_group)
         general_tab_layout.addStretch()
         tabs.addTab(general_tab, "General")
-
-        cards_tab = QWidget()
-        cards_tab_layout = QVBoxLayout(cards_tab)
-        cards_tab_layout.setContentsMargins(0, 0, 0, 0)
-        cards_tab_layout.setSpacing(10)
-        cards_row = QHBoxLayout()
-        cards_row.setSpacing(10)
-
-        simple_group = QGroupBox("Cards")
-        s_layout = QVBoxLayout(simple_group)
-        self.simple_card_field_checks = {}
-        simple_card_fields = simple_card_fields or {}
-        simple_field_labels = {
-            "parameters": "Show Parameters",
-            "precision": "Show Precision",
-            "file_size": "Show File Size",
-            "tensors": "Show Tensor Count",
-            "lora_rank": "Show LoRA Rank",
-            "extra_meta": "Show Extra Metadata",
-            "training_meta": "Show Training Metadata",
-        }
-        simple_field_tooltips = {
-            "parameters": "Show total parameter count on card.",
-            "precision": "Show precision summary on card.",
-            "file_size": "Show file size on card.",
-            "tensors": "Show tensor count on card.",
-            "lora_rank": "Show LoRA rank on card.",
-            "extra_meta": "Show extra metadata fields on card.",
-            "training_meta": "Show training metadata fields on card.",
-        }
-        for key, label in simple_field_labels.items():
-            cb = QCheckBox(label)
-            cb.setChecked(bool(simple_card_fields.get(key, False)))
-            cb.setToolTip(simple_field_tooltips.get(key, ""))
-            self.simple_card_field_checks[key] = cb
-            s_layout.addWidget(cb)
-        s_layout.addStretch()
-        cards_row.addWidget(simple_group, 1)
-
-        detailed_group = QGroupBox("Advanced Viewer Card Details")
-        d_layout = QVBoxLayout(detailed_group)
-        self.card_field_checks = {}
-        card_fields = card_fields or {}
-        card_field_labels = {
-            "parameters": "Show Parameters",
-            "file_size": "Show File Size",
-            "precision": "Show Precision",
-            "tensors": "Show Tensor Count",
-            "lora_rank": "Show LoRA Rank",
-            "extra_meta": "Show Extra Metadata",
-            "training_meta": "Show Training Metadata",
-        }
-        card_field_tooltips = {
-            "parameters": "Show total parameter count in Advanced Viewer card details.",
-            "file_size": "Show file size in Advanced Viewer card details.",
-            "precision": "Show precision summary in Advanced Viewer card details.",
-            "tensors": "Show tensor count in Advanced Viewer card details.",
-            "lora_rank": "Show LoRA rank in Advanced Viewer card details.",
-            "extra_meta": "Show extra metadata fields in Advanced Viewer card details.",
-            "training_meta": "Show training metadata fields in Advanced Viewer card details.",
-        }
-        for key, label in card_field_labels.items():
-            cb = QCheckBox(label)
-            cb.setChecked(bool(card_fields.get(key, True)))
-            cb.setToolTip(card_field_tooltips.get(key, ""))
-            self.card_field_checks[key] = cb
-            d_layout.addWidget(cb)
-        d_layout.addStretch()
-        cards_row.addWidget(detailed_group, 1)
-        cards_tab_layout.addLayout(cards_row)
-        cards_tab_layout.addStretch()
-        tabs.addTab(cards_tab, "Cards")
 
         data_tab = QWidget()
         data_tab_layout = QVBoxLayout(data_tab)
@@ -340,6 +245,7 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+        self._set_fixed_initial_size()
 
         initial_result = self.theme_tab.last_load_result
         if initial_result.used_fallback and selected_theme_id not in {"default", "builtin"}:
@@ -350,36 +256,31 @@ class SettingsDialog(QDialog):
                 ),
             )
 
-    # ----------------------------------------------------------- theme bridge
-    def _on_general_theme_changed(self, index: int) -> None:
-        if index < 0:
-            return
-        theme_id = self.theme_combo.itemData(index)
-        if theme_id is not None:
-            self.theme_tab.set_theme(str(theme_id))
+    def _set_fixed_initial_size(self) -> None:
+        """Set the compact target, reducing it only for a small screen."""
+        width = _DIALOG_FIXED_WIDTH
+        height = _DIALOG_FIXED_HEIGHT
 
-    def _refresh_general_theme_choices(self) -> None:
-        """Mirror Theme-tab discovery after Save As or a reset operation."""
-        if not hasattr(self, "theme_combo"):
-            return
-        selected = self.current_theme_id()
-        blocker = QSignalBlocker(self.theme_combo)
-        self.theme_combo.clear()
-        for key, label in self.theme_tab.theme_choices():
-            self.theme_combo.addItem(label, key)
-        index = self.theme_combo.findData(selected)
-        if index >= 0:
-            self.theme_combo.setCurrentIndex(index)
-        del blocker
+        parent = self.parentWidget()
+        screen = parent.screen() if parent is not None else None
+        if screen is None:
+            screen = self.screen()
+        if screen is None:
+            application = QApplication.instance()
+            if isinstance(application, QApplication):
+                screen = application.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            horizontal_margin = min(_DIALOG_SCREEN_MARGIN, available.width() // 12)
+            vertical_margin = min(_DIALOG_SCREEN_MARGIN, available.height() // 12)
+            width = min(width, max(1, available.width() - 2 * horizontal_margin))
+            height = min(height, max(1, available.height() - 2 * vertical_margin))
+
+        self.setFixedSize(QSize(width, height))
+
+    # ----------------------------------------------------------- theme bridge
 
     def _on_theme_tab_changed(self, theme_id: str) -> None:
-        blocker = QSignalBlocker(self.theme_combo)
-        index = self.theme_combo.findData(theme_id)
-        if index < 0:
-            self.theme_combo.addItem(theme_id, theme_id)
-            index = self.theme_combo.findData(theme_id)
-        self.theme_combo.setCurrentIndex(index)
-        del blocker
         self.themeChanged.emit(theme_id)
 
     def _on_theme_load_failed(self, requested: str, diagnostics: object) -> None:

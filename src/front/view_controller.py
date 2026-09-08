@@ -112,10 +112,7 @@ class ViewControllerMixin:
             self.cards_layout.removeWidget(placeholder)
             placeholder.deleteLater()
             self.cards_placeholder = None
-        card = ModelCard(
-            data,
-            card_fields=self._simple_card_field_visibility,
-        )
+        card = ModelCard(data, simple_view=True)
         card.advanced_requested.connect(self._show_advanced_viewer_for_path)
         card.checkbox_toggled.connect(self._on_card_checkbox_toggled)
         card.drag_over_requested.connect(self._on_card_drag_over)

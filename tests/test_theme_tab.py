@@ -1,4 +1,4 @@
-"""Focused Qt contracts for the General and dedicated Theme settings UI."""
+"""Focused Qt contracts for the dedicated Theme settings UI."""
 
 from __future__ import annotations
 
@@ -9,7 +9,17 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from pathlib import Path
 
 import pytest
-from PyQt6.QtWidgets import QApplication, QComboBox, QMessageBox, QWidget
+from PyQt6.QtCore import QRect
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDialogButtonBox,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QTabWidget,
+    QWidget,
+)
 
 from front.settings_data_support import ColumnDefinition
 from front.settings_dialog import SettingsDialog
@@ -27,7 +37,7 @@ def theme_data_dir(monkeypatch, tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_general_theme_selector_is_compact_bottom_right_and_data_has_none(app, theme_data_dir):
+def test_theme_editor_is_dedicated_and_data_has_none(app, theme_data_dir):
     dialog = SettingsDialog(
         data_columns=[ColumnDefinition("file", "File")],
         data_configuration={"columns": [], "theme": "github"},
@@ -36,14 +46,118 @@ def test_general_theme_selector_is_compact_bottom_right_and_data_has_none(app, t
         dialog.show()
         app.processEvents()
         assert dialog.current_theme_id() == "github"
-        assert dialog.theme_combo.objectName() == "generalThemeSelector"
-        assert dialog.theme_combo.maximumWidth() <= 130
-        assert dialog.findChild(type(dialog.theme_combo), "themeEditorSelector") is dialog.theme_tab.theme_combo
-        assert dialog.findChild(QWidget, "generalThemeCell") is not None
+        tabs = dialog.findChild(QTabWidget)
+        assert tabs is not None
+        assert [tabs.tabText(index) for index in range(tabs.count())] == [
+            "General",
+            "Data Columns",
+            "Theme",
+        ]
+        assert not hasattr(dialog, "theme_combo")
+        assert not hasattr(dialog, "general_theme_combo")
+        assert not hasattr(dialog, "card_field_checks")
+        assert not hasattr(dialog, "simple_card_field_checks")
+        assert dialog.findChild(QComboBox, "generalThemeSelector") is None
+        assert dialog.findChild(QDialogButtonBox) is not None
+        assert dialog.findChild(QComboBox, "themeEditorSelector") is dialog.theme_tab.theme_combo
+        assert dialog.theme_tab.theme_combo.currentData() == "github"
         assert not dialog.data_settings_tab.findChildren(QComboBox)
         assert "theme" not in dialog.data_settings_tab.export_configuration()
     finally:
         dialog.close()
+
+
+def test_settings_dialog_is_fixed_and_bottom_controls_are_visible(app, theme_data_dir):
+    dialog = SettingsDialog(data_columns=[ColumnDefinition("file", "File")])
+    try:
+        dialog.show()
+        app.processEvents()
+        assert dialog.minimumSize() == dialog.maximumSize()
+        assert dialog.size() == dialog.minimumSize()
+        screen = dialog.screen()
+        assert screen is not None
+        available = screen.availableGeometry()
+        assert dialog.width() == min(840, max(1, available.width() - 48))
+        assert dialog.height() == min(460, max(1, available.height() - 48))
+
+        buttons = dialog.findChild(QDialogButtonBox)
+        assert buttons is not None
+        assert buttons.isVisible()
+        assert buttons.geometry().bottom() <= dialog.contentsRect().bottom()
+
+        assert dialog.width() <= available.width() - 48
+        assert dialog.height() <= available.height() - 48
+    finally:
+        dialog.close()
+
+
+def test_settings_data_tree_uses_available_dialog_height(app, theme_data_dir):
+    dialog = SettingsDialog(
+        data_columns=[
+            ColumnDefinition(f"column_{index}", f"Column {index}")
+            for index in range(18)
+        ]
+    )
+    try:
+        tabs = dialog.findChild(QTabWidget)
+        assert tabs is not None
+        data_page = dialog.data_settings_tab.parentWidget()
+        assert data_page is not None
+        tabs.setCurrentWidget(data_page)
+        dialog.show()
+        app.processEvents()
+
+        tree = dialog.data_settings_tab.column_tree
+        last_row = tree.visualItemRect(tree.topLevelItem(tree.topLevelItemCount() - 1))
+        assert tree.height() > 220
+        assert tree.height() <= data_page.contentsRect().height()
+        assert tree.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Expanding
+        assert tree.viewport().height() <= last_row.bottom() + 1
+        assert tree.verticalScrollBar().isVisible()
+        reset_button = dialog.data_settings_tab.findChild(QPushButton, "resetDataColumnsButton")
+        assert reset_button is not None and reset_button.isVisible()
+    finally:
+        dialog.close()
+
+
+def test_settings_size_clamp_keeps_controls_usable_on_small_screen(app, theme_data_dir):
+    class SmallScreenParent(QWidget):
+        def screen(self):
+            class SmallScreen:
+                @staticmethod
+                def availableGeometry():
+                    return QRect(0, 0, 800, 500)
+
+            return SmallScreen()
+
+    parent = SmallScreenParent()
+    dialog = SettingsDialog(
+        parent=parent,
+        data_columns=[
+            ColumnDefinition("file", "File"),
+            ColumnDefinition("size", "Size"),
+            ColumnDefinition("architecture", "Architecture"),
+        ],
+    )
+    try:
+        tabs = dialog.findChild(QTabWidget)
+        assert tabs is not None
+        data_page = dialog.data_settings_tab.parentWidget()
+        assert data_page is not None
+        tabs.setCurrentWidget(data_page)
+        dialog.show()
+        app.processEvents()
+
+        assert dialog.width() == 752
+        assert dialog.height() == 452
+        assert dialog.minimumSize() == dialog.maximumSize()
+        buttons = dialog.findChild(QDialogButtonBox)
+        assert buttons is not None and buttons.isVisible()
+        reset_button = dialog.data_settings_tab.findChild(QPushButton, "resetDataColumnsButton")
+        assert reset_button is not None and reset_button.isVisible()
+    finally:
+        dialog.close()
+        parent.close()
 
 
 def test_color_editing_previews_only_valid_palettes_and_exposes_all_required_colors(app, theme_data_dir):
@@ -120,7 +234,11 @@ def test_reset_requires_confirmation_reextracts_and_selects_default(app, theme_d
 
 def test_cancel_restores_live_selection_but_accept_keeps_it(app, theme_data_dir):
     dialog = SettingsDialog(theme_id="github", data_columns=[])
+    changes = []
+    dialog.themeChanged.connect(changes.append)
     dialog.theme_tab.set_theme("catppuccin")
+    assert changes[-1] == "catppuccin"
+    assert dialog.current_theme_id() == "catppuccin"
     dialog.reject()
     assert dialog.current_theme_id() == "github"
 

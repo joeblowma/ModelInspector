@@ -5,6 +5,8 @@ from pathlib import Path
 from PyQt6.QtCore import QMimeData, Qt
 from PyQt6.QtWidgets import QApplication, QCheckBox, QFileDialog, QMenu
 
+from front.model_card import card_stat_items
+
 
 def _clipboard():
     clipboard = QApplication.clipboard()
@@ -61,50 +63,9 @@ class SelectionControllerMixin:
         if comp_on:
             lines.append("Tags: " + ", ".join(comp_on))
 
-        fields = (
-            self._simple_card_field_visibility
-            if simple_view
-            else self._card_field_visibility
+        lines.extend(
+            f"{label}: {value}" for label, value in card_stat_items(data, simple_view)
         )
-        if fields.get("parameters", True):
-            lines.append(f"Parameters: {data.get('total_params_friendly', '-')}")
-        if fields.get("precision", True):
-            component_precisions = data.get("component_precisions") or {}
-            added_component_precision = False
-            component_precision_labels = [
-                ("unet", "UNet Precision"),
-                ("transformer", "Transformer Precision"),
-                ("vae", "VAE Precision"),
-                ("text_encoder", "Text Encoder Precision"),
-                ("text_encoder_2", "Text Encoder 2 Precision"),
-            ]
-            for comp_key, comp_label in component_precision_labels:
-                comp_precision = component_precisions.get(comp_key)
-                if not comp_precision:
-                    continue
-                lines.append(f"{comp_label}: {comp_precision}")
-                added_component_precision = True
-            if not added_component_precision:
-                precision_text = (
-                    data.get("precision_display")
-                    or data.get("component_precision_summary")
-                    or data.get("precision_summary", "-")
-                )
-                lines.append(f"Precision: {precision_text}")
-        if fields.get("file_size", True):
-            lines.append(f"File Size: {data.get('file_size_friendly', '-')}")
-        if fields.get("tensors", True):
-            lines.append(f"Tensors: {data.get('tensor_count', '-')}")
-        if fields.get("lora_rank", True):
-            lr = data.get("lora_rank")
-            if lr:
-                lines.append(f"LoRA Rank: {lr}")
-        if fields.get("extra_meta", True):
-            for k, v in data.get("extra", {}).items():
-                lines.append(f"{k.replace('_', ' ').title()}: {v}")
-        if fields.get("training_meta", True):
-            for k, v in data.get("training_meta", {}).items():
-                lines.append(f"{k.replace('_', ' ').title()}: {v}")
 
         return "\n".join(lines)
 

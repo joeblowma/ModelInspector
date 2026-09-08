@@ -261,7 +261,9 @@ def test_discovery_reports_per_path_errors_and_completes(monkeypatch):
     error = PermissionError(13, "denied", "private")
 
     def failing_walk(root, onerror=None):
-        onerror(error)
+        if error is not None:
+            if onerror is not None:
+                onerror(error)
         return iter(())
 
     monkeypatch.setattr(background_tasks.os, "walk", failing_walk)

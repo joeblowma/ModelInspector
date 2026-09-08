@@ -20,8 +20,6 @@ DEFAULTS: dict[str, Any] = {
     "analysis_threads": 2,
     "add_mode": "replace",
     "default_tab": "cards",
-    "detailed_card_fields": {},
-    "simple_card_fields": {},
     "table_columns": {},
     "data_layout": {"columns": [], "theme": "default"},
 }

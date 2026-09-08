@@ -138,12 +138,9 @@ class AdvancedViewerDialog(QDialog):
         self._inspection: dict[str, Any] = {}
         self._facts = ModelFacts()
         self._projection: ResourceProjection | None = None
-        self._card_fields = {
-            "parameters": True, "file_size": True, "precision": True,
-            "tensors": True, "lora_rank": True, "extra_meta": True,
-            "training_meta": True,
-        }
-        self._card_fields.update(card_fields or {})
+        # Keep this keyword accepted for compatibility with older callers.
+        # Card rendering now has a fixed all-statistics advanced policy.
+        del card_fields
         self._card_details_card: ModelCard | None = None
         self._capability_badges: list[QLabel] = []
         self._domain_badges: list[QLabel] = []
@@ -377,9 +374,7 @@ class AdvancedViewerDialog(QDialog):
         data.setdefault("tensor_count", "-")
         data.setdefault("training_meta", {})
         data.setdefault("extra", {})
-        self._card_details_card = ModelCard(
-            data, card_fields=self._card_fields, vertical_stats=True
-        )
+        self._card_details_card = ModelCard(data, vertical_stats=True)
         self._card_details_card.select_cb.hide()
         self._card_details_content_layout.addWidget(cast(Any, self._card_details_card))
 

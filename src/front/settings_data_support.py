@@ -37,13 +37,11 @@ class ColumnTree(QTreeWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-        self.setMinimumHeight(0)
-        self.setMaximumHeight(220)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMinimumHeight(120)
 
     def refresh_content_height(self) -> None:
-        """Size the list to its rows while retaining a bounded scroller."""
-        self.setMaximumHeight(min(220, self.sizeHint().height()))
+        """Refresh geometry while the parent layout supplies available height."""
         self.updateGeometry()
 
     def _detach_item_widgets(self) -> None:

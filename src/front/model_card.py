@@ -1,5 +1,7 @@
 """Model card widget used by the Model Inspector cards view."""
 
+from collections.abc import Mapping
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QContextMenuEvent, QMouseEvent
 from PyQt6.QtWidgets import (
@@ -13,7 +15,85 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-__all__ = ["ModelCard"]
+__all__ = [
+    "ADVANCED_CARD_FIELDS",
+    "NORMAL_CARD_FIELDS",
+    "ModelCard",
+    "card_stat_items",
+]
+
+
+NORMAL_CARD_FIELDS = frozenset(("parameters", "precision", "file_size", "tensors"))
+ADVANCED_CARD_FIELDS = frozenset(
+    (*NORMAL_CARD_FIELDS, "lora_rank", "extra_meta", "training_meta")
+)
+_COMPONENT_PRECISION_LABELS = (
+    ("unet", "UNet Precision"),
+    ("transformer", "Transformer Precision"),
+    ("vae", "VAE Precision"),
+    ("text_encoder", "Text Encoder Precision"),
+    ("text_encoder_2", "Text Encoder 2 Precision"),
+)
+
+
+def _has_content(value: object) -> bool:
+    return value is not None and value != "" and value != {} and value != []
+
+
+def _metadata_stat_items(data: Mapping[str, object], key: str) -> list[tuple[str, str]]:
+    metadata = data.get(key)
+    if not isinstance(metadata, Mapping):
+        return []
+    return [
+        (str(name).replace("_", " ").title(), str(value))
+        for name, value in metadata.items()
+        if _has_content(value)
+    ]
+
+
+def card_stat_items(
+    data: Mapping[str, object], simple_view: bool = False
+) -> list[tuple[str, str]]:
+    """Return the authoritative statistic rows for a normal or advanced card.
+
+    ``simple_view`` is the normal Cards tab. Legacy field preference mappings
+    deliberately do not participate: normal cards always expose four core
+    statistics, while advanced cards show every available statistic category.
+    """
+    fields = NORMAL_CARD_FIELDS if simple_view else ADVANCED_CARD_FIELDS
+    stats: list[tuple[str, str]] = []
+    if "parameters" in fields:
+        stats.append(("Parameters", str(data.get("total_params_friendly", "-"))))
+    if "precision" in fields:
+        component_stats: list[tuple[str, str]] = []
+        component_precisions = data.get("component_precisions")
+        if not simple_view and isinstance(component_precisions, Mapping):
+            component_stats = [
+                (label, str(value))
+                for key, label in _COMPONENT_PRECISION_LABELS
+                if _has_content(value := component_precisions.get(key))
+            ]
+        if component_stats:
+            stats.extend(component_stats)
+        else:
+            precision = (
+                data.get("precision_display")
+                or data.get("component_precision_summary")
+                or data.get("precision_summary")
+                or "-"
+            )
+            stats.append(("Precision", str(precision)))
+    if "file_size" in fields:
+        stats.append(("File Size", str(data.get("file_size_friendly", "-"))))
+    if "tensors" in fields:
+        stats.append(("Tensors", str(data.get("tensor_count", "-"))))
+    if "lora_rank" in fields and _has_content(data.get("lora_rank")):
+        stats.append(("LoRA Rank", str(data["lora_rank"])))
+    if "extra_meta" in fields:
+        stats.extend(_metadata_stat_items(data, "extra"))
+    if "training_meta" in fields:
+        stats.extend(_metadata_stat_items(data, "training_meta"))
+    return stats
 
 
 class ModelCard(QFrame):
@@ -28,20 +108,9 @@ class ModelCard(QFrame):
         self.filepath = data.get("filepath", "")
         self._selected = False
         self._filter_visible = True
-        self._card_fields = card_fields or {}
-        precision_text = (
-            data.get("precision_display")
-            or data.get("component_precision_summary")
-            or data.get("precision_summary", "-")
-        )
-        component_precisions = data.get("component_precisions") or {}
-        component_precision_labels = [
-            ("unet", "UNet Precision"),
-            ("transformer", "Transformer Precision"),
-            ("vae", "VAE Precision"),
-            ("text_encoder", "Text Encoder Precision"),
-            ("text_encoder_2", "Text Encoder 2 Precision"),
-        ]
+        # Retain the argument for third-party construction compatibility. The
+        # fixed normal/advanced policy intentionally ignores saved masks.
+        del card_fields
         self.setStyleSheet("""
             ModelCard {
                 background-color: #181825;
@@ -127,45 +196,11 @@ class ModelCard(QFrame):
         arch_row.addStretch()
         layout.addLayout(arch_row)
 
-        # Main Cards intentionally remain compact. Detailed fields live in the
-        # Advanced Viewer Card Details tab and retain their own preferences.
         grid = QGridLayout()
         self.stats_layout = grid
         grid.setSpacing(6)
 
-        stats = []
-        if self._card_fields.get("parameters", True):
-            stats.append(("Parameters", data.get("total_params_friendly", "-")))
-        if self._card_fields.get("file_size", False):
-            stats.append(("File Size", data.get("file_size_friendly", "-")))
-        if self._card_fields.get("precision", True):
-            added_component_precision = False
-            for comp_key, comp_label in component_precision_labels:
-                comp_precision = component_precisions.get(comp_key)
-                if not comp_precision:
-                    continue
-                stats.append((comp_label, comp_precision))
-                added_component_precision = True
-            if not added_component_precision:
-                stats.append(("Precision", precision_text))
-        if self._card_fields.get("tensors", False):
-            stats.append(("Tensors", str(data.get("tensor_count", "-"))))
-        # Add LoRA rank if present
-        lora_rank = data.get("lora_rank")
-        if lora_rank and self._card_fields.get("lora_rank", False):
-            stats.append(("LoRA Rank", str(lora_rank)))
-        # Add extra metadata
-        if self._card_fields.get("extra_meta", False):
-            for key, val in data.get("extra", {}).items():
-                label = key.replace("_", " ").title()
-                stats.append((label, str(val)))
-        # Training metadata
-        if self._card_fields.get("training_meta", False):
-            for key, val in data.get("training_meta", {}).items():
-                label = key.replace("_", " ").title()
-                stats.append((label, str(val)))
-
-        for i, (label, value) in enumerate(stats):
+        for i, (label, value) in enumerate(card_stat_items(data, bool(simple_view))):
             lbl = QLabel(label)
             lbl.setStyleSheet(
                 "color: #6c7086; font-size: 11px; background: transparent; border: none;"

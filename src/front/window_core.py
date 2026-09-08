@@ -138,24 +138,6 @@ class WindowCoreMixin:
         self._analysis_threads = 2
         self._add_mode = "replace"
         self._default_tab = "cards"
-        self._card_field_visibility = {
-            "parameters": True,
-            "file_size": True,
-            "precision": True,
-            "tensors": True,
-            "lora_rank": True,
-            "extra_meta": True,
-            "training_meta": True,
-        }
-        self._simple_card_field_visibility = {
-            "parameters": True,
-            "precision": True,
-            "file_size": True,
-            "tensors": True,
-            "lora_rank": True,
-            "extra_meta": False,
-            "training_meta": False,
-        }
         self._table_column_visibility_pref: dict[str, bool] = {}
         self._load_ui_settings()
 
@@ -348,26 +330,6 @@ class WindowCoreMixin:
             self._add_mode = "replace"
         if self._default_tab not in ("cards", "data", "raw"):
             self._default_tab = "cards"
-        raw_detailed = s.value("detailed_card_fields", "")
-        if raw_detailed:
-            try:
-                obj = json.loads(raw_detailed)
-                if isinstance(obj, dict):
-                    self._card_field_visibility.update(
-                        {k: bool(v) for k, v in obj.items()}
-                    )
-            except Exception:
-                pass
-        raw_simple = s.value("simple_card_fields", "")
-        if raw_simple:
-            try:
-                obj = json.loads(raw_simple)
-                if isinstance(obj, dict):
-                    self._simple_card_field_visibility.update(
-                        {k: bool(v) for k, v in obj.items()}
-                    )
-            except Exception:
-                pass
         raw_cols = s.value("table_columns", "")
         if raw_cols:
             try:
@@ -394,8 +356,6 @@ class WindowCoreMixin:
         s.setValue("analysis_threads", str(self._analysis_threads))
         s.setValue("add_mode", self._add_mode)
         s.setValue("default_tab", self._default_tab)
-        s.setValue("detailed_card_fields", json.dumps(self._card_field_visibility))
-        s.setValue("simple_card_fields", json.dumps(self._simple_card_field_visibility))
         col_vis = {}
         for idx, name in enumerate(self._table_columns):
             if idx == 0:

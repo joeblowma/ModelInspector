@@ -1,4 +1,3 @@
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 """Runtime-only smart Data-column groups and their masking engine.
 
 Owns the LLM/Diffusion/Adapter column groups, the per-column baseline
@@ -12,6 +11,9 @@ truth.
 from __future__ import annotations
 
 from typing import Any
+
+
+_GROUP_COLUMNS = tuple[str, ...]
 
 
 _DIFFUSION_PARTS = ("unet", "vae", "text_encoder", "text_encoder_2", "transformer")
@@ -49,7 +51,7 @@ def _group_tooltip(summary: str) -> str:
     )
 
 
-SMART_COLUMN_GROUPS: dict[str, dict[str, str]] = {
+SMART_COLUMN_GROUPS: dict[str, dict[str, str | _GROUP_COLUMNS]] = {
     "llm": {
         "label": "LLM",
         "columns": ("MoE", "Experts", "Active Experts"),

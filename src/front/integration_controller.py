@@ -52,8 +52,8 @@ class IntegrationMixin:
             auto_analyze_on_add=self._auto_analyze_on_add, dump_json_modelinfo=self._dump_json_modelinfo,
             auto_load_raw_dump=self._auto_load_raw_dump,
             cache_full_data_on_analyze=self._cache_full_data_on_analyze, analysis_threads=self._analysis_threads,
-            add_mode=self._add_mode, default_tab=self._default_tab, card_fields=self._card_field_visibility,
-            simple_card_fields=self._simple_card_field_visibility, data_columns=self._column_definitions(),
+            add_mode=self._add_mode, default_tab=self._default_tab,
+            data_columns=self._column_definitions(),
             data_configuration=self._capture_data_layout(),
             theme_id=self._data_layout.get("theme", "default"),
         )
@@ -79,10 +79,6 @@ class IntegrationMixin:
         self._analysis_threads = int(dialog.analysis_threads_combo.currentData() or 1)
         self._add_mode = str(dialog.add_mode_combo.currentData() or "replace")
         self._default_tab = str(dialog.default_tab_combo.currentData() or "cards")
-        for key, check in dialog.card_field_checks.items():
-            self._card_field_visibility[key] = check.isChecked()
-        for key, check in dialog.simple_card_field_checks.items():
-            self._simple_card_field_visibility[key] = check.isChecked()
         self._data_layout = dialog.data_settings_tab.export_configuration()
         self._data_layout["theme"] = dialog.current_theme_id()
         self._schedule_settings_rebuild()
@@ -144,8 +140,6 @@ class IntegrationMixin:
                 "analysis_threads": str(self._analysis_threads),
                 "add_mode": self._add_mode,
                 "default_tab": self._default_tab,
-                "detailed_card_fields": json.dumps(self._card_field_visibility),
-                "simple_card_fields": json.dumps(self._simple_card_field_visibility),
                 "table_columns": json.dumps(column_visibility),
                 "data_layout": self._capture_data_layout(),
             }
@@ -206,7 +200,7 @@ class IntegrationMixin:
             return
         detail = get_cached_inspection_snapshots([filepath]).get(filepath, {}) if filepath else {}
         self._advanced_dialog = AdvancedViewerDialog(
-            self, detail or inspection, card_fields=self._card_field_visibility
+            self, detail or inspection
         )
         explorer = self._advanced_dialog.explorer_tab
         explorer.inspect_requested.connect(self._handle_explorer_inspect)

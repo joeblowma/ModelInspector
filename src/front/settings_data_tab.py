@@ -192,7 +192,9 @@ class SettingsDataTab(QWidget):
             target.setProperty("_settings_data_column_key", key)
             target.installEventFilter(self)
 
-    def eventFilter(self, obj: QObject | None, event: QEvent | None) -> bool:
+    def eventFilter(self, a0: QObject | None, a1: QEvent | None) -> bool:
+        obj = a0
+        event = a1
         if event is None:
             return super().eventFilter(obj, event)
         select_on_click = (

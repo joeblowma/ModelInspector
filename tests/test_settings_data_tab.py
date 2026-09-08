@@ -325,12 +325,25 @@ def test_repeated_loads_hide_obsolete_controls_and_keep_new_controls_live(app):
     assert all(is_visible(control) for control in embedded_controls())
 
 
-def test_data_column_tree_has_no_persistent_blank_viewport_row(app):
+def test_data_column_tree_expands_beyond_old_cap_without_unneeded_scrollbar(app):
     widget = SettingsDataTab(_columns(), themes=["default"])
+    widget.resize(700, 640)
     widget.show()
     app.processEvents()
     tree = widget.column_tree
     last_row = tree.visualItemRect(tree.topLevelItem(tree.topLevelItemCount() - 1))
 
-    assert tree.viewport().height() <= last_row.bottom() + 1
+    assert tree.maximumHeight() > 220
+    assert tree.height() > 220
+    assert tree.viewport().height() > last_row.bottom() + 1
     assert not tree.verticalScrollBar().isVisible()
+
+
+def test_empty_data_column_tree_keeps_usable_space_without_scrollbar(app):
+    widget = SettingsDataTab([])
+    widget.resize(700, 640)
+    widget.show()
+    app.processEvents()
+
+    assert widget.column_tree.height() >= 120
+    assert not widget.column_tree.verticalScrollBar().isVisible()

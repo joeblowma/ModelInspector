@@ -259,9 +259,10 @@ class ThemeTab(QWidget):
         try:
             while self._color_form.count():
                 item = self._color_form.takeAt(0)
-                widget = item.widget()
-                if widget is not None:
-                    widget.deleteLater()
+                if item is not None:
+                    widget = item.widget()
+                    if widget is not None:
+                        widget.deleteLater()
             self._color_edits.clear()
             keys = [key for key in _REQUIRED_COLOR_ORDER if key in theme.colors]
             keys.extend(key for key in theme.colors if key not in keys)

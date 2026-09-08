@@ -1,0 +1,33 @@
+# Target minimal Python version
+target-version = "py312"
+line-length = 88
+
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "build",
+    "dist",
+    "assets",
+    ".kilo",
+    ".opencode",
+    "graphify-out",
+    ".codegraph",
+    ".serena",
+    ".vscode",
+    ".model-inspector",
+    "test",
+    "_mockups",
+    "generated-goals",
+    "test"
+]
+
+[lint]
+select = ["E", "W"]
+ignore = ["E501", "I001"]
+fixable = ["ALL"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

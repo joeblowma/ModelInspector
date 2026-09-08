@@ -36,7 +36,10 @@ class ColumnTree(QTreeWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        # Let the parent Data-tab layout allocate the viewport height.  Growing
+        # the widget to every row makes the dialog's layout size hint override
+        # its fixed initial geometry before a native window is first shown.
+        self.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustIgnored)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(120)
 

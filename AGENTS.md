@@ -66,6 +66,8 @@ Existing tests:
 - `.\tests\test_cache_sidecar_integration.py`
 - `.\tests\test_reporting_shards.py`
 - `.\tests\test_theme_tab.py`
+- `.\tests\test_theme_color_picker.py`
+- `.\tests\test_settings_geometry.py`
 - `.\tests\test_tooltip_audit.py`
 
 ## Agent-Specific Instructions

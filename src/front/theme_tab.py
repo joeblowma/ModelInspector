@@ -12,9 +12,10 @@ from collections.abc import Iterable, Mapping
 import re
 from typing import Any
 
-from PyQt6.QtCore import QRegularExpression, QSignalBlocker, pyqtSignal
-from PyQt6.QtGui import QRegularExpressionValidator
+from PyQt6.QtCore import QRegularExpression, QSignalBlocker, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QRegularExpressionValidator
 from PyQt6.QtWidgets import (
+    QColorDialog,
     QFormLayout,
     QFrame,
     QComboBox,
@@ -41,6 +42,7 @@ from back.theme_store import (
 
 _THEME_ID_RE = re.compile(r"[a-z0-9][a-z0-9_-]{1,63}\Z")
 _COLOR_RE = QRegularExpression(r"^#[0-9A-Fa-f]{0,8}$")
+_FULL_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?\Z")
 _REQUIRED_COLOR_ORDER = (
     "background",
     "surface",
@@ -86,6 +88,7 @@ class ThemeTab(QWidget):
         self._working_theme = BUILTIN_THEME
         self._last_load_result = ThemeLoadResult(BUILTIN_THEME)
         self._color_edits: dict[str, QLineEdit] = {}
+        self._color_buttons: dict[str, QPushButton] = {}
         self._updating = False
         self._dirty = False
         self._reported_failures: set[tuple[str, tuple[str, ...]]] = set()
@@ -264,6 +267,7 @@ class ThemeTab(QWidget):
                     if widget is not None:
                         widget.deleteLater()
             self._color_edits.clear()
+            self._color_buttons.clear()
             keys = [key for key in _REQUIRED_COLOR_ORDER if key in theme.colors]
             keys.extend(key for key in theme.colors if key not in keys)
             for key in keys:
@@ -274,7 +278,22 @@ class ThemeTab(QWidget):
                 edit.setToolTip(f"{key}: a validated #RRGGBB or #RRGGBBAA color. Invalid text is not applied or saved.")
                 edit.textChanged.connect(lambda value, color_key=key: self._color_edited(color_key, value))
                 self._color_edits[key] = edit
-                self._color_form.addRow(f"{key.replace('_', ' ').title()}:", edit)
+                button = QPushButton()
+                button.setObjectName(f"themeColorPicker_{key}")
+                button.setAccessibleName(f"Choose {key.replace('_', ' ')} color")
+                button.setToolTip(f"Choose {key.replace('_', ' ')} color with QColorDialog.")
+                button.setFixedWidth(32)
+                button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+                button.clicked.connect(lambda _checked=False, color_key=key: self._choose_color(color_key))
+                self._color_buttons[key] = button
+                self._set_color_button_color(key, str(theme.colors[key]))
+                container = QWidget()
+                row = QHBoxLayout(container)
+                row.setContentsMargins(0, 0, 0, 0)
+                row.setSpacing(6)
+                row.addWidget(button)
+                row.addWidget(edit, 1)
+                self._color_form.addRow(f"{key.replace('_', ' ').title()}:", container)
         finally:
             self._updating = False
         self._apply_preview()
@@ -288,6 +307,7 @@ class ThemeTab(QWidget):
     def _color_edited(self, key: str, value: str) -> None:
         if self._updating:
             return
+        self._set_color_button_color(key, value)
         colors = dict(self._working_theme.colors)
         colors[key] = value.strip()
         raw = {
@@ -312,6 +332,37 @@ class ThemeTab(QWidget):
         self._dirty = True
         self._apply_preview()
         self.themePreviewChanged.emit(self._working_theme)
+
+    @staticmethod
+    def _qcolor_from_hex(value: str) -> QColor | None:
+        value = value.strip()
+        if _FULL_COLOR_RE.fullmatch(value) is None:
+            return None
+        red, green, blue = (int(value[index:index + 2], 16) for index in (1, 3, 5))
+        alpha = int(value[7:9], 16) if len(value) == 9 else 255
+        return QColor(red, green, blue, alpha)
+
+    def _set_color_button_color(self, key: str, value: str) -> None:
+        button = self._color_buttons.get(key)
+        color = self._qcolor_from_hex(value)
+        if button is None or color is None:
+            return
+        normalized = value.strip().upper()
+        button.setProperty("colorValue", normalized)
+        button.setStyleSheet(f"background-color: rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()});")
+        button.setToolTip(f"Choose {key.replace('_', ' ')} color with QColorDialog (current {normalized}).")
+
+    def _choose_color(self, key: str) -> None:
+        edit = self._color_edits.get(key)
+        initial = self._qcolor_from_hex(edit.text()) if edit is not None else None
+        if initial is None:
+            initial = self._qcolor_from_hex(self._working_theme.colors.get(key, ""))
+        if edit is None or initial is None:
+            return
+        chosen = QColorDialog.getColor(initial, self, f"Choose {key.replace('_', ' ').title()} color", QColorDialog.ColorDialogOption.ShowAlphaChannel)
+        if chosen.isValid():
+            value = f"#{chosen.red():02X}{chosen.green():02X}{chosen.blue():02X}"
+            edit.setText(value if chosen.alpha() == 255 else value + f"{chosen.alpha():02X}")
 
     def _apply_preview(self) -> None:
         colors = self._working_theme.colors
@@ -436,6 +487,11 @@ class ThemeTab(QWidget):
     def color_edits(self) -> dict[str, QLineEdit]:
         """Expose the live editor controls for focused Qt tests and callers."""
         return self._color_edits
+
+    @property
+    def color_buttons(self) -> dict[str, QPushButton]:
+        """Expose one keyboard-accessible picker button for each color editor."""
+        return self._color_buttons
 
     @property
     def last_load_result(self) -> ThemeLoadResult:

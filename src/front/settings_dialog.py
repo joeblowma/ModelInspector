@@ -22,9 +22,9 @@ from front.theme_tab import ThemeTab
 
 __all__ = ["SettingsDialog"]
 
-_DIALOG_FIXED_WIDTH = 840
-_DIALOG_FIXED_HEIGHT = 460
-_DIALOG_SCREEN_MARGIN = 24
+_DIALOG_FIXED_WIDTH = 900
+_DIALOG_FIXED_HEIGHT = 640
+_DIALOG_SCREEN_MARGIN = 12
 
 
 class SettingsDialog(QDialog):

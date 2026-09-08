@@ -93,6 +93,7 @@ class SettingsDataTab(QWidget):
         header = self.column_tree.headerItem()
         if header is not None:
             header.setToolTip(0, "Toggle column visibility in the Data table.")
+            header.setToolTip(1, "Column item name in Data table.")
             header.setToolTip(2, "Set column width in pixels.")
         self.column_tree.setRootIsDecorated(False)
         self.column_tree.setIndentation(0)
@@ -106,6 +107,10 @@ class SettingsDataTab(QWidget):
         self.column_tree.setToolTip(
             "Select one Data column, then use Move Up or Move Down to reorder it."
         )
+        self.column_tree.setColumnWidth(0, 60)
+        self.column_tree.setColumnWidth(1, 170)
+        self.column_tree.setColumnWidth(2, 60) # takes whatever is left
+        self.column_tree.setMaximumWidth(400)
         self.column_tree.currentItemChanged.connect(self._on_current_item_changed)
         self.column_tree.itemSelectionChanged.connect(self._refresh_move_buttons)
 
@@ -121,12 +126,15 @@ class SettingsDataTab(QWidget):
         self.move_up_button.setAccessibleName("Move selected Data column up")
         self.move_up_button.setToolTip("Move the selected Data column up one position.")
         self.move_up_button.clicked.connect(lambda: self._move_selected(-1))
+        self.move_up_button.setMaximumWidth(200)
         move_layout.addWidget(self.move_up_button)
+
         self.move_down_button = QPushButton("Move Down")
         self.move_down_button.setObjectName("moveDataColumnDownButton")
         self.move_down_button.setAccessibleName("Move selected Data column down")
         self.move_down_button.setToolTip("Move the selected Data column down one position.")
         self.move_down_button.clicked.connect(lambda: self._move_selected(1))
+        self.move_down_button.setMaximumWidth(200)
         move_layout.addWidget(self.move_down_button)
         move_layout.addStretch(1)
         list_layout.addLayout(move_layout)

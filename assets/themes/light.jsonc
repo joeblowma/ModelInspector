@@ -1,0 +1,18 @@
+{
+  "colors": {
+    "accent": "#04979F",
+    "accent_text": "#686868",
+    "background": "#FFFFFF",
+    "border": "#92A4B9",
+    "error": "#FF0000",
+    "muted": "#55FFFF",
+    "success": "#00AA00",
+    "surface": "#DCDCDC",
+    "surface_alt": "#EEEEEE",
+    "text": "#393939",
+    "warning": "#FFAA00"
+  },
+  "description": "Light theme for you dark mode avoiders.",
+  "id": "light",
+  "name": "Light"
+}

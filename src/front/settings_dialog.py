@@ -163,8 +163,9 @@ class SettingsDialog(QDialog):
         mode_row.setSpacing(6)
         mode_row.addWidget(QLabel("File add behavior:"))
         self.add_mode_combo = QComboBox()
-        self.add_mode_combo.addItem("Replace current model queue", "replace")
-        self.add_mode_combo.addItem("Append to current model queue", "additive")
+        self.add_mode_combo.addItem("Replace", "replace")
+        self.add_mode_combo.addItem("Append", "additive")
+        self.add_mode_combo.setMinimumWidth(150)
         idx = self.add_mode_combo.findData(add_mode)
         if idx >= 0:
             self.add_mode_combo.setCurrentIndex(idx)
@@ -172,7 +173,7 @@ class SettingsDialog(QDialog):
         mode_row.addStretch()
         mode_cell = make_general_cell(
             mode_wrap,
-            "Replace clears the current model queue before adding new files. Append keeps existing files and adds new ones.",
+            "Replace clears the current model and queue. Append keeps existing and adds new ones.",
         )
 
         tab_wrap = QWidget()
@@ -184,6 +185,7 @@ class SettingsDialog(QDialog):
         self.default_tab_combo.addItem("Cards", "cards")
         self.default_tab_combo.addItem("Data", "data")
         self.default_tab_combo.addItem("Raw", "raw")
+        self.default_tab_combo.setMinimumWidth(150)
         idx = self.default_tab_combo.findData(default_tab)
         if idx >= 0:
             self.default_tab_combo.setCurrentIndex(idx)

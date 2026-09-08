@@ -1,0 +1,18 @@
+{
+  "id": "dark_purple",
+  "name": "Dark Purple",
+  "description": "Purple. Lots of purple.",
+  "colors": {
+    "accent": "#A542A0",
+    "accent_text": "#1d2021",
+    "background": "#220722",
+    "border": "#7F2A7F",
+    "error": "#FB4700",
+    "muted": "#FF55FF",
+    "success": "#00A800",
+    "surface": "#390039",
+    "surface_alt": "#590059",
+    "text": "#E11AD0",
+    "warning": "#DEDE00"
+  },
+}

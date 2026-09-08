@@ -7,6 +7,26 @@ The legacy Raw Dump view remains useful and should be retained alongside the
 read-only Explorer. The Explorer is an expansion of model inspection, not a
 replacement for access to the raw generated dump.
 
+
+## 0. Less Unknowns
+
+- Identify more models based on architecture to reduce unknowns
+- give Advanced view access to things it needs like layer/block counts
+  and populate the tensor tab
+- Green tag on card views should show LLM for language models, VLM for language
+  models with vision capabilities, MMLM for multimodal language models
+- run a quick simple text parse of language model chat template if available
+  - add badges/tags for:
+    - think tags for thinking models
+    - tool tags for tool use models
+- when dealing with .safetensors check beside the literal file (not symlink)
+  for `config.json` and `chat_template.jinja` to fill in some blanks if available,
+  may also need to look for `tokenizer_config.json` and `processor_config.json`
+  for insight
+  - 3 symlinks to directories with multiple models and various ancillary files
+  can be found in `./test` to assist `fast_drive_image_models`, `fast_drive_llm_only`
+  and `slow_drive_mostly_llm`
+
 ## 1. Library Linking and Path Resolution
 
 - Add symbolic-link creation alongside existing move-file actions.

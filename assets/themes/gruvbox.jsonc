@@ -2,6 +2,7 @@
   // Warm, high-contrast Gruvbox dark palette.
   "id": "gruvbox",
   "name": "Gruvbox",
+  "description": "Warm, high-contrast Gruvbox dark palette.",
   "colors": {
     "background": "#282828",
     "surface": "#3c3836",

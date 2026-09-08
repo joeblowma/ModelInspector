@@ -9,11 +9,12 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, cast
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QSpinBox,
@@ -22,7 +23,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from front.settings_data_support import ColumnDefinition, ColumnState, ColumnTree, DragHandle
+from front.settings_data_support import ColumnDefinition, ColumnState, ColumnTree
 
 
 class SettingsDataTab(QWidget):
@@ -88,22 +89,48 @@ class SettingsDataTab(QWidget):
 
         self.column_tree = ColumnTree()
         self.column_tree.setObjectName("dataColumnList")
-        self.column_tree.setHeaderLabels(["", "Visible", "Column", "Width"])
+        self.column_tree.setHeaderLabels(["Visible", "Column", "Width"])
         header = self.column_tree.headerItem()
         if header is not None:
-            header.setToolTip(1, "Toggle column visibility in the Data table.")
-            header.setToolTip(3, "Set column width in pixels.")
+            header.setToolTip(0, "Toggle column visibility in the Data table.")
+            header.setToolTip(2, "Set column width in pixels.")
         self.column_tree.setRootIsDecorated(False)
         self.column_tree.setIndentation(0)
         self.column_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.column_tree.setDragEnabled(True)
-        self.column_tree.setAcceptDrops(True)
-        self.column_tree.setDropIndicatorShown(True)
-        self.column_tree.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-        self.column_tree.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.column_tree.setToolTip("Drag the handle at the left to reorder columns.")
-        self.column_tree.rowsReordered.connect(self._on_rows_reordered)
-        columns_layout.addWidget(self.column_tree)
+        self.column_tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.column_tree.setDragEnabled(False)
+        self.column_tree.setAcceptDrops(False)
+        self.column_tree.setDropIndicatorShown(False)
+        self.column_tree.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
+        self.column_tree.setAccessibleName("Data columns")
+        self.column_tree.setToolTip(
+            "Select one Data column, then use Move Up or Move Down to reorder it."
+        )
+        self.column_tree.currentItemChanged.connect(self._on_current_item_changed)
+        self.column_tree.itemSelectionChanged.connect(self._refresh_move_buttons)
+
+        list_layout = QHBoxLayout()
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.addWidget(self.column_tree, 1)
+
+        move_layout = QVBoxLayout()
+        move_layout.setContentsMargins(0, 0, 0, 0)
+        move_layout.addStretch(1)
+        self.move_up_button = QPushButton("Move Up")
+        self.move_up_button.setObjectName("moveDataColumnUpButton")
+        self.move_up_button.setAccessibleName("Move selected Data column up")
+        self.move_up_button.setToolTip("Move the selected Data column up one position.")
+        self.move_up_button.clicked.connect(lambda: self._move_selected(-1))
+        move_layout.addWidget(self.move_up_button)
+        self.move_down_button = QPushButton("Move Down")
+        self.move_down_button.setObjectName("moveDataColumnDownButton")
+        self.move_down_button.setAccessibleName("Move selected Data column down")
+        self.move_down_button.setToolTip("Move the selected Data column down one position.")
+        self.move_down_button.clicked.connect(lambda: self._move_selected(1))
+        move_layout.addWidget(self.move_down_button)
+        move_layout.addStretch(1)
+        list_layout.addLayout(move_layout)
+        columns_layout.addLayout(list_layout)
 
         reset_button = QPushButton("Reset columns")
         reset_button.setObjectName("resetDataColumnsButton")
@@ -121,7 +148,12 @@ class SettingsDataTab(QWidget):
     def _add_row(self, column: ColumnDefinition) -> None:
         item = QTreeWidgetItem(self.column_tree)
         item.setData(0, Qt.ItemDataRole.UserRole, column.key)
-        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled)
+        item.setText(1, column.label)
+        item.setToolTip(1, f"Stable key: {column.key}")
+        flags = item.flags() & ~(
+            Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
+        )
+        item.setFlags(flags)
         self._rows[column.key] = item
         self._states[column.key] = ColumnState(column.visible, self._clamp_width(column.width, column))
         self._attach_row_controls(item)
@@ -131,24 +163,17 @@ class SettingsDataTab(QWidget):
         column = self._columns_by_key[key]
         state = self._states[key]
 
-        handle = DragHandle(self.column_tree, item)
-        handle.setText("⋮⋮")
-        handle.setAutoRaise(True)
-        handle.setToolTip(f"Drag to reorder the {column.label} column.")
-        self.column_tree.setItemWidget(item, 0, handle)
-
         checkbox = QCheckBox()
+        checkbox.setAccessibleName(f"Show {column.label} column")
         checkbox.setChecked(state.visible)
         checkbox.setToolTip(f"Show the {column.label} column in the Data table.")
         checkbox.stateChanged.connect(lambda value, key=key: self._on_visibility_changed(key, value))
-        self.column_tree.setItemWidget(item, 1, checkbox)
+        self.column_tree.setItemWidget(item, 0, checkbox)
+        self._install_selection_filter(checkbox, key)
         self._checks[column.key] = checkbox
 
-        label = QLabel(column.label)
-        label.setToolTip(f"Stable key: {column.key}")
-        self.column_tree.setItemWidget(item, 2, label)
-
         width = QSpinBox()
+        width.setAccessibleName(f"Width of {column.label} column")
         width.setRange(self._column_minimum(column), self._maximum_width)
         width.setValue(state.width)
         width.setSuffix(" px")
@@ -156,8 +181,30 @@ class SettingsDataTab(QWidget):
             f"Width of {column.label} in pixels; minimum {width.minimum()} px."
         )
         width.valueChanged.connect(lambda value, key=key: self._on_width_changed(key, value))
-        self.column_tree.setItemWidget(item, 3, width)
+        self.column_tree.setItemWidget(item, 2, width)
+        self._install_selection_filter(width, key)
         self._widths[column.key] = width
+
+    def _install_selection_filter(self, widget: QWidget, key: str) -> None:
+        """Let clicks on embedded editors select their owning row first."""
+        targets = [widget, *widget.findChildren(QWidget)]
+        for target in targets:
+            target.setProperty("_settings_data_column_key", key)
+            target.installEventFilter(self)
+
+    def eventFilter(self, obj: QObject | None, event: QEvent | None) -> bool:
+        if event is None:
+            return super().eventFilter(obj, event)
+        select_on_click = (
+            event.type() == QEvent.Type.MouseButtonRelease
+            and getattr(event, "button", lambda: Qt.MouseButton.NoButton)()
+            == Qt.MouseButton.LeftButton
+        )
+        if select_on_click and isinstance(obj, QWidget):
+            key = obj.property("_settings_data_column_key")
+            if key:
+                self._select_key(str(key))
+        return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------ normalise
     def _normalise_columns(self, values: Iterable[Any]) -> list[ColumnDefinition]:
@@ -248,9 +295,56 @@ class SettingsDataTab(QWidget):
         self._states[key].width = self._clamp_width(value, self._columns_by_key[key])
         self._emit_configuration()
 
-    def _on_rows_reordered(self) -> None:
-        self._rebuild_row_controls()
-        self._emit_configuration()
+    def _selected_key(self) -> str | None:
+        item = self.column_tree.currentItem()
+        if item is None:
+            selected = self.column_tree.selectedItems()
+            item = selected[0] if selected else None
+        if item is None:
+            return None
+        key = str(item.data(0, Qt.ItemDataRole.UserRole))
+        return key if key in self._rows else None
+
+    def _select_key(self, key: str) -> None:
+        item = self._rows.get(key)
+        if item is None:
+            return
+        self.column_tree.setCurrentItem(item)
+        item.setSelected(True)
+        self.column_tree.scrollToItem(item, QAbstractItemView.ScrollHint.EnsureVisible)
+        self._refresh_move_buttons()
+
+    def _restore_selection(self, key: str | None) -> None:
+        if key is None or key not in self._rows:
+            self.column_tree.clearSelection()
+            self.column_tree.setCurrentItem(None)
+            self._refresh_move_buttons()
+            return
+        self._select_key(key)
+
+    def _refresh_move_buttons(self) -> None:
+        key = self._selected_key()
+        index = self.column_keys().index(key) if key is not None else -1
+        count = self.column_tree.topLevelItemCount()
+        self.move_up_button.setEnabled(index > 0)
+        self.move_down_button.setEnabled(0 <= index < count - 1)
+
+    def _on_current_item_changed(
+        self, _current: QTreeWidgetItem | None, _previous: QTreeWidgetItem | None
+    ) -> None:
+        self._refresh_move_buttons()
+
+    def _move_selected(self, offset: int) -> None:
+        key = self._selected_key()
+        if key is None:
+            self._refresh_move_buttons()
+            return
+        current = self.column_keys().index(key)
+        target = current + offset
+        if target < 0 or target >= len(self.column_keys()):
+            self._refresh_move_buttons()
+            return
+        self.move_column(key, target)
 
     # --------------------------------------------------------------- public
     def column_keys(self) -> list[str]:
@@ -262,8 +356,11 @@ class SettingsDataTab(QWidget):
                 keys.append(str(item.data(0, Qt.ItemDataRole.UserRole)))
         return keys
 
-    def _rebuild_row_controls(self) -> None:
-        """Replace Qt-owned cell controls after a native row move or load."""
+    def _rebuild_row_controls(self, *, widgets_detached: bool = False) -> None:
+        """Replace Qt-owned cell controls after a row move or configuration load."""
+        selected_key = self._selected_key()
+        if not widgets_detached:
+            self.column_tree._detach_item_widgets()
         self._checks.clear()
         self._widths.clear()
         self._rows.clear()
@@ -273,6 +370,8 @@ class SettingsDataTab(QWidget):
                 key = str(item.data(0, Qt.ItemDataRole.UserRole))
                 self._rows[key] = item
                 self._attach_row_controls(item)
+        self.column_tree.refresh_content_height()
+        self._restore_selection(selected_key)
 
     def export_configuration(self) -> dict[str, Any]:
         """Return a JSON-serializable snapshot of the current widget state."""
@@ -309,17 +408,20 @@ class SettingsDataTab(QWidget):
             self._report("Ignored unknown Data columns: " + ", ".join(unknown))
         ordered = [key for key in by_key if key in self._columns_by_key]
         ordered.extend(key for key in self._columns_by_key if key not in ordered)
+        selected_key = self._selected_key()
         self._updating = True
         try:
+            self.column_tree._detach_item_widgets()
             self._reorder_keys(ordered)
             for key, column in self._columns_by_key.items():
                 entry = by_key.get(key, {})
                 visible = bool(entry.get("visible", column.visible))
                 width = self._clamp_width(entry.get("width", column.width), column)
                 self._states[key] = ColumnState(visible, width)
-            self._rebuild_row_controls()
+            self._rebuild_row_controls(widgets_detached=True)
         finally:
             self._updating = False
+        self._restore_selection(selected_key)
         self._emit_configuration()
 
     def _reorder_keys(self, keys: Sequence[str]) -> None:
@@ -341,22 +443,27 @@ class SettingsDataTab(QWidget):
         current = keys.index(key)
         if current != target:
             keys.insert(target, keys.pop(current))
-            self._updating = not emit
+            previous_updating = self._updating
+            self._updating = True
             try:
+                self.column_tree._detach_item_widgets()
                 self._reorder_keys(keys)
+                self._rebuild_row_controls(widgets_detached=True)
             finally:
-                self._updating = False
+                self._updating = previous_updating
             if emit:
                 self._emit_configuration()
+        self._select_key(key)
         return True
 
     def reset_to_default(self, *, emit: bool = True) -> None:
         """Restore the initial column definitions."""
+        selected_key = self._selected_key()
         self._updating = True
         try:
-            for key in list(self._rows):
-                item = self._rows.pop(key)
-                self.column_tree.takeTopLevelItem(self.column_tree.indexOfTopLevelItem(item))
+            self.column_tree._detach_item_widgets()
+            self.column_tree.clear()
+            self._rows.clear()
             self._checks.clear()
             self._widths.clear()
             self._states.clear()
@@ -365,6 +472,7 @@ class SettingsDataTab(QWidget):
             self.column_tree.refresh_content_height()
         finally:
             self._updating = False
+        self._restore_selection(selected_key)
         if emit:
             self._emit_configuration()
 

@@ -1,18 +1,14 @@
-"""State descriptions and native controls for the Data settings editor."""
+"""State descriptions and reusable row cleanup for the Data settings editor."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PyQt6.QtCore import QTimer, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QApplication,
     QAbstractScrollArea,
-    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QSizePolicy,
-    QWidget,
 )
 
 
@@ -36,13 +32,10 @@ class ColumnState:
 
 
 class ColumnTree(QTreeWidget):
-    """Top-level-only tree that notifies after native move cleanup."""
-
-    rowsReordered = pyqtSignal()
+    """Flat, compact tree used to display editable Data-column rows."""
 
     def __init__(self) -> None:
         super().__init__()
-        self._drop_pending = False
         self.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.setMinimumHeight(0)
@@ -53,60 +46,36 @@ class ColumnTree(QTreeWidget):
         self.setMaximumHeight(min(220, self.sizeHint().height()))
         self.updateGeometry()
 
-    def dropEvent(self, event) -> None:  # pylint: disable=invalid-name  # type: ignore[no-untyped-def]
-        self._detach_item_widgets()
-        super().dropEvent(event)
-        self.queue_post_drop_reconciliation()
-
     def _detach_item_widgets(self) -> None:
-        """Keep Qt's internal move operating on bare items, not child widgets."""
+        """Detach embedded controls before rows are reordered or discarded.
+
+        Qt owns widgets installed with ``setItemWidget``.  Explicitly hiding,
+        unparenting, and deferring their deletion prevents stale controls from
+        painting over a row after a configuration load or reset.
+        """
+        items: list[QTreeWidgetItem] = []
         for index in range(self.topLevelItemCount()):
             item = self.topLevelItem(index)
-            if item is None:
-                continue
+            if item is not None:
+                items.append(item)
+
+        def append_children(item: QTreeWidgetItem) -> None:
+            for child_index in range(item.childCount()):
+                child = item.child(child_index)
+                if child is not None:
+                    items.append(child)
+                    append_children(child)
+
+        for item in list(items):
+            append_children(item)
+        for item in items:
             for column in range(self.columnCount()):
                 widget = self.itemWidget(item, column)
                 if widget is not None:
                     self.removeItemWidget(item, column)
+                    widget.hide()
+                    widget.setParent(None)
                     widget.deleteLater()
 
-    def queue_post_drop_reconciliation(self) -> None:
-        """Coalesce a completed native move into one queued notification."""
-        if not self._drop_pending:
-            self._drop_pending = True
-            QTimer.singleShot(0, self._emit_reordered)
 
-    def _emit_reordered(self) -> None:
-        self._drop_pending = False
-        self.rowsReordered.emit()
-
-
-class DragHandle(QToolButton):
-    """Small handle that starts the tree's native internal-move operation."""
-
-    def __init__(self, tree: ColumnTree, item: QTreeWidgetItem, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._tree = tree
-        self._item = item
-        self._press_position = None
-
-    def mousePressEvent(self, event) -> None:  # pylint: disable=invalid-name  # type: ignore[no-untyped-def]
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._tree.setCurrentItem(self._item)
-            self._press_position = event.position().toPoint()
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event) -> None:  # pylint: disable=invalid-name  # type: ignore[no-untyped-def]
-        if self._press_position is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            if (event.position().toPoint() - self._press_position).manhattanLength() >= QApplication.startDragDistance():
-                self._tree.startDrag(Qt.DropAction.MoveAction)
-                self._press_position = None
-                return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event) -> None:  # pylint: disable=invalid-name  # type: ignore[no-untyped-def]
-        self._press_position = None
-        super().mouseReleaseEvent(event)
-
-
-__all__ = ["ColumnDefinition"]
+__all__ = ["ColumnDefinition", "ColumnState", "ColumnTree"]

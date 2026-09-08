@@ -132,6 +132,7 @@ class ExplorerTab(QWidget):
         self._metadata_rows: list[dict[str, Any]] = []
         self._embedded_candidates: list[dict[str, Any]] = []
         self._payload_available = False
+        self._loading = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -265,6 +266,7 @@ class ExplorerTab(QWidget):
         
     def set_inspection(self, inspection: Mapping[str, Any] | None, tensor_data: Any = None, *, payload_available: bool | None = None) -> None:
         """Display an inspection result and optional header tensor descriptors."""
+        self._loading = False
         self._inspection = dict(inspection or {})
         if tensor_data is None:
             for key in ("tensor_info", "tensors", "tensor_data", "descriptors", "headers"):
@@ -294,6 +296,11 @@ class ExplorerTab(QWidget):
         )
         self._embedded_candidates = detect_embedded_content(self._inspection, self._records)
         self._render_embedded()
+        self._update_status()
+
+    def set_loading(self, loading: bool) -> None:
+        """Show whether a header-only tensor descriptor read is in progress."""
+        self._loading = bool(loading)
         self._update_status()
 
     def set_tensor_data(
@@ -370,6 +377,7 @@ class ExplorerTab(QWidget):
         self._metadata_rows = []
         self._embedded_candidates = []
         self._payload_available = False
+        self._loading = False
         self.metadata_search.clear()
         self.tensor_search.clear()
         self._render_metadata()
@@ -459,7 +467,9 @@ class ExplorerTab(QWidget):
             })
 
     def _update_status(self) -> None:
-        if not self._inspection and not self._records:
+        if self._loading:
+            self.status_label.setText("Read-only header view. Loading tensor descriptors...")
+        elif not self._inspection and not self._records:
             self.status_label.setText("Read-only header view. No inspection loaded.")
         elif self._payload_available:
             self.status_label.setText("Read-only header view. Host supplied a payload source; requests still emit signals only.")

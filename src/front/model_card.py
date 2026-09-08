@@ -15,6 +15,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .metadata_ui import domain_tag_description, inspection_domain
+
 __all__ = [
     "ADVANCED_CARD_FIELDS",
     "NORMAL_CARD_FIELDS",
@@ -154,6 +156,12 @@ class ModelCard(QFrame):
         arch_tag = self._make_tag(str(data.get("architecture", "Unknown")), "#74c7ec", "#1e1e2e")
         type_tag = self._make_tag(str(data.get("model_type", "Unknown")), "#a6e3a1", "#1e1e2e")
         arch_row.addWidget(arch_tag)
+        domain = inspection_domain(data)
+        if domain:
+            domain_tag = self._make_tag(domain, "#a6e3a1", "#1e1e2e")
+            domain_tag.setToolTip(domain_tag_description(domain))
+            domain_tag.setProperty("metadata_domain", domain)
+            arch_row.addWidget(domain_tag)
         arch_row.addWidget(type_tag)
         quantization = data.get("quantization")
         if quantization:

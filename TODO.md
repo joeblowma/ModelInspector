@@ -24,8 +24,11 @@ replacement for access to the raw generated dump.
   may also need to look for `tokenizer_config.json` and `processor_config.json`
   for insight
   - 3 symlinks to directories with multiple models and various ancillary files
-  can be found in `./test` to assist `fast_drive_image_models`, `fast_drive_llm_only`
-  and `slow_drive_mostly_llm`
+   can be found in `./test` to assist `fast_drive_image_models`, `fast_drive_llm_only`
+   and `slow_drive_mostly_llm`
+  - [x] Bounded resolved-parent companion discovery now normalizes architecture/capability
+    facts and cache identities cover companion creation, removal, realpath changes,
+    and bounded content digests without reading model payloads.
 
 ## 1. Library Linking and Path Resolution
 

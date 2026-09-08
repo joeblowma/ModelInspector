@@ -101,6 +101,9 @@ from back.estimator import (
     runtime_configuration,
 )
 from front.explorer_tab import ExplorerTab
+from front.metadata_ui import (
+    HeaderInspectionController, capability_badge_values, domain_badge_values,
+)
 from front.model_card import ModelCard
 
 __all__ = ["AdvancedViewer", "AdvancedViewerDialog", "AdvancedViewerPopup"]
@@ -184,6 +187,7 @@ class AdvancedViewerDialog(QDialog):
         summary_fields = (
             ("architecture", "Architecture"),
             ("layer_count", "Layer Count"),
+            ("block_counts", "Block Counts"),
             ("experts_total", "Experts Total"),
             ("experts_active", "Experts Active"),
             ("trained_context", "Trained Context"),
@@ -320,6 +324,12 @@ class AdvancedViewerDialog(QDialog):
             self.work_area.addTab(cast(Any, page), title)
         root.addWidget(self.work_area, 1)
 
+        self._header_controller = HeaderInspectionController(
+            cast(Any, self), self.work_area, self.explorer_tab.tensors_page, self.explorer_tab,
+            lambda: self._inspection, self.set_inspection,
+        )
+        self.finished.connect(lambda *_args: self._header_controller.cancel())
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         self.copy_configuration_button = QPushButton("Copy Configuration")
@@ -337,6 +347,7 @@ class AdvancedViewerDialog(QDialog):
     def set_inspection(self, inspection: Mapping[str, Any] | None) -> None:
         """Replace inspected metadata and refresh facts, badges, and projection."""
         self._inspection = dict(inspection) if isinstance(inspection, Mapping) else {}
+        self._header_controller.replace_inspection()
         self._facts = facts_from_inspection(self._inspection)
         self._update_card_details()
         tensors = self._inspection.get(
@@ -346,8 +357,8 @@ class AdvancedViewerDialog(QDialog):
             self._inspection, tensors, payload_available=False
         )
         self._update_summary()
-        self._replace_badges(self._capability_row, self._capability_badges, self._facts.capabilities, "capability")
-        self._replace_badges(self._domain_row, self._domain_badges, self._facts.domains, "domain")
+        self._replace_badges(self._capability_row, self._capability_badges, capability_badge_values(self._inspection, self._facts.capabilities), "capability")
+        self._replace_badges(self._domain_row, self._domain_badges, domain_badge_values(self._inspection, self._facts.domains), "domain")
 
         context = self._facts.max_context or 4096
         self.context_spin.blockSignals(True)
@@ -383,6 +394,7 @@ class AdvancedViewerDialog(QDialog):
         values = {
             "architecture": facts.architecture,
             "layer_count": self._number_text(facts.layer_count),
+            "block_counts": self._mapping_text(facts.block_counts),
             "experts_total": self._number_text(facts.expert_count),
             "experts_active": self._number_text(facts.active_expert_count),
             "trained_context": self._context_text(facts.trained_context),

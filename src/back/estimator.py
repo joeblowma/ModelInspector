@@ -41,8 +41,6 @@ _TRAINED_CONTEXT_KEYS = (
     "train_context_length",
     "original_max_position_embeddings",
 )
-
-
 @dataclass(frozen=True)
 class ModelFacts:
     """Stable at-a-glance facts suitable for a model card or table row."""
@@ -65,8 +63,8 @@ class ModelFacts:
     domains: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ()
     evidence: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-
-
+    block_counts: Mapping[str, int] = field(default_factory=dict)
+    domain: str | None = None
 @dataclass(frozen=True)
 class ResourceProjection:
     """Estimated runtime resources, in bytes and preformatted display units."""
@@ -87,8 +85,6 @@ class ResourceProjection:
     vram_display: str
     ram_display: str
     assumptions: tuple[str, ...] = ()
-
-
 def _flatten(value: Any, prefix: str = "") -> Iterable[tuple[str, Any]]:
     if isinstance(value, Mapping):
         for key, child in value.items():
@@ -105,8 +101,6 @@ def _fields(inspection: Mapping[str, Any]) -> dict[str, Any]:
         short = key.rsplit(".", 1)[-1]
         fields.setdefault(short, value)
     return fields
-
-
 def _number(value: Any, *, integer: bool = False) -> float | int | None:
     if isinstance(value, bool) or value is None:
         return None
@@ -128,8 +122,6 @@ def _number(value: Any, *, integer: bool = False) -> float | int | None:
     if not math.isfinite(result) or result < 0:
         return None
     return int(result) if integer else result
-
-
 def _first_number(fields: Mapping[str, Any], keys: Iterable[str]) -> int | None:
     for key in keys:
         for actual, value in fields.items():
@@ -138,13 +130,9 @@ def _first_number(fields: Mapping[str, Any], keys: Iterable[str]) -> int | None:
                 if number is not None:
                     return int(number)
     return None
-
-
 def _params(fields: Mapping[str, Any]) -> int | None:
     keys = ("total_params", "total_parameters", "parameter_count", "n_params", "params")
     return _first_number(fields, keys)
-
-
 def _display_params(value: int | None) -> str:
     if value is None:
         return "Unknown"
@@ -182,7 +170,23 @@ def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
     architecture_text = str(architecture or "").lower()
     model_type_text = str(model_type or "").lower()
     total_params = _params(fields)
-    layer_count = _first_number(fields, _LAYER_KEYS)
+    architecture_facts_raw = source.get("architecture_facts")
+    architecture_facts = (
+        architecture_facts_raw if isinstance(architecture_facts_raw, Mapping) else {}
+    )
+    architecture_layer = _number(architecture_facts.get("layer_count"), integer=True)
+    layer_count = (
+        int(architecture_layer)
+        if architecture_layer is not None
+        else _first_number(fields, _LAYER_KEYS)
+    )
+    raw_block_counts = architecture_facts.get("block_counts", {})
+    block_counts = {}
+    if isinstance(raw_block_counts, Mapping):
+        for key, value in raw_block_counts.items():
+            count = _number(value, integer=True)
+            if count is not None and count > 0:
+                block_counts[str(key)] = int(count)
     expert_count_value = _number(source.get("expert_count"), integer=True)
     active_expert_value = _number(source.get("expert_used_count"), integer=True)
     expert_count = int(expert_count_value) if expert_count_value is not None else _first_number(fields, _EXPERT_KEYS)
@@ -217,24 +221,54 @@ def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
     components: Mapping[str, Any] = components_raw if isinstance(components_raw, Mapping) else {}
     component_text = " ".join(str(key).lower() for key, value in components.items() if value)
     combined = f"{architecture_text} {model_type_text} {component_text} {_text(fields)}"
+    capability_facts_raw = source.get("capability_facts")
+    capability_facts = (
+        capability_facts_raw if isinstance(capability_facts_raw, Mapping) else {}
+    )
     evidence: dict[str, tuple[str, ...]] = {}
     capabilities: list[str] = []
-    if _contains(fields, ("tool_use", "tool-use", "function_call", "function calling", "tool calling", "tools")):
-        capabilities.append("Tool Use")
-        evidence["Tool Use"] = ("inspection metadata",)
-    if _contains(fields, ("thinking", "reasoning", "chain_of_thought", "deepseek-r1")):
-        capabilities.append("Thinking")
-        evidence["Thinking"] = ("inspection metadata",)
-    vision = bool(re.search(r"vision|image|multimodal|vl|clip|vit", combined))
-    if vision:
-        capabilities.append("Vision")
-        evidence["Vision"] = ("architecture/components metadata",)
+    normalized_facts = isinstance(capability_facts_raw, Mapping)
+    if not normalized_facts:
+        if _contains(fields, ("tool_use", "tool-use", "function_call", "function calling", "tool calling", "tools")):
+            capabilities.append("Tool Use")
+            evidence["Tool Use"] = ("inspection metadata",)
+        if _contains(fields, ("thinking", "reasoning", "chain_of_thought", "deepseek-r1")):
+            capabilities.append("Thinking")
+            evidence["Thinking"] = ("inspection metadata",)
+        vision = bool(re.search(r"vision|image|multimodal|vl|clip|vit", combined))
+        if vision:
+            capabilities.append("Vision")
+            evidence["Vision"] = ("architecture/components metadata",)
+    normalized_capabilities = capability_facts.get("capabilities")
+    if isinstance(normalized_capabilities, (list, tuple)):
+        if "thinking" in normalized_capabilities and "Thinking" not in capabilities:
+            capabilities.append("Thinking")
+        if "tools" in normalized_capabilities and "Tool Use" not in capabilities:
+            capabilities.insert(0, "Tool Use")
+    raw_evidence = capability_facts.get("evidence")
+    if isinstance(raw_evidence, Mapping):
+        for name, traces in raw_evidence.items():
+            if isinstance(traces, (list, tuple)):
+                legacy_name = {"thinking": "Thinking", "tools": "Tool Use"}.get(
+                    str(name), str(name)
+                )
+                evidence[legacy_name] = tuple(str(item) for item in traces)
 
     lora = "lora" in model_type_text or bool(source.get("adapter_type") or source.get("lora_rank") or components.get("lora"))
     diffusion = bool(components.get("unet") or components.get("vae")) or bool(re.search(r"diffusion|stable.?diffusion|sdxl|flux", combined))
-    multimodal = vision and ("multimodal" in combined or "vl" in architecture_text or bool(components.get("vision")))
-    llm = not diffusion and ("llm" in model_type_text or bool(re.search(r"llama|qwen|mistral|gemma|gpt|transformer|language|decoder", combined)))
-    domains = [name for name, present in (("LLM", llm), ("Multimodal", multimodal), ("Diffusion", diffusion), ("LoRA", lora)) if present]
+    domain_value = capability_facts.get("domain")
+    if normalized_facts:
+        domains = [str(domain_value)] if domain_value in {"LLM", "VLM", "MMLM"} else []
+        domains.extend(name for name, present in (("Diffusion", diffusion), ("LoRA", lora)) if present)
+    else:
+        vision = bool(re.search(r"vision|image|multimodal|vl|clip|vit", combined))
+        multimodal = vision and ("multimodal" in combined or "vl" in architecture_text or bool(components.get("vision")))
+        llm = not diffusion and ("llm" in model_type_text or bool(re.search(r"llama|qwen|mistral|gemma|gpt|transformer|language|decoder", combined)))
+        domains = [
+            name
+            for name, present in (("LLM", llm), ("Multimodal", multimodal), ("Diffusion", diffusion), ("LoRA", lora))
+            if present
+        ]
     return ModelFacts(
         architecture=str(architecture) if architecture not in (None, "") else None,
         model_type=str(model_type) if model_type not in (None, "") else None,
@@ -254,6 +288,8 @@ def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
         domains=tuple(domains),
         capabilities=tuple(capabilities),
         evidence=evidence,
+        block_counts=block_counts,
+        domain=str(domain_value) if domain_value in {"LLM", "VLM", "MMLM"} else None,
     )
 
 

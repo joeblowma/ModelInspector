@@ -138,6 +138,30 @@ def test_legacy_cache_keeps_sidecar_records_in_a_sibling_store(
     assert inspect_file(str(primary))["sidecars"][0]["sidecar_role"] == "mmproj"
 
 
+def test_legacy_pre_facts_entry_is_refreshed_with_normalized_companion_facts(
+    monkeypatch, tmp_path: Path
+) -> None:
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setenv("SMI_CACHE_DIR", str(cache_dir))
+    monkeypatch.delenv("SMI_CACHE_PATH", raising=False)
+    primary = tmp_path / "model.safetensors"
+    _write_safetensors(primary, "model.layers.0.self_attn.q_proj.weight")
+
+    inspect_file(str(primary))
+    entry_path = next((cache_dir / "entries").glob("*.json"))
+    entry = json.loads(entry_path.read_text(encoding="utf-8"))
+    for key in ("architecture_facts", "capability_facts", "companion_identities"):
+        entry["data"].pop(key, None)
+    entry_path.write_text(json.dumps(entry), encoding="utf-8")
+
+    refreshed = inspect_file(str(primary))
+    persisted = json.loads(entry_path.read_text(encoding="utf-8"))["data"]
+
+    assert "architecture_facts" in refreshed
+    assert "capability_facts" in refreshed
+    assert "companion_identities" in persisted
+
+
 def test_cache_verifier_reports_changed_non_primary_shard(
     monkeypatch, tmp_path: Path
 ) -> None:

@@ -24,6 +24,8 @@ GUI_SUMMARY_KEYS = (
     "total_params",
     "total_params_friendly",
     "architecture",
+    "architecture_facts",
+    "capability_facts",
     "model_type",
     "adapter_type",
     "quantization",
@@ -54,7 +56,11 @@ _USER_SIZED_CONTAINER_KEYS = {
     "extra",
     "warnings",
 }
-_EXACT_NESTED_COPY_KEYS = {"modelinfo_outputs"}
+_EXACT_NESTED_COPY_KEYS = {
+    "modelinfo_outputs",
+    "architecture_facts",
+    "capability_facts",
+}
 
 
 def _shallow_copy(value: Any) -> Any:

@@ -14,6 +14,7 @@ from .architecture_keys import (
     _zimage_label,
     detect_adapter_type,
 )
+from .companion_discovery import companion_architecture_hint
 
 
 __all__ = [
@@ -63,7 +64,12 @@ def _is_standard_flux_lora_header(
 
 
 def detect_architecture(
-    keys: list[str], shapes: dict, total_params: int, components: dict, metadata: dict
+    keys: list[str],
+    shapes: dict,
+    total_params: int,
+    components: dict,
+    metadata: dict,
+    companion: dict | None = None,
 ):
     """Detect model architecture. Returns (arch_name, details_dict)."""
     details = {}
@@ -101,11 +107,21 @@ def detect_architecture(
     if meta_result:
         return meta_result, details
 
-    # 2. Key-pattern detection
+    # 2. Tensor-key detection remains stronger than a generic config hint.
     key_blob = "\n".join(keys)
-    return _detect_from_keys(
+    key_result = _detect_from_keys(
         keys, key_blob, shapes, total_params, components, metadata, details
     )
+    companion_result = companion_architecture_hint(companion)
+    if companion_result and key_result[0] in {
+        "Unknown",
+        "Qwen (text encoder)",
+        "Transformer (language)",
+        "GPT-style Transformer",
+    }:
+        details["companion_architecture"] = companion_result
+        return companion_result, details
+    return key_result
 
 
 def _detect_from_metadata(metadata: dict):

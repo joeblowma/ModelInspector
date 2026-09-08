@@ -28,6 +28,7 @@ from model_readers import (
 
 from .adapter_detection import detect_adapter_type
 from .architecture_metadata import detect_architecture
+from .capability_facts import build_capability_facts
 from .checkpoint_reader import (
     CHECKPOINT_SAFETY_REJECT,
     UnsafeCheckpointError,
@@ -39,6 +40,11 @@ from .sidecar_discovery import (
     sidecar_identity_snapshot,
 )
 from .shard_discovery import discover_shard_set
+from .companion_discovery import (
+    build_architecture_facts,
+    companion_identities,
+    discover_companion_metadata,
+)
 from .model_classification import (
     _apply_filename_alias_detection,
     _extract_training_meta,
@@ -167,6 +173,19 @@ def _dynamic_identity_matches(
     return cached_sidecars == sidecar_identity_snapshot(sidecars)
 
 
+def _companion_identity_matches(cached: dict, current: dict) -> bool:
+    """Invalidate old results when a nearby config or template changes."""
+    if not isinstance(cached.get("architecture_facts"), dict) or not isinstance(
+        cached.get("capability_facts"), dict
+    ):
+        return False
+    current_identities = companion_identities(current)
+    cached_identities = cached.get("companion_identities")
+    if not isinstance(cached_identities, list):
+        return not any(item.get("exists") for item in current_identities)
+    return cached_identities == current_identities
+
+
 def _attach_sidecars(
     result: dict,
     filepath: str,
@@ -223,10 +242,11 @@ def inspect_file(
     shard_set = discover_shard_set(filepath)
     sidecar_base = shard_set.primary_path if shard_set else filepath
     sidecars = discover_sidecars(sidecar_base) if include_sidecars else ()
+    companion = discover_companion_metadata(filepath)
     cached = get_cached_inspection(filepath, options)
     if cached is not None and _dynamic_identity_matches(
         cached, shard_set, sidecars, include_sidecars
-    ):
+    ) and _companion_identity_matches(cached, companion):
         return _refresh_cached_result(filepath, cached)
 
     allow_aliases = bool(options.get("allow_filename_alias_detection", False))
@@ -243,15 +263,22 @@ def inspect_file(
     components = detect_components(keys)
     components["vision"] = has_vision_component(keys)
     architecture, arch_details = detect_architecture(
-        keys, shapes, total_params, components, metadata
+        keys, shapes, total_params, components, metadata, companion
     )
     if allow_aliases:
         architecture = _apply_filename_alias_detection(architecture, filepath)
+    architecture_facts = build_architecture_facts(keys, companion, arch_details)
+    capability_facts = build_capability_facts(
+        keys, metadata, companion, architecture, components
+    )
+    if capability_facts["domain"] in {"VLM", "MMLM"}:
+        components["vision"] = True
     model_type = classify_model_type(components, architecture)
     moe_info = detect_moe(keys, metadata, architecture)
     adapter_type = detect_adapter_type(keys, metadata)
     training_meta = _extract_training_meta(metadata)
     warnings = list(metadata.get("smi.warnings") or [])
+    warnings.extend(str(item) for item in companion.get("warnings", []))
 
     dtype_list = _build_dtype_list(dtypes, len(tensor_info))
     precision_summary = _summarize_dtype_mix(dtypes, len(tensor_info))
@@ -289,6 +316,8 @@ def inspect_file(
         "total_params": total_params,
         "total_params_friendly": format_params(total_params),
         "architecture": architecture,
+        "architecture_facts": architecture_facts,
+        "capability_facts": capability_facts,
         "arch_details": arch_details,
         "model_type": model_type,
         "components": comp_flags,
@@ -306,6 +335,8 @@ def inspect_file(
         "component_precisions": component_precisions,
         "precision_display": precision_display,
         "metadata": metadata,
+        "companion_metadata": companion,
+        "companion_identities": companion_identities(companion),
         "extra": extra,
         "warnings": warnings,
     }

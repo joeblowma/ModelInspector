@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from back.estimator import project_resources, runtime_configuration
 from back.reporting import print_report
+from back import cli
 import modelinfo
 
 
@@ -65,6 +66,49 @@ def test_terminal_report_exposes_tensor_details_and_original_order(capsys) -> No
     assert "Tensor/block details (sorted presentation):" in output
     assert "n_bytes=16" in output
     assert "shard_id=2" in output
+
+
+def test_terminal_report_uses_normalized_pipeline_facts(capsys) -> None:
+    print_report(
+        "model.gguf",
+        {"general.architecture": "qwen2vl"},
+        _tensor_info(),
+        20,
+        inspection={
+            "architecture": "qwen2vl",
+            "model_type": "MLLM",
+            "architecture_facts": {"layer_count": 32},
+            "capability_facts": {"domain": "VLM", "capabilities": ["tools"]},
+        },
+    )
+    output = capsys.readouterr().out
+
+    assert "Architecture:   qwen2vl" in output
+    assert "Domain:         VLM" in output
+    assert "Capabilities:   tools" in output
+    assert "Layer count:    32" in output
+
+
+def test_cli_passes_its_structured_inspection_to_terminal_reporting(monkeypatch) -> None:
+    inspection = {
+        "filepath": "model.safetensors",
+        "architecture": "Llama",
+        "architecture_facts": {"layer_count": 2},
+        "capability_facts": {"domain": "LLM", "capabilities": []},
+    }
+    seen = []
+    monkeypatch.setattr(cli, "_iter_model_paths", lambda *_: ["model.safetensors"])
+    monkeypatch.setattr(cli, "iter_checkpoint_paths", lambda *_: [])
+    monkeypatch.setattr(cli, "_inspect_and_write_modelinfo", lambda *_: inspection)
+    monkeypatch.setattr(
+        cli, "read_model_header", lambda *_args, **_kwargs: ({}, _tensor_info(), 20)
+    )
+    monkeypatch.setattr(
+        cli, "print_report", lambda *args, inspection=None: seen.append(inspection)
+    )
+
+    assert cli.main(["model.safetensors"]) == 0
+    assert seen == [inspection]
 
 
 def test_runtime_configuration_includes_associated_sidecar_role_and_path() -> None:

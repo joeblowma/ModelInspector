@@ -13,6 +13,7 @@ from pathlib import Path
 __all__ = [
     "classify_model_type",
     "detect_moe",
+    "has_language_component",
     "has_vision_component",
     "format_size",
     "format_params",
@@ -81,6 +82,63 @@ def has_vision_component(keys: list[str]) -> bool:
         if any(pattern.search(key) for key in candidates)
     }
     return len(evidence) >= 2
+
+
+_LANGUAGE_SIGNATURES = re.compile(
+    r"(?:causallm|conditionalgeneration|seq2seqlm|llama|mistral|mixtral|qwen|"
+    r"gemma|gpt|phi|bert|t5|deepseek|internlm|starcoder|command|olmo|"
+    r"mamba|rwkv|nemotron|falcon|glm|baichuan|chatglm|llava|internvl|"
+    r"paligemma|smollm|language|llm)",
+    re.IGNORECASE,
+)
+_NON_LANGUAGE_SIGNATURES = re.compile(
+    r"(?:diffusion|stable[-_ ]diffusion|flux|sdxl|sd3|unet|vae|mmproj|"
+    r"multimodalprojector|multi_modal_projector|vision|clip|vit|siglip|swin)",
+    re.IGNORECASE,
+)
+
+
+def has_language_component(
+    keys: list[str],
+    architecture: str | None = None,
+    config: dict | None = None,
+    metadata: dict | None = None,
+) -> bool:
+    """Return language evidence without treating a vision tower as an LLM."""
+    config = config if isinstance(config, dict) else {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    text_config = config.get("text_config")
+    if isinstance(text_config, dict) and any(
+        key in text_config for key in ("num_hidden_layers", "hidden_size", "vocab_size")
+    ):
+        return True
+    candidates = [architecture or "", metadata.get("general.architecture", ""), config.get("model_type", "")]
+    candidates.extend(config.get("architectures", []) if isinstance(config.get("architectures"), list) else [])
+    candidate_text = " ".join(str(value) for value in candidates)
+    if _LANGUAGE_SIGNATURES.search(candidate_text) and not _NON_LANGUAGE_SIGNATURES.search(candidate_text):
+        return True
+    lowered = [str(key).lower() for key in keys]
+    if any(
+        ("embed_tokens" in key or "gpt_neox.layers." in key or "transformer.h." in key)
+        and not any(
+            marker in key
+            for marker in (
+                "vision",
+                "visual",
+                "image_encoder",
+                "mmproj",
+                "projector",
+                "diffusion",
+                "unet",
+                "clip",
+                "vit",
+                "siglip",
+            )
+        )
+        for key in lowered
+    ):
+        return True
+    return False
 
 
 def classify_model_type(components: dict, arch: str):

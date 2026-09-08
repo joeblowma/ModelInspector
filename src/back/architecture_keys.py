@@ -337,7 +337,18 @@ def _detect_from_keys(
         and "self_attn" in key_blob
         and "embed_tokens" in key_blob
     ):
-        return "Qwen (text encoder)", details
+        if "qwen" in key_blob:
+            return "Qwen (text encoder)", details
+        return "Transformer (language)", details
+
+    if "gpt_neox.layers." in key_blob and "embed_in" in key_blob:
+        return "GPT-NeoX", details
+    if "transformer.h." in key_blob and ("wte" in key_blob or "word_embeddings" in key_blob):
+        return "GPT-style Transformer", details
+    if "encoder.layer." in key_blob and "embeddings." in key_blob:
+        return "BERT", details
+    if "encoder.block." in key_blob and "decoder.block." in key_blob:
+        return "T5", details
 
     if components.get("unet"):
         if (

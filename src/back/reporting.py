@@ -67,8 +67,18 @@ def _descriptor_shard_id(descriptor: object) -> int:
         return 0
 
 
-def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: int):
-    """Print the traditional terminal report for an already-read model header."""
+def print_report(
+    filepath: str,
+    metadata: dict,
+    tensor_info: dict,
+    file_size: int,
+    inspection: dict | None = None,
+):
+    """Print the traditional terminal report, optionally using pipeline facts.
+
+    ``inspection`` is supplied by the CLI after its one structured inspection;
+    this reporter never invokes the pipeline itself.
+    """
     keys = sorted(tensor_info.keys(), key=_numeric_sort_key)
     dtypes, total_params, shapes = analyze_tensors(tensor_info)
     components = detect_components(keys)
@@ -76,6 +86,20 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
         keys, shapes, total_params, components, metadata
     )
     model_type = classify_model_type(components, arch)
+    architecture_facts = {}
+    capability_facts = {}
+    if isinstance(inspection, dict):
+        arch = str(inspection.get("architecture") or arch)
+        model_type = str(inspection.get("model_type") or model_type)
+        reported_details = inspection.get("arch_details")
+        if isinstance(reported_details, dict):
+            arch_details = reported_details
+        reported_facts = inspection.get("architecture_facts")
+        if isinstance(reported_facts, dict):
+            architecture_facts = reported_facts
+        reported_capabilities = inspection.get("capability_facts")
+        if isinstance(reported_capabilities, dict):
+            capability_facts = reported_capabilities
 
     sep = "=" * 60
     print(f"\n{sep}")
@@ -98,6 +122,15 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
 
     print(f"\n  Architecture:   {arch}")
     print(f"  Model type:     {model_type}")
+    domain = capability_facts.get("domain")
+    if domain:
+        print(f"  Domain:         {domain}")
+    capabilities = capability_facts.get("capabilities")
+    if isinstance(capabilities, list) and capabilities:
+        print(f"  Capabilities:   {', '.join(str(item) for item in capabilities)}")
+    layer_count = architecture_facts.get("layer_count")
+    if layer_count is not None:
+        print(f"  Layer count:    {layer_count}")
 
     if arch_details:
         for key, value in arch_details.items():
@@ -117,10 +150,10 @@ def print_report(filepath: str, metadata: dict, tensor_info: dict, file_size: in
     for key, label in comp_labels.items():
         if key == "text_encoders":
             continue
-        if components[key]:
+        if components.get(key):
             print(f"    [x] {label}")
             any_found = True
-    if components["text_encoders"]:
+    if components.get("text_encoders"):
         any_found = True
         for enc_name, enc_count in sorted(components["text_encoders"].items()):
             friendly = _friendly_encoder_name(enc_name)

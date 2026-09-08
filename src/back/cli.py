@@ -157,10 +157,13 @@ def main(argv=None):
         for filepath in paths:
             try:
                 if filepath.lower().endswith(CHECKPOINT_MODEL_EXTENSIONS):
+                    inspection = inspect_file(filepath, options=inspect_options)
                     metadata, tensor_info, file_size = read_model_header(
                         filepath, options=inspect_options
                     )
-                    print_report(filepath, metadata, tensor_info, file_size)
+                    print_report(
+                        filepath, metadata, tensor_info, file_size, inspection=inspection
+                    )
                 else:
                     print(generate_modelinfo_dump(filepath))
             except Exception as error:
@@ -222,7 +225,13 @@ def main(argv=None):
             metadata, tensor_info, file_size = read_model_header(
                 filepath, options=inspect_options
             )
-            print_report(filepath, metadata, tensor_info, file_size)
+            print_report(
+                filepath,
+                metadata,
+                tensor_info,
+                file_size,
+                inspection=results_by_path.get(filepath),
+            )
             outputs = results_by_path.get(filepath, {}).get("modelinfo_outputs") or []
             if outputs:
                 print("  Modelinfo output:")

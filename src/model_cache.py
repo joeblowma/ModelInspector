@@ -28,37 +28,26 @@ from back.cache_storage import (
     write_entry as _write_storage_entry,
 )
 from back.inspection_summary import compact_inspection_summary
+from back.companion_discovery import companion_identities_match
 from back.shard_discovery import discover_shard_set
 from back.sidecar_discovery import discover_sidecars, sidecar_identity_snapshot
 
 
 CACHE_VERSION = 1
 _CACHE_LOCK = threading.Lock()
-
-
 def _load_legacy_cache(path: Path) -> dict:
     return _load_storage_legacy_cache(path, CACHE_VERSION)
-
-
 def _legacy_cache_path() -> Path | None:
     override = os.environ.get("SMI_CACHE_PATH")
     if override:
         return Path(override)
     return None
-
-
 def _index_path() -> Path:
     return cache_dir() / "index.json"
-
-
 def _entry_path(entry_id: str) -> Path:
     return cache_dir() / "entries" / f"{entry_id}.json"
-
-
 def _data_path(entry_id: str) -> Path:
     return cache_dir() / "data" / f"{entry_id}.json"
-
-
 def _cache_key(filepath: str, options: dict | None) -> str:
     try:
         resolved = str(Path(filepath).resolve(strict=True)).lower()
@@ -189,12 +178,12 @@ def _cache_companion_identities_match(
     elif cached_shard:
         return False
     if not _include_sidecars(options):
-        return True
+        return companion_identities_match(filepath, data)
     sidecar_base = shard_set.primary_path if shard_set else filepath
     current_sidecars = discover_sidecars(sidecar_base)
     return data.get("sidecar_identities", []) == sidecar_identity_snapshot(
         current_sidecars
-    )
+    ) and companion_identities_match(filepath, data)
 
 
 def get_cached_inspection(filepath: str, options: dict | None = None) -> dict | None:
@@ -230,6 +219,12 @@ def get_cached_inspection(filepath: str, options: dict | None = None) -> dict | 
 
 def get_cached_inspection_snapshot(filepath: str) -> dict | None:
     """Return cached inspection data for a path without requiring the file to exist."""
+    if Path(filepath).exists():
+        current = get_cached_inspection(filepath)
+        if current is None:
+            return None
+        current.setdefault("cache_status", "snapshot")
+        return current
     for entry in _iter_cached_entries():
         if not _entry_matches_path(entry, filepath):
             continue
@@ -309,7 +304,10 @@ def get_cached_inspection_summary_snapshots(
     """Stream matching cache entries directly into compact GUI snapshots."""
     snapshots = {}
     for filepath, data in _iter_cached_inspection_matches(filepaths):
-        summary_source = dict(data)
+        current = get_cached_inspection(filepath) if Path(filepath).exists() else data
+        if current is None:
+            continue
+        summary_source = dict(current)
         summary_source.setdefault("cache_status", "snapshot")
         snapshots[filepath] = compact_inspection_summary(summary_source)
     return snapshots

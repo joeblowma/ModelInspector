@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .metadata_ui import domain_tag_description, inspection_domain
+from back.theme_loader import get_global_theme_colors
 
 __all__ = [
     "ADVANCED_CARD_FIELDS",
@@ -113,16 +114,17 @@ class ModelCard(QFrame):
         # Retain the argument for third-party construction compatibility. The
         # fixed normal/advanced policy intentionally ignores saved masks.
         del card_fields
+        self._theme_colors = get_global_theme_colors()
         self.setStyleSheet("""
             ModelCard {
-                background-color: #181825;
-                border: 1px solid #313244;
+                background-color: %(surface)s;
+                border: 1px solid %(surface_alt)s;
                 border-radius: 10px;
             }
             ModelCard:hover {
-                border-color: #74c7ec;
+                border-color: %(highlight)s;
             }
-        """)
+        """ % self._theme_colors)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.setToolTip("Click to open the Advanced Viewer. Right-click for context actions.")
 
@@ -141,7 +143,8 @@ class ModelCard(QFrame):
         name_label = QLabel(data.get("filename", "Unknown model"))
         name_label.setWordWrap(True)
         name_label.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: #f5c2e7; background: transparent; border: none;"
+            "font-size: 14px; font-weight: bold; color: %(accent_display)s; background: transparent; border: none;"
+            % self._theme_colors
         )
         header_row.addWidget(name_label, stretch=1)
         layout.addLayout(header_row)
@@ -151,25 +154,25 @@ class ModelCard(QFrame):
         file_format = data.get("format")
         if file_format:
             arch_row.addWidget(
-                self._make_tag(str(file_format).upper(), "#f38ba8", "#1e1e2e")
+                self._make_tag(str(file_format).upper(), self._theme_colors["error"], self._theme_colors["surface"])
             )
-        arch_tag = self._make_tag(str(data.get("architecture", "Unknown")), "#74c7ec", "#1e1e2e")
+        arch_tag = self._make_tag(str(data.get("architecture", "Unknown")), self._theme_colors["highlight"], self._theme_colors["surface"])
         arch_row.addWidget(arch_tag)
         domain = inspection_domain(data)
         if domain:
-            domain_tag = self._make_tag(domain, "#a6e3a1", "#1e1e2e")
+            domain_tag = self._make_tag(domain, self._theme_colors["success"], self._theme_colors["surface"])
             domain_tag.setToolTip(domain_tag_description(domain))
             domain_tag.setProperty("metadata_domain", domain)
             arch_row.addWidget(domain_tag)
         model_type = str(data.get("model_type", "Unknown"))
         if not (domain and model_type.strip().casefold() == "unknown"):
-            arch_row.addWidget(self._make_tag(model_type, "#a6e3a1", "#1e1e2e"))
+            arch_row.addWidget(self._make_tag(model_type, self._theme_colors["success"], self._theme_colors["surface"]))
         quantization = data.get("quantization")
         if quantization:
-            arch_row.addWidget(self._make_tag(str(quantization), "#cba6f7", "#1e1e2e"))
+            arch_row.addWidget(self._make_tag(str(quantization), self._theme_colors["accent_adapter"], self._theme_colors["surface"]))
         adapter_type = data.get("adapter_type")
         if adapter_type:
-            arch_row.addWidget(self._make_tag(adapter_type, "#f9e2af", "#1e1e2e"))
+            arch_row.addWidget(self._make_tag(adapter_type, self._theme_colors["warning"], self._theme_colors["surface"]))
         if data.get("is_moe"):
             expert_count = data.get("expert_count")
             expert_used_count = data.get("expert_used_count")
@@ -178,15 +181,15 @@ class ModelCard(QFrame):
                 moe_label += f" {expert_count}"
                 if expert_used_count:
                     moe_label += f"/{expert_used_count}"
-            arch_row.addWidget(self._make_tag(moe_label, "#fab387", "#1e1e2e"))
+            arch_row.addWidget(self._make_tag(moe_label, self._theme_colors["accent_moe"], self._theme_colors["surface"]))
 
         # Component tags at top
         comp_colors = {
-            "unet": ("#fab387", "#1e1e2e"),
-            "transformer": ("#fab387", "#1e1e2e"),
-            "vae": ("#cba6f7", "#1e1e2e"),
-            "text_encoder": ("#94e2d5", "#1e1e2e"),
-            "text_encoder_2": ("#89dceb", "#1e1e2e"),
+            "unet": (self._theme_colors["accent_moe"], self._theme_colors["surface"]),
+            "transformer": (self._theme_colors["accent_moe"], self._theme_colors["surface"]),
+            "vae": (self._theme_colors["accent_adapter"], self._theme_colors["surface"]),
+            "text_encoder": (self._theme_colors["accent_component"], self._theme_colors["surface"]),
+            "text_encoder_2": (self._theme_colors["highlight_selected"], self._theme_colors["surface"]),
         }
         comp_labels = {
             "unet": "UNet",
@@ -197,11 +200,11 @@ class ModelCard(QFrame):
         }
         for key, label in comp_labels.items():
             if (data.get("components") or {}).get(key):
-                fg, bg = comp_colors.get(key, ("#cdd6f4", "#1e1e2e"))
+                fg, bg = comp_colors.get(key, (self._theme_colors["accent_component"], self._theme_colors["surface"]))
                 arch_row.addWidget(self._make_tag(label, fg, bg))
 
         for enc_name in data.get("named_text_encoders", {}):
-            arch_row.addWidget(self._make_tag(enc_name, "#94e2d5", "#1e1e2e"))
+            arch_row.addWidget(self._make_tag(enc_name, self._theme_colors["accent_component"], self._theme_colors["surface"]))
         arch_row.addStretch()
         layout.addLayout(arch_row)
 
@@ -212,13 +215,15 @@ class ModelCard(QFrame):
         for i, (label, value) in enumerate(card_stat_items(data, bool(simple_view))):
             lbl = QLabel(label)
             lbl.setStyleSheet(
-                "color: #6c7086; font-size: 11px; background: transparent; border: none;"
+                "color: %(stat_label)s; font-size: 11px; background: transparent; border: none;"
+                % self._theme_colors
             )
             val = QLabel(str(value))
             if "Precision" in label:
                 val.setWordWrap(True)
             val.setStyleSheet(
-                "color: #cdd6f4; font-size: 13px; font-weight: bold; background: transparent; border: none;"
+                "color: %(text)s; font-size: 13px; font-weight: bold; background: transparent; border: none;"
+                % self._theme_colors
             )
             row, column = (i, 0) if vertical_stats else divmod(i, 2)
             grid.addWidget(lbl, row, column * 2)
@@ -270,25 +275,25 @@ class ModelCard(QFrame):
         if self._selected:
             self.setStyleSheet("""
                 ModelCard {
-                    background-color: #181825;
-                    border: 2px solid #a6e3a1;
+                    background-color: %(surface)s;
+                    border: 2px solid %(success)s;
                     border-radius: 10px;
                 }
                 ModelCard:hover {
-                    border-color: #89dceb;
+                    border-color: %(highlight_selected)s;
                 }
-            """)
+            """ % self._theme_colors)
         else:
             self.setStyleSheet("""
                 ModelCard {
-                    background-color: #181825;
-                    border: 1px solid #313244;
+                    background-color: %(surface)s;
+                    border: 1px solid %(surface_alt)s;
                     border-radius: 10px;
                 }
                 ModelCard:hover {
-                    border-color: #74c7ec;
+                    border-color: %(highlight)s;
                 }
-            """)
+            """ % self._theme_colors)
 
     def set_filter_visible(self, visible: bool):
         visible = bool(visible)

@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
 
 from front.filter_widgets import CheckFilterButton
 from front.smart_column_controller import SMART_COLUMN_GROUPS
+from back.theme_loader import get_global_theme_colors
 
 
 class WindowLayoutMixin:
@@ -53,7 +54,6 @@ class WindowLayoutMixin:
         btn_row_1 = QHBoxLayout()
         btn_row_1.setSpacing(10)
 
-        button_height = 35
         settings_btn = QPushButton("Settings")
         settings_btn.setToolTip("Open application settings (themes, analysis, data columns)")
         settings_btn.setFixedHeight(35)
@@ -67,7 +67,7 @@ class WindowLayoutMixin:
         self.open_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.open_btn.setMenu(self._build_open_menu())
         self.open_btn.setMinimumWidth(130)
-        self.open_btn.setFixedHeight(button_height)
+        self.open_btn.setFixedHeight(35)
         btn_row_1.addWidget(self.open_btn)
 
         btn_row_1.addStretch()
@@ -80,7 +80,7 @@ class WindowLayoutMixin:
         btn_row_1.addWidget(self.cancel_btn)
 
         self.progress_label = QLabel("")
-        self.progress_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        self.progress_label.setStyleSheet("color: %(muted)s; font-size: 11px;" % get_global_theme_colors())
         self.progress_label.setWordWrap(False)
         self.progress_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -135,7 +135,7 @@ class WindowLayoutMixin:
         self.cards_select_all_cb.stateChanged.connect(self._on_cards_select_all_changed)
         cards_toolbar.addWidget(self.cards_select_all_cb)
         self.selected_count_label = QLabel("0 selected")
-        self.selected_count_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        self.selected_count_label.setStyleSheet("color: %(muted)s; font-size: 11px;" % get_global_theme_colors())
         cards_toolbar.addWidget(self.selected_count_label)
         cards_toolbar.addStretch()
         cards_tab_layout.addLayout(cards_toolbar)
@@ -154,7 +154,7 @@ class WindowLayoutMixin:
         )
         self.cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cards_placeholder.setStyleSheet(
-            "color: #45475a; font-size: 14px; padding: 60px;"
+            "color: %(surface_alt)s; font-size: 14px; padding: 60px;" % get_global_theme_colors()
         )
         self.cards_layout.insertWidget(0, self.cards_placeholder)
 
@@ -179,7 +179,7 @@ class WindowLayoutMixin:
         self.show_full_path_cb.stateChanged.connect(self._on_show_full_path_changed)
         data_toolbar.addWidget(self.show_full_path_cb)
         self.table_selected_count_label = QLabel("0 selected")
-        self.table_selected_count_label.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        self.table_selected_count_label.setStyleSheet("color: %(muted)s; font-size: 11px;" % get_global_theme_colors())
         data_toolbar.addWidget(self.table_selected_count_label)
         data_toolbar.addStretch()
         # Pinned smart-column group toggles (right side of the Data toolbar).
@@ -308,9 +308,10 @@ class WindowLayoutMixin:
         self.raw_text = QTextEdit()
         self.raw_text.setReadOnly(True)
         self.raw_text.setStyleSheet(
-            "QTextEdit { background-color: #11111b; color: #a6adc8; "
+            "QTextEdit { background-color: %(background)s; color: %(text)s; "
             "font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; "
-            "border: 1px solid #313244; border-radius: 4px; padding: 8px; }"
+            "border: 1px solid %(surface)s; border-radius: 4px; padding: 8px; }"
+            % get_global_theme_colors()
         )
         self.raw_text.setPlaceholderText(
             "Analyze models to see raw tensor key data here."
@@ -357,6 +358,7 @@ class WindowLayoutMixin:
         self.selected_action_btn = QPushButton()
         self.selected_action_btn.setEnabled(False)
         self.selected_action_btn.clicked.connect(self._run_selected_action)
+        self.selected_action_btn.setMinimumWidth(170)
         bottom_actions.addWidget(self.selected_action_btn)
 
         self.selected_action_menu_btn = QToolButton()

@@ -55,6 +55,13 @@ _REQUIRED_COLOR_ORDER = (
     "success",
     "warning",
     "error",
+    "highlight",
+    "highlight_selected",
+    "stat_label",
+    "accent_adapter",
+    "accent_moe",
+    "accent_component",
+    "accent_display",
 )
 
 

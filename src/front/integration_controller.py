@@ -162,6 +162,34 @@ class IntegrationMixin:
         """Apply a validated in-memory palette without requiring a disk round-trip."""
         if theme is not None:
             self._apply_theme(str(getattr(theme, "id", "default")), theme)
+            # Re-apply theme-aware stylesheets to widgets that cache colors at construction.
+            self._refresh_theme_colors()
+
+    def _refresh_theme_colors(self) -> None:
+        """Re-apply theme colors to widgets that cached them at construction time."""
+        try:
+            from back.theme_loader import get_global_theme_colors
+            tc = get_global_theme_colors()
+        except Exception:
+            return
+        # Refresh ModelCard stylesheets
+        cards_container = getattr(self, "cards_scroll", None)
+        if cards_container is not None:
+            try:
+                root = cards_container.rootPane()
+                if root is not None:
+                    for child in root.children():
+                        if hasattr(child, "_refresh_style") and hasattr(child, "filepath"):
+                            child._refresh_style()
+            except Exception:
+                pass
+        # Refresh advanced viewer stylesheets
+        explorer = getattr(self, "_explorer", None)
+        if explorer is not None and hasattr(explorer, "_refresh_style"):
+            try:
+                explorer._refresh_style(tc)
+            except Exception:
+                pass
 
     def _settings_data_layout(self) -> dict[str, Any]:
         store = open_settings(self._settings_path(), self._legacy_settings_path())

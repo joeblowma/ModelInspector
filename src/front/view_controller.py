@@ -5,6 +5,7 @@ from back.reporting import write_modelinfo_dump, write_modelinfo_json
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QApplication, QCheckBox, QLabel
 from front.filter_widgets import SortableTableWidgetItem; from front.model_card import ModelCard
+from back.theme_loader import get_global_theme_colors
 def _combo_data_str(value): return str(value) if value else None
 def _data_quantization_display(data):
     label = str(data.get("quantization") or "").strip()
@@ -98,7 +99,7 @@ class ViewControllerMixin:
         )
         self.cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cards_placeholder.setStyleSheet(
-            "color: #45475a; font-size: 14px; padding: 60px;"
+            "color: %(surface_alt)s; font-size: 14px; padding: 60px;" % get_global_theme_colors()
         )
         self.cards_layout.insertWidget(0, self.cards_placeholder)
         self._refresh_card_layout_geometry()

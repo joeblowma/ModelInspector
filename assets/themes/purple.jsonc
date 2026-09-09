@@ -13,6 +13,13 @@
     "surface": "#390039",
     "surface_alt": "#590059",
     "text": "#E11AD0",
-    "warning": "#DEDE00"
+    "warning": "#DEDE00",
+    "highlight": "#A542A0",
+    "highlight_selected": "#B855B3",
+    "stat_label": "#8B428B",
+    "accent_adapter": "#D9978F",
+    "accent_moe": "#C7A3D9",
+    "accent_component": "#94E2D5",
+    "accent_display": "#E11AD0"
   },
 }

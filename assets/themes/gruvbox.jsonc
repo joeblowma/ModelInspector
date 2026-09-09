@@ -15,5 +15,12 @@
     "success": "#b8bb26",
     "warning": "#fabd2f",
     "error": "#fb4934",
+    "highlight": "#83a598",
+    "highlight_selected": "#b8bb26",
+    "stat_label": "#a89984",
+    "accent_adapter": "#cba6f7",
+    "accent_moe": "#fab387",
+    "accent_component": "#94e2d5",
+    "accent_display": "#ebdbb2"
   },
 }

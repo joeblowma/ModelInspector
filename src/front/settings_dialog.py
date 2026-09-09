@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 from front.settings_data_tab import ColumnDefinition, SettingsDataTab
 from front.theme_tab import ThemeTab
+from back.theme_loader import get_global_theme_colors
 
 __all__ = ["SettingsDialog"]
 
@@ -60,7 +61,7 @@ class SettingsDialog(QDialog):
         root.setSpacing(10)
 
         title = QLabel("Display Settings")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #f5c2e7;")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: %(accent_display)s;" % get_global_theme_colors())
         root.addWidget(title)
 
         tabs = QTabWidget()
@@ -98,7 +99,7 @@ class SettingsDialog(QDialog):
             v.addWidget(widget)
             d = QLabel(desc)
             d.setWordWrap(True)
-            d.setStyleSheet("color: #a6adc8; font-size: 11px;")
+            d.setStyleSheet("color: %(muted)s; font-size: 11px;" % get_global_theme_colors())
             v.addWidget(d)
             return cell
 
@@ -209,7 +210,7 @@ class SettingsDialog(QDialog):
         cache_layout = QHBoxLayout(cache_group)
         cache_layout.setSpacing(10)
         cache_note = QLabel("Clear parsed model summaries and cached tensor data.")
-        cache_note.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        cache_note.setStyleSheet("color: %(muted)s; font-size: 11px;" % get_global_theme_colors())
         cache_layout.addWidget(cache_note, 1)
         self.clear_cache_btn = QPushButton("Clear Cache")
         self.clear_cache_btn.setToolTip("Permanently remove cached inspection data after confirmation.")

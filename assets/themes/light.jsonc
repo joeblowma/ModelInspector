@@ -10,7 +10,14 @@
     "surface": "#DCDCDC",
     "surface_alt": "#EEEEEE",
     "text": "#393939",
-    "warning": "#FFAA00"
+    "warning": "#FFAA00",
+    "highlight": "#04979F",
+    "highlight_selected": "#1A6B73",
+    "stat_label": "#8B8B8B",
+    "accent_adapter": "#B3799F",
+    "accent_moe": "#D9978F",
+    "accent_component": "#A6E3A1",
+    "accent_display": "#686868"
   },
   "description": "Light theme for you dark mode avoiders.",
   "id": "light",

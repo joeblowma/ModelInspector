@@ -13,6 +13,13 @@
     "border": "#30363d",
     "success": "#3fb950",
     "warning": "#d29922",
-    "error": "#f85149"
+    "error": "#f85149",
+    "highlight": "#2f81f7",
+    "highlight_selected": "#a6e3a1",
+    "stat_label": "#8b949e",
+    "accent_adapter": "#cba6f7",
+    "accent_moe": "#fab387",
+    "accent_component": "#94e2d5",
+    "accent_display": "#e6edf3"
   }
 }

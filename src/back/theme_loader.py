@@ -29,6 +29,14 @@ _DEFAULT_COLORS = {
     "success": "#6acb78",
     "warning": "#e5c07b",
     "error": "#e06c75",
+    # Display / highlight colors used by card widgets, badges, and status labels
+    "highlight": "#74c7ec",
+    "highlight_selected": "#89dceb",
+    "stat_label": "#6c7086",
+    "accent_adapter": "#cba6f7",
+    "accent_moe": "#fab387",
+    "accent_component": "#94e2d5",
+    "accent_display": "#f5c2e7",
 }
 
 
@@ -59,6 +67,13 @@ class Theme:
                 "QPushButton { background-color: %s; color: %s; border: 1px solid %s; padding: 4px 8px; }" % (colors["accent"], colors["accent_text"], colors["border"]),
                 "QPushButton:hover { background-color: %s; }" % colors["surface_alt"],
                 "QToolTip { background-color: %s; color: %s; border: 1px solid %s; }" % (colors["surface"], colors["text"], colors["border"]),
+                "QLabel[themeRole=highlight] { color: %s; }" % colors["highlight"],
+                "QLabel[themeRole=highlight_selected] { color: %s; }" % colors["highlight_selected"],
+                "QLabel[themeRole=stat_label] { color: %s; }" % colors["stat_label"],
+                "QLabel[themeRole=accent_adapter] { color: %s; }" % colors["accent_adapter"],
+                "QLabel[themeRole=accent_moe] { color: %s; }" % colors["accent_moe"],
+                "QLabel[themeRole=accent_component] { color: %s; }" % colors["accent_component"],
+                "QLabel[themeRole=accent_display] { color: %s; }" % colors["accent_display"],
             )
         )
 
@@ -177,6 +192,8 @@ def validate_theme(raw: Mapping[str, Any]) -> tuple[bool, tuple[str, ...]]:
         if missing:
             errors.append("missing required colors: " + ", ".join(missing))
         for key, value in colors.items():
+            if key not in _DEFAULT_COLORS:
+                continue
             if not isinstance(key, str) or not _COLOR_RE.fullmatch(str(value)):
                 errors.append(f"colors.{key} must be a #RRGGBB or #RRGGBBAA value")
     variables = raw.get("variables", {})
@@ -305,6 +322,25 @@ def load_theme_by_id(theme_id: str, directory: str | Path | None = None) -> Them
     return load_theme(theme_id, directory)
 
 
+# Module-level theme accessor for widget construction
+# This is set by the application layer at startup and provides
+# theme colors to widgets that need them during construction.
+_global_theme_colors: dict[str, str] | None = None
+
+
+def set_global_theme_colors(colors: dict[str, str]) -> None:
+    """Set the global theme colors for widget construction."""
+    global _global_theme_colors
+    _global_theme_colors = dict(colors)
+
+
+def get_global_theme_colors() -> dict[str, str]:
+    """Return the current global theme colors, falling back to defaults."""
+    if _global_theme_colors is not None:
+        return _global_theme_colors
+    return dict(_DEFAULT_COLORS)
+
+
 __all__ = [
     "Theme",
     "ThemeLoadResult",
@@ -314,4 +350,6 @@ __all__ = [
     "list_themes",
     "load_theme",
     "load_theme_by_id",
+    "set_global_theme_colors",
+    "get_global_theme_colors",
 ]

@@ -167,6 +167,16 @@ def _theme_stylesheet(theme_id: str | Theme | None) -> str:
         "\nQLabel[themeRole=success] { color: %(success)s; }"
         "\nQLabel[themeRole=warning] { color: %(warning)s; }"
         "\nQLabel[themeRole=error] { color: %(error)s; }"
+        "\nQLabel[themeRole=highlight] { color: %(highlight)s; }"
+        "\nQLabel[themeRole=highlight_selected] { color: %(highlight_selected)s; }"
+        "\nQLabel[themeRole=stat_label] { color: %(stat_label)s; }"
+        "\nQLabel[themeRole=accent_adapter] { color: %(accent_adapter)s; }"
+        "\nQLabel[themeRole=accent_moe] { color: %(accent_moe)s; }"
+        "\nQLabel[themeRole=accent_component] { color: %(accent_component)s; }"
+        "\nQLabel[themeRole=accent_display] { color: %(accent_display)s; }"
+        "\nQTabBar::tab:selected { background-color: %(surface_alt)s; color: %(accent_display)s; font-weight: bold; }"
+        "\nQPushButton#clearBtn { background-color: %(surface_alt)s; color: %(text)s; border: none; }"
+        "\nQPushButton#clearBtn:hover { background-color: %(surface)s; }"
     ) % colors
 
 
@@ -198,6 +208,12 @@ def apply_theme(
     """Apply a validated external theme, retaining the default style on failure."""
     loaded = ThemeLoadResult(theme) if theme is not None else load_theme(theme_id)
     application.setStyleSheet(_theme_stylesheet(loaded.theme))
+    # Set global theme colors for widget construction
+    try:
+        from back.theme_loader import set_global_theme_colors
+        set_global_theme_colors(dict(loaded.theme.colors))
+    except ImportError:
+        pass
     if loaded.used_fallback and theme_id is not None and notify:
         _show_theme_diagnostics(parent, str(theme_id), loaded.diagnostics)
     return loaded.theme.id, loaded.diagnostics

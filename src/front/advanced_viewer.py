@@ -100,6 +100,7 @@ from back.estimator import (
     project_resources,
     runtime_configuration,
 )
+from back.theme_loader import get_global_theme_colors
 from front.explorer_tab import ExplorerTab
 from front.metadata_ui import (
     HeaderInspectionController, capability_badge_values, domain_badge_values,
@@ -107,6 +108,22 @@ from front.metadata_ui import (
 from front.model_card import ModelCard
 
 __all__ = ["AdvancedViewer", "AdvancedViewerDialog", "AdvancedViewerPopup"]
+
+
+_ADVANCED_VIEWER_COLORS: dict[str, tuple[str, str]] | None = None
+
+
+def _get_advanced_viewer_colors() -> dict[str, tuple[str, str]]:
+    """Return badge colors derived from the current theme."""
+    global _ADVANCED_VIEWER_COLORS
+    if _ADVANCED_VIEWER_COLORS is None:
+        tc = get_global_theme_colors()
+        _ADVANCED_VIEWER_COLORS = {
+            "capability": (tc["accent"], tc["accent_text"]),
+            "domain": (tc["success"], tc["accent_text"]),
+            "missing": (tc["border"], tc["text"]),
+        }
+    return _ADVANCED_VIEWER_COLORS
 
 
 _UNKNOWN = "Unknown"
@@ -197,12 +214,12 @@ class AdvancedViewerDialog(QDialog):
         )
         for index, (key, title) in enumerate(summary_fields):
             label = QLabel(title)
-            label.setStyleSheet("color: #a6adc8; font-size: 11px;")
+            label.setStyleSheet("color: %(muted)s; font-size: 11px;" % get_global_theme_colors())
             value = QLabel(_UNKNOWN)
             value.setWordWrap(True)
             value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            value.setStyleSheet("color: #cdd6f4; font-size: 13px; font-weight: bold;")
+            value.setStyleSheet("color: %(text)s; font-size: 13px; font-weight: bold;" % get_global_theme_colors())
             label.setToolTip(f"Inspected model {title.lower()}.")
             value.setToolTip(f"Inspected model {title.lower()}; unavailable values are shown as Unknown.")
             row, column = divmod(index, 2)
@@ -278,9 +295,9 @@ class AdvancedViewerDialog(QDialog):
         result_grid.setVerticalSpacing(6)
         for index, (key, title) in enumerate((("weight", "Weights"), ("kv_cache", "KV cache"), ("vram", "Estimated VRAM"), ("ram", "Estimated RAM"))):
             label = QLabel(title)
-            label.setStyleSheet("color: #a6adc8; font-size: 11px;")
+            label.setStyleSheet("color: %(muted)s; font-size: 11px;" % get_global_theme_colors())
             value = QLabel(_UNKNOWN)
-            value.setStyleSheet("color: #f5c2e7; font-size: 13px; font-weight: bold;")
+            value.setStyleSheet("color: %(accent_display)s; font-size: 13px; font-weight: bold;" % get_global_theme_colors())
             value.setToolTip(f"Estimator result for {title.lower()}.")
             row, column = divmod(index, 2)
             result_grid.addWidget(label, row, column * 2)
@@ -293,7 +310,7 @@ class AdvancedViewerDialog(QDialog):
         self.assumptions_label = QLabel()
         self.assumptions_label.setWordWrap(True)
         self.assumptions_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.assumptions_label.setStyleSheet("color: #f9e2af; font-size: 11px;")
+        self.assumptions_label.setStyleSheet("color: %(warning)s; font-size: 11px;" % get_global_theme_colors())
         self.assumptions_label.setToolTip("Estimator assumptions used when inspected metadata is incomplete.")
         projection_form.addRow("Assumptions", self.assumptions_label)
         content_layout.addWidget(projection)
@@ -474,7 +491,8 @@ class AdvancedViewerDialog(QDialog):
 
     @staticmethod
     def _make_badge(text: str, kind: str) -> QLabel:
-        foreground, background = _BADGE_COLORS.get(kind, _BADGE_COLORS["missing"])
+        colors = _get_advanced_viewer_colors()
+        foreground, background = colors.get(kind, colors["missing"])
         badge = QLabel(text)
         badge.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         badge.setStyleSheet(
@@ -494,6 +512,22 @@ class AdvancedViewerDialog(QDialog):
             badge = self._make_badge(value, kind if value != _UNKNOWN else "missing")
             row.insertWidget(max(0, row.count() - 1), badge)
             old.append(badge)
+
+    def _refresh_style(self, theme_colors: dict[str, str] | None = None) -> None:
+        """Re-apply theme colors to summary/projection labels."""
+        tc = theme_colors or get_global_theme_colors()
+        for key, value in self._summary_values.items():
+            if key in ("architecture", "layer_count", "block_counts", "experts_total", "experts_active", "trained_context", "max_context", "rope", "mtp"):
+                value.setStyleSheet("color: %(text)s; font-size: 13px; font-weight: bold;" % tc)
+        for key, value in self._projection_values.items():
+            if key == "weight":
+                value.setStyleSheet("color: %(accent_display)s; font-size: 13px; font-weight: bold;" % tc)
+            elif key == "kv_cache":
+                value.setStyleSheet("color: %(accent_display)s; font-size: 13px; font-weight: bold;" % tc)
+            elif key == "vram":
+                value.setStyleSheet("color: %(accent_display)s; font-size: 13px; font-weight: bold;" % tc)
+            elif key == "ram":
+                value.setStyleSheet("color: %(accent_display)s; font-size: 13px; font-weight: bold;" % tc)
 
 
 AdvancedViewerPopup = AdvancedViewerDialog

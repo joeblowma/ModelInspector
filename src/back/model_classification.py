@@ -141,8 +141,31 @@ def has_language_component(
     return False
 
 
-def classify_model_type(components: dict, arch: str):
+def _is_mmproj_gguf(arch: str, filepath: str | None, file_format: str | None) -> bool:
+    """Recognize only the explicit, standalone GGUF CLIP projector form."""
+    normalized_arch = str(arch or "").strip().casefold()
+    if normalized_arch.startswith("gguf "):
+        normalized_arch = normalized_arch[5:].strip()
+    if normalized_arch != "clip":
+        return False
+
+    format_name = str(file_format or "").strip().casefold().lstrip(".")
+    if not format_name:
+        format_name = Path(str(filepath or "")).suffix.casefold().lstrip(".")
+    if format_name != "gguf":
+        return False
+    return "mmproj" in Path(str(filepath or "")).name.casefold()
+
+
+def classify_model_type(
+    components: dict,
+    arch: str,
+    filepath: str | None = None,
+    file_format: str | None = None,
+):
     """Classify: multimodal, checkpoint, single component, or LoRA."""
+    if _is_mmproj_gguf(arch, filepath, file_format):
+        return "mmproj"
     if components.get("lora"):
         return "LoRA"
     if components.get("vision"):

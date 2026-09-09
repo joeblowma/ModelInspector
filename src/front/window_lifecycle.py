@@ -5,6 +5,7 @@ from pathlib import Path
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 
+from back.checkpoint_reader import CHECKPOINT_SAFETY_METADATA
 from back.reporting import generate_modelinfo_dump
 from model_cache import store_raw_dump
 
@@ -128,7 +129,15 @@ class WindowLifecycleMixin:
             QApplication.processEvents()
             self.raw_load_btn.setEnabled(False)
             self.raw_load_btn.setText("Loading...")
-            dump = generate_modelinfo_dump(filepath)
+            try:
+                dump = generate_modelinfo_dump(
+                    filepath,
+                    options={"checkpoint_safety": CHECKPOINT_SAFETY_METADATA},
+                )
+            except TypeError:
+                # Retain the one-argument injection seam used by older callers.
+                # Its default checkpoint policy still rejects unsafe formats.
+                dump = generate_modelinfo_dump(filepath)
             dump = self._raw_dump_with_current_info(filepath, dump)
             store_raw_dump(filepath, dump)
             self.raw_text.setPlainText(dump)

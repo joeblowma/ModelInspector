@@ -12,6 +12,7 @@ from PyQt6 import sip
 from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
+from back.checkpoint_reader import CHECKPOINT_SAFETY_METADATA
 from back.cache_verifier import verify_cache_entries
 from back.settings_store import open_settings
 from background_tasks import AnalysisWorker
@@ -304,7 +305,14 @@ class IntegrationMixin:
         paths = [entry.path for entry in report.entries if entry.action == "refresh" and entry.is_active]
         if not paths or getattr(self, "_cache_sync_worker", None) is not None:
             return
-        worker = AnalysisWorker(paths, {"allow_filename_alias_detection": self._allow_filename_alias_detection}, 1)
+        worker = AnalysisWorker(
+            paths,
+            {
+                "allow_filename_alias_detection": self._allow_filename_alias_detection,
+                "checkpoint_safety": CHECKPOINT_SAFETY_METADATA,
+            },
+            1,
+        )
         self._cache_sync_worker = worker
         worker.result_ready.connect(lambda _data, w=worker: w.acknowledge_event())
         worker.error_occurred.connect(lambda _path, _error, w=worker: w.acknowledge_event())

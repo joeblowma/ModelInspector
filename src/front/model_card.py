@@ -154,7 +154,6 @@ class ModelCard(QFrame):
                 self._make_tag(str(file_format).upper(), "#f38ba8", "#1e1e2e")
             )
         arch_tag = self._make_tag(str(data.get("architecture", "Unknown")), "#74c7ec", "#1e1e2e")
-        type_tag = self._make_tag(str(data.get("model_type", "Unknown")), "#a6e3a1", "#1e1e2e")
         arch_row.addWidget(arch_tag)
         domain = inspection_domain(data)
         if domain:
@@ -162,7 +161,9 @@ class ModelCard(QFrame):
             domain_tag.setToolTip(domain_tag_description(domain))
             domain_tag.setProperty("metadata_domain", domain)
             arch_row.addWidget(domain_tag)
-        arch_row.addWidget(type_tag)
+        model_type = str(data.get("model_type", "Unknown"))
+        if not (domain and model_type.strip().casefold() == "unknown"):
+            arch_row.addWidget(self._make_tag(model_type, "#a6e3a1", "#1e1e2e"))
         quantization = data.get("quantization")
         if quantization:
             arch_row.addWidget(self._make_tag(str(quantization), "#cba6f7", "#1e1e2e"))

@@ -134,4 +134,4 @@ def test_model_file_dialog_filter_includes_onnx_and_explicit_checkpoint_warning_
     file_filter = _model_file_filter()
     assert "*.onnx" in file_filter
     assert "*.safetensors.index.json" in file_filter
-    assert "metadata-only after safety confirmation" in file_filter
+    assert "Checkpoint Files - metadata-only inspection" in file_filter

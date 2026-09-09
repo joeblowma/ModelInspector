@@ -46,6 +46,7 @@ Validate changes with targeted CLI smoke checks against representative model fil
 Existing tests:
 - `.\tests\conftest.py` — documented shared test helpers.
 - `.\tests\test_gui_scan_lifecycle.py`
+- `.\tests\test_checkpoint_no_prompt.py` — GUI checkpoint metadata-only routing without consent prompts.
 - `.\tests\test_inspection_summary.py`
 - `.\tests\test_integrated_scan_behavior.py`
 - `.\tests\test_background_tasks.py`

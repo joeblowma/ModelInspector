@@ -72,6 +72,39 @@ def test_domain_tags_preserve_raw_type_and_adapter_labels() -> None:
         assert description in domain_tags[0].toolTip().lower()
 
 
+def test_known_domain_hides_unknown_legacy_type_but_keeps_genuine_unknown() -> None:
+    _app()
+    known_domain = ModelCard(
+        {
+            "filename": "language-model.gguf",
+            "filepath": "language-model.gguf",
+            "architecture": "llama",
+            "model_type": "Unknown",
+            "components": {"text_encoder": True},
+            "capability_facts": {
+                "domain": "LLM",
+                "capabilities": [],
+                "evidence": {"domain": ["header metadata"]},
+            },
+        },
+        simple_view=True,
+    )
+    assert "LLM" in _labels(known_domain)
+    assert "Unknown" not in _labels(known_domain)
+    assert "Text Enc" in _labels(known_domain)
+
+    unknown = ModelCard(
+        {
+            "filename": "unknown.gguf",
+            "filepath": "unknown.gguf",
+            "architecture": "Unknown",
+            "model_type": "Unknown",
+        },
+        simple_view=True,
+    )
+    assert "Unknown" in _labels(unknown)
+
+
 def test_structured_capability_badges_require_nonempty_evidence() -> None:
     _app()
     dialog = AdvancedViewerDialog(

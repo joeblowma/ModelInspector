@@ -33,7 +33,7 @@ from back.shard_discovery import discover_shard_set
 from back.sidecar_discovery import discover_sidecars, sidecar_identity_snapshot
 
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 _CACHE_LOCK = threading.Lock()
 def _load_legacy_cache(path: Path) -> dict:
     return _load_storage_legacy_cache(path, CACHE_VERSION)

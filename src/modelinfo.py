@@ -72,9 +72,12 @@ def _descriptor_shard_id(descriptor: object) -> int:
         return 0
 
 
-def generate_modelinfo_dump(filepath: str) -> str:
-    """Generate detailed .modelinfo text dump for a single safetensors file."""
-    metadata, tensor_info, file_size = _read_header_or_cached(filepath)
+def generate_modelinfo_dump(filepath: str, options: dict | None = None) -> str:
+    """Generate detailed .modelinfo text dump using the requested header policy."""
+    if options is None:
+        metadata, tensor_info, file_size = _read_header_or_cached(filepath)
+    else:
+        metadata, tensor_info, file_size = _read_header_or_cached(filepath, options=options)
     original_keys = list(tensor_info)
     keys = sorted(tensor_info.keys(), key=_numeric_sort_key)
     _, total_params, shapes = analyze_tensors(tensor_info)
@@ -203,10 +206,14 @@ def generate_modelinfo_json(filepath: str, options: dict | None = None) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
 
 
-def write_modelinfo_dump(filepath: str, resolve_output_path: bool = False) -> str:
+def write_modelinfo_dump(
+    filepath: str,
+    resolve_output_path: bool = False,
+    options: dict | None = None,
+) -> str:
     out_path = modelinfo_text_path(filepath, resolve_output_path=resolve_output_path)
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write(generate_modelinfo_dump(filepath))
+        f.write(generate_modelinfo_dump(filepath, options=options))
     return out_path
 
 

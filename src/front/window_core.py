@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from app_paths import legacy_settings_path, settings_path
 from back.settings_store import open_settings
+from back.checkpoint_reader import CHECKPOINT_SAFETY_METADATA
 from background_tasks import AnalysisWorker, DiscoveryWorker
 from front.model_card import ModelCard
 from front.scan_projection import ScanProjectionBuffer
@@ -59,7 +60,7 @@ def _model_file_filter() -> str:
     )
     return (
         f"Supported Model Files ({patterns});;"
-        f"Checkpoint Files - metadata-only after safety confirmation ({checkpoint_patterns});;"
+        f"Checkpoint Files - metadata-only inspection ({checkpoint_patterns});;"
         "All Files (*)"
     )
 
@@ -126,7 +127,6 @@ class WindowCoreMixin:
         self._analysis_total_count = 0
         self._analysis_bytes_scanned = 0
         self._scan_cancel_requested = False
-        self._checkpoint_metadata_paths: set[str] = set()
         self._progress_status_generation = 0
         self._allow_filename_alias_detection = False
         self._show_full_paths = False
@@ -285,11 +285,13 @@ class WindowCoreMixin:
                 paths.append(fp)
             elif is_checkpoint_model_path(fp):
                 checkpoints.append(fp)
-        confirmed = self._confirm_checkpoint_metadata_only(checkpoints)
-        paths.extend(confirmed)
+        paths.extend(checkpoints)
         if folders:
-            safety = "metadata" if self._confirm_checkpoint_discovery(folders) else "reject"
-            self._start_discovery(folders, paths, checkpoint_safety=safety)
+            self._start_discovery(
+                folders,
+                paths,
+                checkpoint_safety=CHECKPOINT_SAFETY_METADATA,
+            )
             a0.acceptProposedAction()
         elif paths:
             self._add_files(paths)

@@ -109,6 +109,16 @@ def _refresh_cached_result(filepath: str, cached: dict) -> dict:
         refreshed.update(
             detect_moe([], metadata, str(refreshed.get("architecture") or ""))
         )
+    if str(refreshed.get("model_type") or "Unknown").strip().casefold() == "unknown":
+        cached_components = refreshed.get("components")
+        refreshed_type = classify_model_type(
+            cached_components if isinstance(cached_components, dict) else {},
+            str(refreshed.get("architecture") or ""),
+            filepath=filepath,
+            file_format=refreshed.get("format"),
+        )
+        if refreshed_type != "Unknown":
+            refreshed["model_type"] = refreshed_type
     return refreshed
 
 
@@ -247,7 +257,10 @@ def inspect_file(
     if cached is not None and _dynamic_identity_matches(
         cached, shard_set, sidecars, include_sidecars
     ) and _companion_identity_matches(cached, companion):
-        return _refresh_cached_result(filepath, cached)
+        refreshed = _refresh_cached_result(filepath, cached)
+        if refreshed.get("model_type") != cached.get("model_type"):
+            store_cached_inspection(filepath, refreshed, options)
+        return refreshed
 
     allow_aliases = bool(options.get("allow_filename_alias_detection", False))
     metadata, tensor_info, file_size = read_model_header(filepath, options)
@@ -273,7 +286,12 @@ def inspect_file(
     )
     if capability_facts["domain"] in {"VLM", "MMLM"}:
         components["vision"] = True
-    model_type = classify_model_type(components, architecture)
+    model_type = classify_model_type(
+        components,
+        architecture,
+        filepath=filepath,
+        file_format=file_format,
+    )
     moe_info = detect_moe(keys, metadata, architecture)
     adapter_type = detect_adapter_type(keys, metadata)
     training_meta = _extract_training_meta(metadata)

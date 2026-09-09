@@ -220,11 +220,11 @@ def print_report(
     print(f"\n{sep}\n")
 
 
-def generate_modelinfo_dump(filepath: str) -> str:
+def generate_modelinfo_dump(filepath: str, options: dict | None = None) -> str:
     """Generate a detailed text dump for one model file."""
     from modelinfo import generate_modelinfo_dump as _generate_modelinfo_dump
 
-    return _generate_modelinfo_dump(filepath)
+    return _generate_modelinfo_dump(filepath, options=options)
 
 
 def generate_modelinfo_json(filepath: str, options: dict | None = None) -> str:
@@ -234,11 +234,19 @@ def generate_modelinfo_json(filepath: str, options: dict | None = None) -> str:
     return _generate_modelinfo_json(filepath, options=options)
 
 
-def write_modelinfo_dump(filepath: str, resolve_output_path: bool = False) -> str:
+def write_modelinfo_dump(
+    filepath: str,
+    resolve_output_path: bool = False,
+    options: dict | None = None,
+) -> str:
     """Write a text ``.modelinfo`` file beside the inspected model."""
     from modelinfo import write_modelinfo_dump as _write_modelinfo_dump
 
-    return _write_modelinfo_dump(filepath, resolve_output_path=resolve_output_path)
+    return _write_modelinfo_dump(
+        filepath,
+        resolve_output_path=resolve_output_path,
+        options=options,
+    )
 
 
 def write_modelinfo_json(
@@ -268,7 +276,11 @@ def _inspect_and_write_modelinfo(
     outputs = []
     if write_text:
         outputs.append(
-            write_modelinfo_dump(filepath, resolve_output_path=resolve_output_path)
+            write_modelinfo_dump(
+                filepath,
+                resolve_output_path=resolve_output_path,
+                options=options,
+            )
         )
     if write_json:
         outputs.append(

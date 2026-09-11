@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 import app_paths
 from back.theme_loader import Theme, ThemeLoadResult
@@ -193,6 +193,52 @@ def save_user_theme(
     return path
 
 
+def next_available_user_theme_id(
+    existing_ids: Iterable[str] = (), user_directory: str | Path | None = None
+) -> str:
+    """Return the first ``new_theme_N`` absent from both disk and editor state."""
+    if user_directory is None:
+        ensure_bundled_themes()
+    target = _prepare_directory(_directory(user_directory, app_paths.user_themes_dir()))
+    occupied = {str(theme_id).casefold() for theme_id in existing_ids}
+    occupied.update(theme.id.casefold() for theme in _list_themes(target))
+    occupied.update(path.stem.casefold() for path in target.glob("*.jsonc"))
+    number = 1
+    while f"new_theme_{number}" in occupied:
+        number += 1
+    return f"new_theme_{number}"
+
+
+def save_new_user_theme(
+    theme: Theme | Mapping[str, Any], user_directory: str | Path | None = None
+) -> Path:
+    """Create a new user theme without replacing an existing theme file."""
+    payload = _theme_payload(theme)
+    valid, errors = validate_theme(payload)
+    if not valid:
+        raise ValueError("invalid theme: " + "; ".join(errors))
+    if user_directory is None:
+        ensure_bundled_themes()
+    target = _prepare_directory(_directory(user_directory, app_paths.user_themes_dir()))
+    path = _safe_child(target, _filename_for_theme(payload, None))
+    encoded = (json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode(
+        "utf-8"
+    )
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    except FileExistsError as exc:
+        raise FileExistsError(f"theme file already exists: {path.name}") from exc
+    try:
+        with os.fdopen(descriptor, "wb") as created:
+            created.write(encoded)
+            created.flush()
+            os.fsync(created.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return path
+
+
 def list_themes(directory: str | Path | None = None) -> tuple[Theme, ...]:
     """Expose validated themes through the storage module for UI workers."""
     return _list_themes(directory)
@@ -208,6 +254,8 @@ __all__ = [
     "export_bundled_themes",
     "reset_user_themes",
     "save_user_theme",
+    "next_available_user_theme_id",
+    "save_new_user_theme",
     "list_themes",
     "load_theme",
 ]

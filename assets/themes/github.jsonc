@@ -3,15 +3,15 @@
   "name": "GitHub Dark",
   "description": "GitHub dark-style neutral surfaces and links.",
   "colors": {
-    "background": "#0d1117",
-    "surface": "#161b22",
+    "background": "#151B23",
+    "surface": "#212830",
     "surface_alt": "#21262d",
-    "text": "#e6edf3",
-    "muted": "#8b949e",
-    "accent": "#2f81f7",
+    "text": "#C6D6D4",
+    "muted": "#5087CA",
+    "accent": "#5087CA",
     "accent_text": "#ffffff",
-    "border": "#30363d",
-    "success": "#3fb950",
+    "border": "#353C44",
+    "success": "#41BF50",
     "warning": "#d29922",
     "error": "#f85149",
     "highlight": "#2f81f7",
@@ -20,6 +20,7 @@
     "accent_adapter": "#cba6f7",
     "accent_moe": "#fab387",
     "accent_component": "#94e2d5",
-    "accent_display": "#e6edf3"
+    "accent_display": "#e6edf3",
+    "tab_inactive_hover": "#0A2750"
   }
 }

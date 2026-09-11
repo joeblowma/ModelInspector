@@ -37,6 +37,7 @@ from .explorer_data import (
     flatten_metadata,
     normalize_tensor_descriptors,
 )
+from .tensor_root_summary import TensorRootSummary
 
 __all__ = ["ExplorerTab", "TENSOR_COLUMNS", "normalize_tensor_descriptors", "detect_embedded_content"]
 
@@ -174,6 +175,8 @@ class ExplorerTab(QWidget):
 
         self.tensors_page = QWidget()
         tensor_page_layout = QVBoxLayout(self.tensors_page)
+        self.tensor_root_summary = TensorRootSummary()
+        tensor_page_layout.addWidget(self.tensor_root_summary)
         tensor_group = QGroupBox("Tensors (header descriptors)")
         tensor_group.setToolTip("Sortable tensor headers only; no tensor payload is loaded by Explorer.")
         tensor_layout = QVBoxLayout(tensor_group)
@@ -315,6 +318,9 @@ class ExplorerTab(QWidget):
         if payload_available is not None:
             self._payload_available = bool(payload_available)
         self._all_records = normalize_tensor_descriptors(tensor_data)
+        self.tensor_root_summary.set_tensor_names(
+            record.get("name", "") for record in self._all_records
+        )
         original_positions = self._order_positions(original_tensor_order)
         sorted_positions = self._order_positions(sorted_tensor_order)
         for index, record in enumerate(self._all_records):
@@ -387,6 +393,7 @@ class ExplorerTab(QWidget):
         self.tensor_bucket_filter.addItem("All component buckets", "")
         self.tensor_bucket_filter.blockSignals(False)
         self.tensor_proxy.set_bucket("")
+        self.tensor_root_summary.clear()
         self._render_embedded()
         self.tensor_detail.clear()
         self._update_status()
@@ -475,3 +482,16 @@ class ExplorerTab(QWidget):
             self.status_label.setText("Read-only header view. Host supplied a payload source; requests still emit signals only.")
         else:
             self.status_label.setText("Read-only header view. Tensor payloads are not loaded; extraction requires a host-provided source.")
+
+    def refresh_theme(self, theme_colors: Mapping[str, str] | None = None) -> None:
+        """Refresh Explorer's cached status/detail styling after a theme change."""
+        if theme_colors is None:
+            from back.theme_loader import get_global_theme_colors
+
+            theme_colors = get_global_theme_colors()
+        self.status_label.setStyleSheet(
+            "color: %(muted)s; font-size: 11px;" % dict(theme_colors)
+        )
+        self.tensor_detail.setStyleSheet(
+            "background-color: %(background)s; color: %(text)s;" % dict(theme_colors)
+        )

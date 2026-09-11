@@ -21,6 +21,7 @@
     "accent_adapter": "#cba6f7",
     "accent_moe": "#fab387",
     "accent_component": "#94e2d5",
-    "accent_display": "#ebdbb2"
+    "accent_display": "#ebdbb2",
+    "tab_inactive_hover": "#5b5149"
   },
 }

@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 from typing import Any, Iterable, Mapping
 
-from app_paths import user_themes_dir
+from app_paths import themes_dir, user_themes_dir
 
 
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$")
@@ -37,7 +37,9 @@ _DEFAULT_COLORS = {
     "accent_moe": "#fab387",
     "accent_component": "#94e2d5",
     "accent_display": "#f5c2e7",
+    "tab_inactive_hover": "#3b3b3b",
 }
+_OPTIONAL_COLOR_DEFAULTS = {"tab_inactive_hover": _DEFAULT_COLORS["tab_inactive_hover"]}
 
 
 @dataclass(frozen=True)
@@ -188,7 +190,7 @@ def validate_theme(raw: Mapping[str, Any]) -> tuple[bool, tuple[str, ...]]:
     if not isinstance(colors, Mapping):
         errors.append("colors must be an object")
     else:
-        missing = sorted(set(_DEFAULT_COLORS) - set(colors))
+        missing = sorted(set(_DEFAULT_COLORS) - set(_OPTIONAL_COLOR_DEFAULTS) - set(colors))
         if missing:
             errors.append("missing required colors: " + ", ".join(missing))
         for key, value in colors.items():
@@ -210,7 +212,7 @@ def _theme_from_mapping(raw: Mapping[str, Any], source: str) -> Theme:
     return Theme(
         id=str(raw["id"]),
         name=str(raw["name"]),
-        colors={str(key): str(value) for key, value in raw["colors"].items()},
+        colors={**_OPTIONAL_COLOR_DEFAULTS, **{str(key): str(value) for key, value in raw["colors"].items()}},
         description=str(raw.get("description") or ""),
         source=source,
         variables=variables,
@@ -246,6 +248,23 @@ def _user_theme_directory() -> Path:
     return user_themes_dir()
 
 
+def _load_bundled_default_theme() -> ThemeLoadResult:
+    """Load the read-only default from the replaceable application asset."""
+    try:
+        directory = themes_dir()
+        path = _safe_requested_filename(directory, "default.jsonc")
+        theme = _theme_from_mapping(parse_jsonc(path.read_text(encoding="utf-8")), str(path))
+        if theme.id != BUILTIN_THEME.id:
+            raise ValueError("bundled default theme must use id 'default'")
+        return ThemeLoadResult(theme)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        return ThemeLoadResult(
+            BUILTIN_THEME,
+            (f"could not load bundled default theme: {exc}",),
+            True,
+        )
+
+
 def _theme_path_for_id(theme_id: str, directory: Path) -> Path:
     """Find the first deterministic file containing ``theme_id``."""
     candidate = directory / f"{theme_id}.jsonc"
@@ -275,8 +294,9 @@ def _safe_requested_filename(directory: Path, filename: str) -> Path:
 def list_themes(directory: str | Path | None = None) -> tuple[Theme, ...]:
     """Enumerate validated user themes with deterministic duplicate handling."""
     folder = Path(directory) if directory is not None else _user_theme_directory()
-    themes: list[Theme] = [BUILTIN_THEME]
-    seen_ids = {BUILTIN_THEME.id}
+    default_theme = _load_bundled_default_theme().theme
+    themes: list[Theme] = [default_theme]
+    seen_ids = {default_theme.id}
     for path in _theme_files(folder):
         try:
             theme = _theme_from_mapping(parse_jsonc(path.read_text(encoding="utf-8")), str(path))
@@ -292,11 +312,9 @@ def list_themes(directory: str | Path | None = None) -> tuple[Theme, ...]:
 def load_theme(theme_id_or_path: str | Path | None, directory: str | Path | None = None) -> ThemeLoadResult:
     """Load a theme by id or path, returning the fallback and diagnostics on error."""
     if theme_id_or_path is None:
-        return ThemeLoadResult(BUILTIN_THEME)
+        return _load_bundled_default_theme()
     if str(theme_id_or_path).lower() in {"default", "builtin"}:
-        if directory is None:
-            _user_theme_directory()
-        return ThemeLoadResult(BUILTIN_THEME)
+        return _load_bundled_default_theme()
     diagnostics: list[str] = []
     try:
         explicit_path = isinstance(theme_id_or_path, Path)

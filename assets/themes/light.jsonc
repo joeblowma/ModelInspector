@@ -17,7 +17,8 @@
     "accent_adapter": "#B3799F",
     "accent_moe": "#D9978F",
     "accent_component": "#A6E3A1",
-    "accent_display": "#686868"
+    "accent_display": "#686868",
+    "tab_inactive_hover": "#C9EDEF"
   },
   "description": "Light theme for you dark mode avoiders.",
   "id": "light",

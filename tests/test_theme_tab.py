@@ -168,6 +168,7 @@ def test_color_editing_previews_only_valid_palettes_and_exposes_all_required_col
         assert set(tab.color_edits) >= {
             "background", "surface", "surface_alt", "text", "muted", "accent",
             "accent_text", "border", "success", "warning", "error",
+            "tab_inactive_hover",
         }
         original = tab.current_theme().colors["accent"]
         tab.color_edits["accent"].setText("#123456")
@@ -192,6 +193,35 @@ def test_save_as_refreshes_theme_list_and_writes_valid_user_theme(app, theme_dat
         assert (theme_data_dir / "model-inspector" / "themes" / "my_custom.jsonc").is_file()
         assert tab.theme_combo.findData("my_custom") >= 0
         assert tab.save_current()
+    finally:
+        tab.close()
+
+
+def test_new_theme_uses_bundled_default_and_skips_existing_disk_names(app, theme_data_dir):
+    theme_dir = theme_data_dir / "model-inspector" / "themes"
+    theme_dir.mkdir(parents=True)
+    (theme_dir / "new_theme_1.jsonc").write_text("{ malformed", encoding="utf-8")
+    tab = ThemeTab("github")
+    default_tab = ThemeTab("default")
+    try:
+        assert tab.new_button.objectName() == "newThemeButton"
+        assert tab.new_theme()
+        assert tab.current_theme_id() == "new_theme_2"
+        assert tab.current_theme().colors == default_tab.current_theme().colors
+        assert (theme_dir / "new_theme_2.jsonc").is_file()
+    finally:
+        default_tab.close()
+        tab.close()
+
+
+def test_theme_editor_uses_friendly_color_labels(app, theme_data_dir):
+    tab = ThemeTab("default")
+    try:
+        muted_label = tab._color_form.labelForField(tab.color_edits["muted"].parentWidget())
+        assert muted_label is not None and muted_label.text() == "Status Text:"
+        assert "Inactive Tabs" in tab.color_buttons["accent"].accessibleName()
+        hover_label = tab._color_form.labelForField(tab.color_edits["tab_inactive_hover"].parentWidget())
+        assert hover_label is not None and hover_label.text() == "Inactive Tab Hover Background:"
     finally:
         tab.close()
 

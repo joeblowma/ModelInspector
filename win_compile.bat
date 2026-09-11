@@ -79,32 +79,27 @@ if exist assets\GetVersion.py (
     )
 )
 
-:: Need to confirm or create ModelInspector.spec
-echo [INFO] Starting compilation...
-if not exist ModelInspector.spec (
-    echo [WARNING] ModelInspector.spec not found! Generating...
-    pyi-makespec ^
-        --onefile ^
-        --windowed ^
-        --argv-emulation ^
-        --optimize 2 ^
-        --name "ModelInspector" ^
-        --version-file "version.txt" ^
-        --icon "assets/icon.ico" ^
-        --add-data "assets/icon.ico:assets" ^
-        --add-data "assets/themes/catppuccin.jsonc:assets/themes" ^
-        --add-data "assets/themes/cursor.jsonc:assets/themes" ^
-        --add-data "assets/themes/github.jsonc:assets/themes" ^
-        --add-data "assets/themes/gruvbox.jsonc:assets/themes" ^
-        --splash "assets/splash.png" ^
-        src/gui.py
-    if %ERRORLEVEL% neq 0 (
-        echo [ERROR] Generating ModelInspector.spec failed.
-        pause
-        exit 1
-    ) else (
-        echo [INFO] ModelInspector.spec created!
-    )
+:: The spec is generated output. Recreate it so the complete theme directory is current.
+echo [INFO] Generating compilation spec from maintained asset collection...
+if exist ModelInspector.spec del /q ModelInspector.spec
+pyi-makespec ^
+    --onefile ^
+    --windowed ^
+    --argv-emulation ^
+    --optimize 2 ^
+    --name "ModelInspector" ^
+    --version-file "version.txt" ^
+    --icon "assets/icon.ico" ^
+    --add-data "assets/icon.ico:assets" ^
+    --add-data "assets/themes:assets/themes" ^
+    --splash "assets/splash.png" ^
+    src/gui.py
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Generating ModelInspector.spec failed.
+    pause
+    exit 1
+) else (
+    echo [INFO] ModelInspector.spec created!
 )
 
 :: Finally, compile the executable

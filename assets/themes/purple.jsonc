@@ -20,6 +20,7 @@
     "accent_adapter": "#D9978F",
     "accent_moe": "#C7A3D9",
     "accent_component": "#94E2D5",
-    "accent_display": "#E11AD0"
+    "accent_display": "#E11AD0",
+    "tab_inactive_hover": "#6E1A6E"
   },
 }

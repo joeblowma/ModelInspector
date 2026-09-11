@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 from PyQt6.QtCore import QRegularExpression, QSignalBlocker, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QRegularExpressionValidator
+from PyQt6.QtGui import QRegularExpressionValidator
 from PyQt6.QtWidgets import (
     QColorDialog,
     QFormLayout,
@@ -36,35 +36,22 @@ from back.theme_store import (
     ensure_bundled_themes,
     list_themes,
     load_theme,
+    next_available_user_theme_id,
     reset_user_themes,
+    save_new_user_theme,
     save_user_theme,
+)
+from front.theme_editor_support import (
+    REQUIRED_COLOR_ORDER,
+    color_label,
+    new_theme_from_default,
+    qcolor_from_hex,
+    update_color_button,
 )
 
 _THEME_ID_RE = re.compile(r"[a-z0-9][a-z0-9_-]{1,63}\Z")
 _COLOR_RE = QRegularExpression(r"^#[0-9A-Fa-f]{0,8}$")
 _FULL_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?\Z")
-_REQUIRED_COLOR_ORDER = (
-    "background",
-    "surface",
-    "surface_alt",
-    "text",
-    "muted",
-    "accent",
-    "accent_text",
-    "border",
-    "success",
-    "warning",
-    "error",
-    "highlight",
-    "highlight_selected",
-    "stat_label",
-    "accent_adapter",
-    "accent_moe",
-    "accent_component",
-    "accent_display",
-)
-
-
 class ThemeTab(QWidget):
     """Select, preview, validate, and persist user-editable theme palettes."""
 
@@ -156,6 +143,12 @@ class ThemeTab(QWidget):
         root.addWidget(preview_group)
 
         actions = QHBoxLayout()
+        self.new_button = QPushButton("New Theme")
+        self.new_button.setObjectName("newThemeButton")
+        self.new_button.setToolTip("Create a new writable theme from the bundled neutral default palette.")
+        self.new_button.clicked.connect(self.new_theme)
+        self.new_btn = self.new_button
+        actions.addWidget(self.new_button)
         self.save_button = QPushButton("Save")
         self.save_button.setObjectName("saveThemeButton")
         self.save_button.setToolTip("Save the current valid palette to its writable user theme file.")
@@ -197,7 +190,10 @@ class ThemeTab(QWidget):
         return Theme(
             str(raw["id"]),
             str(raw["name"]),
-            {str(key): str(item) for key, item in raw["colors"].items()},
+            {
+                **BUILTIN_THEME.colors,
+                **{str(key): str(item) for key, item in raw["colors"].items()},
+            },
             str(raw.get("description") or ""),
             "user",
             {str(key): str(item) for key, item in (raw.get("variables") or {}).items()},
@@ -212,7 +208,7 @@ class ThemeTab(QWidget):
             self._report(f"Theme list unavailable; using Default Dark: {exc}")
             themes = []
         if not any(theme.id == BUILTIN_THEME.id for theme in themes):
-            themes.append(BUILTIN_THEME)
+            themes.append(load_theme("default").theme)
         unique: dict[str, Theme] = {theme.id: theme for theme in themes}
         return sorted(unique.values(), key=lambda theme: (theme.name.casefold(), theme.id))
 
@@ -275,32 +271,33 @@ class ThemeTab(QWidget):
                         widget.deleteLater()
             self._color_edits.clear()
             self._color_buttons.clear()
-            keys = [key for key in _REQUIRED_COLOR_ORDER if key in theme.colors]
+            keys = [key for key in REQUIRED_COLOR_ORDER if key in theme.colors]
             keys.extend(key for key in theme.colors if key not in keys)
             for key in keys:
                 edit = QLineEdit(str(theme.colors[key]))
                 edit.setObjectName(f"themeColor_{key}")
                 edit.setMaxLength(9)
                 edit.setValidator(QRegularExpressionValidator(_COLOR_RE, edit))
-                edit.setToolTip(f"{key}: a validated #RRGGBB or #RRGGBBAA color. Invalid text is not applied or saved.")
+                label = color_label(key)
+                edit.setToolTip(f"{label}: a validated #RRGGBB or #RRGGBBAA color. Invalid text is not applied or saved.")
                 edit.textChanged.connect(lambda value, color_key=key: self._color_edited(color_key, value))
                 self._color_edits[key] = edit
                 button = QPushButton()
                 button.setObjectName(f"themeColorPicker_{key}")
-                button.setAccessibleName(f"Choose {key.replace('_', ' ')} color")
-                button.setToolTip(f"Choose {key.replace('_', ' ')} color with QColorDialog.")
+                button.setAccessibleName(f"Choose {label} color")
+                button.setToolTip(f"Choose {label} color with QColorDialog.")
                 button.setFixedWidth(32)
                 button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
                 button.clicked.connect(lambda _checked=False, color_key=key: self._choose_color(color_key))
                 self._color_buttons[key] = button
-                self._set_color_button_color(key, str(theme.colors[key]))
+                update_color_button(self._color_buttons.get(key), key, str(theme.colors[key]), _FULL_COLOR_RE)
                 container = QWidget()
                 row = QHBoxLayout(container)
                 row.setContentsMargins(0, 0, 0, 0)
                 row.setSpacing(6)
                 row.addWidget(button)
                 row.addWidget(edit, 1)
-                self._color_form.addRow(f"{key.replace('_', ' ').title()}:", container)
+                self._color_form.addRow(f"{label}:", container)
         finally:
             self._updating = False
         self._apply_preview()
@@ -314,7 +311,7 @@ class ThemeTab(QWidget):
     def _color_edited(self, key: str, value: str) -> None:
         if self._updating:
             return
-        self._set_color_button_color(key, value)
+        update_color_button(self._color_buttons.get(key), key, value, _FULL_COLOR_RE)
         colors = dict(self._working_theme.colors)
         colors[key] = value.strip()
         raw = {
@@ -340,33 +337,14 @@ class ThemeTab(QWidget):
         self._apply_preview()
         self.themePreviewChanged.emit(self._working_theme)
 
-    @staticmethod
-    def _qcolor_from_hex(value: str) -> QColor | None:
-        value = value.strip()
-        if _FULL_COLOR_RE.fullmatch(value) is None:
-            return None
-        red, green, blue = (int(value[index:index + 2], 16) for index in (1, 3, 5))
-        alpha = int(value[7:9], 16) if len(value) == 9 else 255
-        return QColor(red, green, blue, alpha)
-
-    def _set_color_button_color(self, key: str, value: str) -> None:
-        button = self._color_buttons.get(key)
-        color = self._qcolor_from_hex(value)
-        if button is None or color is None:
-            return
-        normalized = value.strip().upper()
-        button.setProperty("colorValue", normalized)
-        button.setStyleSheet(f"background-color: rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()});")
-        button.setToolTip(f"Choose {key.replace('_', ' ')} color with QColorDialog (current {normalized}).")
-
     def _choose_color(self, key: str) -> None:
         edit = self._color_edits.get(key)
-        initial = self._qcolor_from_hex(edit.text()) if edit is not None else None
+        initial = qcolor_from_hex(edit.text(), _FULL_COLOR_RE) if edit is not None else None
         if initial is None:
-            initial = self._qcolor_from_hex(self._working_theme.colors.get(key, ""))
+            initial = qcolor_from_hex(self._working_theme.colors.get(key, ""), _FULL_COLOR_RE)
         if edit is None or initial is None:
             return
-        chosen = QColorDialog.getColor(initial, self, f"Choose {key.replace('_', ' ').title()} color", QColorDialog.ColorDialogOption.ShowAlphaChannel)
+        chosen = QColorDialog.getColor(initial, self, f"Choose {color_label(key)} color", QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if chosen.isValid():
             value = f"#{chosen.red():02X}{chosen.green():02X}{chosen.blue():02X}"
             edit.setText(value if chosen.alpha() == 255 else value + f"{chosen.alpha():02X}")
@@ -406,6 +384,22 @@ class ThemeTab(QWidget):
             self._report("The built-in default is read-only; use Save As for a writable theme.")
             return False
         return self._persist_theme(self._working_theme)
+
+    def new_theme(self) -> bool:
+        """Create and select a uniquely named theme based on the bundled default."""
+        try:
+            theme_id = next_available_user_theme_id(theme_id for theme_id, _name in self.theme_choices())
+            default_theme = load_theme("default").theme
+            candidate = new_theme_from_default(theme_id, default_theme)
+            save_new_user_theme(candidate)
+        except (OSError, TypeError, ValueError) as exc:
+            self._report(f"Could not create theme: {exc}")
+            QMessageBox.warning(self, "New Theme", f"Could not create a new theme: {exc}")
+            return False
+        self.refresh_themes(theme_id)
+        self._report(f"Created {candidate.name} from the bundled default palette.")
+        self.themePersisted.emit(theme_id)
+        return True
 
     def save_as(self) -> bool:
         default_id = f"{self.current_theme_id()}_copy" if self.current_theme_id() else "custom_theme"

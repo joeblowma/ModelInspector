@@ -16,6 +16,10 @@ from PyQt6.QtWidgets import (
     QMenu,
     QTableWidgetItem,
     QToolButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
     QWidgetAction,
 )
 
@@ -33,6 +37,7 @@ class CheckFilterButton(QToolButton):
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._menu = QMenu(self)
         self.setMenu(self._menu)
+        self._menu.aboutToShow.connect(self._prepare_menu)
 
         self._all_cb = QCheckBox("Select All")
         self._all_cb.setToolTip("Select or deselect all model family filters.")
@@ -42,10 +47,26 @@ class CheckFilterButton(QToolButton):
         all_action.setDefaultWidget(self._all_cb)
         self._menu.addAction(all_action)
 
+        self._items_panel = QWidget()
+        self._items_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._items_layout = QVBoxLayout(self._items_panel)
+        self._items_layout.setContentsMargins(4, 2, 4, 2)
+        self._items_layout.setSpacing(2)
+        self._items_scroll = QScrollArea()
+        self._items_scroll.setWidgetResizable(True)
+        self._items_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._items_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._items_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._items_scroll.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._items_scroll.setWidget(self._items_panel)
+        self._items_action = QWidgetAction(self)
+        self._items_action.setDefaultWidget(self._items_scroll)
+        self._menu.addAction(self._items_action)
+
         self._arch_checks: dict[str, QCheckBox] = {}
         self._counts: dict[str, int] = {}
         self._active: set[str] = set()
-        self._item_actions: list[QWidgetAction | QAction] = []
+        self._item_actions: list[QWidgetAction | QAction] = [self._items_action]
 
     def clear_items(self):
         self._clear_item_actions()
@@ -59,14 +80,12 @@ class CheckFilterButton(QToolButton):
         self.filter_changed.emit(None)
 
     def _clear_item_actions(self):
-        for action in self._item_actions:
-            if isinstance(action, QWidgetAction):
-                widget = action.defaultWidget()
-                action.setDefaultWidget(None)
-                if widget is not None:
-                    widget.deleteLater()
-            self._menu.removeAction(action)
-        self._item_actions.clear()
+        while self._items_layout.count():
+            item = self._items_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._arch_checks.clear()
 
     def _filter_sort_key(self, value: str):
         if value == "ERROR":
@@ -78,29 +97,18 @@ class CheckFilterButton(QToolButton):
     def _rebuild_item_actions(self):
         checked_state = {arch: cb.isChecked() for arch, cb in self._arch_checks.items()}
         self._clear_item_actions()
-        self._arch_checks.clear()
         ordered = sorted(self._counts.keys(), key=self._filter_sort_key)
-        inserted_divider = False
         for arch in ordered:
-            if (
-                not inserted_divider
-                and arch != "ERROR"
-                and "ERROR" in self._arch_checks
-            ):
-                sep = self._menu.addSeparator()
-                if sep is not None:
-                    self._item_actions.append(sep)
-                inserted_divider = True
             checked = checked_state.get(arch, arch in self._active)
             cb = QCheckBox(f"{arch} ({self._counts.get(arch, 0)})")
+            cb.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             cb.setChecked(checked)
             cb.setToolTip(f"Filter by {arch} model family.")
             cb.stateChanged.connect(self._on_arch_toggled)
             self._arch_checks[arch] = cb
-            act = QWidgetAction(self)
-            act.setDefaultWidget(cb)
-            self._menu.addAction(act)
-            self._item_actions.append(act)
+            self._items_layout.addWidget(cb)
+        self._items_layout.addStretch()
+        self._prepare_menu()
 
     def remove_item(self, arch: str):
         cb = self._arch_checks.pop(arch, None)
@@ -205,6 +213,21 @@ class CheckFilterButton(QToolButton):
             self.setText(f"{self._label}: All")
             return
         self.setText(f"{self._label}: {len(self._active)}/{len(self._arch_checks)}")
+
+    def _prepare_menu(self):
+        """Constrain the embedded list to the owning window, never the screen."""
+        owner = self.window()
+        owner_width = owner.width() if owner is not None else self.width()
+        owner_height = owner.height() if owner is not None else self.height()
+        menu_width = max(1, min(max(220, self.width() * 2), owner_width - 24))
+        menu_height = max(1, min(owner_height - 24, 560))
+        scroll_height = max(1, menu_height - 40)
+        self._items_scroll.setMinimumWidth(max(1, menu_width - 12))
+        self._items_scroll.setMaximumHeight(scroll_height)
+        self._items_scroll.setMinimumHeight(min(64, max(1, scroll_height)))
+        self._menu.setFixedWidth(menu_width)
+        self._menu.setMaximumHeight(menu_height)
+        self._menu.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
 
 
 class SortableTableWidgetItem(QTableWidgetItem):

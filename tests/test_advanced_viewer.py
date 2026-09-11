@@ -204,3 +204,41 @@ def test_overview_long_values_wrap_within_resizable_viewport():
     assert dialog.assumptions_label.wordWrap()
     assert dialog._overview_content.width() <= dialog._overview_scroll.viewport().width()
     dialog.close()
+
+
+def test_refresh_theme_invalidates_badges_and_refreshes_inline_explorer_styles(monkeypatch):
+    _app()
+    import front.advanced_viewer as advanced_viewer
+
+    colors = {
+        "accent": "#123456",
+        "accent_text": "#ffffff",
+        "success": "#234567",
+        "border": "#345678",
+        "text": "#456789",
+        "muted": "#56789a",
+        "accent_display": "#6789ab",
+        "warning": "#789abc",
+        "background": "#89abcd",
+    }
+    monkeypatch.setattr(advanced_viewer, "get_global_theme_colors", lambda: colors)
+    dialog = AdvancedViewerDialog(
+        {
+            "capability_facts": {
+                "domain": "LLM",
+                "capabilities": ["thinking"],
+                "evidence": {"thinking": ["header"]},
+            }
+        }
+    )
+    try:
+        dialog.refresh_theme()
+        assert advanced_viewer._ADVANCED_VIEWER_COLORS["capability"] == (
+            colors["accent"],
+            colors["accent_text"],
+        )
+        assert colors["accent"] in dialog._capability_badges[0].styleSheet()
+        assert colors["muted"] in dialog._summary_labels[0].styleSheet()
+        assert colors["muted"] in dialog.explorer_tab.status_label.styleSheet()
+    finally:
+        dialog.close()

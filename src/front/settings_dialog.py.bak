@@ -23,8 +23,8 @@ from back.theme_loader import get_global_theme_colors
 
 __all__ = ["SettingsDialog"]
 
-_DIALOG_FIXED_WIDTH = 900
-_DIALOG_FIXED_HEIGHT = 640
+_DIALOG_FIXED_WIDTH = 840
+_DIALOG_FIXED_HEIGHT = 460
 _DIALOG_SCREEN_MARGIN = 24
 
 

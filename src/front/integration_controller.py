@@ -157,13 +157,12 @@ class IntegrationMixin:
         application = QApplication.instance()
         if application is not None:
             apply_theme(application, theme_id, theme=theme, parent=self)
+            self._refresh_theme_colors()
 
     def _apply_theme_preview(self, theme) -> None:
         """Apply a validated in-memory palette without requiring a disk round-trip."""
         if theme is not None:
             self._apply_theme(str(getattr(theme, "id", "default")), theme)
-            # Re-apply theme-aware stylesheets to widgets that cache colors at construction.
-            self._refresh_theme_colors()
 
     def _refresh_theme_colors(self) -> None:
         """Re-apply theme colors to widgets that cached them at construction time."""
@@ -172,6 +171,19 @@ class IntegrationMixin:
             tc = get_global_theme_colors()
         except Exception:
             return
+        for name in ("progress_label", "selected_count_label", "table_selected_count_label"):
+            label = getattr(self, name, None)
+            if label is not None:
+                label.setStyleSheet("color: %(muted)s; font-size: 11px;" % tc)
+        placeholder = getattr(self, "cards_placeholder", None)
+        if placeholder is not None:
+            placeholder.setStyleSheet("color: %(surface_alt)s; font-size: 14px; padding: 60px;" % tc)
+        settings_dialog = getattr(self, "_settings_dialog", None)
+        if settings_dialog is not None:
+            try:
+                settings_dialog.refresh_theme(tc)
+            except RuntimeError:
+                self._settings_dialog = None
         # Refresh ModelCard stylesheets
         cards_container = getattr(self, "cards_scroll", None)
         if cards_container is not None:
@@ -183,13 +195,19 @@ class IntegrationMixin:
                             child._refresh_style()
             except Exception:
                 pass
-        # Refresh advanced viewer stylesheets
+        # Refresh embedded Explorer stylesheets.
         explorer = getattr(self, "_explorer", None)
-        if explorer is not None and hasattr(explorer, "_refresh_style"):
+        if explorer is not None and hasattr(explorer, "refresh_theme"):
             try:
-                explorer._refresh_style(tc)
+                explorer.refresh_theme(tc)
             except Exception:
                 pass
+        advanced_dialog = getattr(self, "_advanced_dialog", None)
+        if advanced_dialog is not None and advanced_dialog.isVisible():
+            try:
+                advanced_dialog.refresh_theme()
+            except RuntimeError:
+                self._advanced_dialog = None
 
     def _settings_data_layout(self) -> dict[str, Any]:
         store = open_settings(self._settings_path(), self._legacy_settings_path())

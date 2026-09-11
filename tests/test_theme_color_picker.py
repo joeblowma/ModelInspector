@@ -10,6 +10,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from back.theme_loader import BUILTIN_THEME, Theme, ThemeLoadResult
+from front.theme_editor_support import color_label
 from front.theme_tab import ThemeTab
 
 
@@ -74,7 +75,7 @@ def test_every_theme_color_has_accessible_picker_and_initial_channels(
         assert len(calls) == 0
         for key, button in tab.color_buttons.items():
             assert button.objectName() == f"themeColorPicker_{key}"
-            assert button.accessibleName() == f"Choose {key.replace('_', ' ')} color"
+            assert button.accessibleName() == f"Choose {color_label(key)} color"
             assert button.toolTip()
             assert button.focusPolicy() == Qt.FocusPolicy.StrongFocus
             assert button.isEnabled()
@@ -82,7 +83,7 @@ def test_every_theme_color_has_accessible_picker_and_initial_channels(
 
         assert len(calls) == len(tab.color_buttons)
         assert [call[2] for call in calls] == [
-            f"Choose {key.replace('_', ' ').title()} color" for key in tab.color_buttons
+            f"Choose {color_label(key)} color" for key in tab.color_buttons
         ]
         for key, (initial, parent, _title, options) in zip(tab.color_buttons, calls):
             assert parent is tab

@@ -308,6 +308,16 @@ class HeaderInspectionController(QObject):
         if self._tabs.widget(index) is self._tensor_page:
             self._request_if_needed()
 
+    def request_if_needed(self) -> None:
+        """Request headers when the tensor page is already the active page.
+
+        ``currentChanged`` only fires when the index changes.  Replacing the
+        inspected model while the Tensors page is open therefore needs this
+        explicit entry point as well.
+        """
+        if self._tabs.currentWidget() is self._tensor_page:
+            self._request_if_needed()
+
     def _request_if_needed(self) -> None:
         inspection = self._inspection_getter()
         for key in ("tensor_info", "tensors", "tensor_data", "descriptors", "headers"):

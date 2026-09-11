@@ -1,0 +1,27 @@
+{
+  // Neutral normal default. This replaceable asset is the read-only default source.
+  "id": "default",
+  "name": "Default",
+  "description": "Neutral default palette bundled with Model Inspector.",
+  "colors": {
+    "background": "#1e1e1e",
+    "surface": "#252526",
+    "surface_alt": "#333333",
+    "text": "#f0f0f0",
+    "muted": "#aaaaaa",
+    "accent": "#4fc3f7",
+    "accent_text": "#101010",
+    "border": "#454545",
+    "success": "#6acb78",
+    "warning": "#e5c07b",
+    "error": "#e06c75",
+    "highlight": "#74c7ec",
+    "highlight_selected": "#89dceb",
+    "stat_label": "#6c7086",
+    "accent_adapter": "#cba6f7",
+    "accent_moe": "#fab387",
+    "accent_component": "#94e2d5",
+    "accent_display": "#f5c2e7",
+    "tab_inactive_hover": "#3b3b3b"
+  }
+}

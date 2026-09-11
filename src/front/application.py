@@ -10,7 +10,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from app_paths import asset_path
-from back.theme_loader import Theme, ThemeLoadResult, load_theme
+from back.theme_loader import BUILTIN_THEME, Theme, ThemeLoadResult, load_theme
 
 try:
     import pyi_splash  # type: ignore[import-not-found]
@@ -155,12 +155,14 @@ QProgressBar::chunk {
 def _theme_stylesheet(theme_id: str | Theme | None) -> str:
     """Return a complete safe stylesheet using validated external theme colors."""
     loaded = ThemeLoadResult(theme_id) if isinstance(theme_id, Theme) else load_theme(theme_id)
-    colors = loaded.theme.colors
+    colors = {**BUILTIN_THEME.colors, **loaded.theme.colors}
     return DARK_STYLE + "\n" + loaded.theme.stylesheet() + (
         "\nQMainWindow, QWidget { background-color: %(background)s; color: %(text)s; }"
         "\nQTableWidget { background-color: %(surface)s; alternate-background-color: %(background)s;"
         " selection-background-color: %(surface_alt)s; }"
         "\nQHeaderView::section, QTabBar::tab { background-color: %(surface)s; color: %(accent)s; }"
+        "\nQTabBar::tab:!selected { color: %(accent)s; }"
+        "\nQTabBar::tab:!selected:hover { background-color: %(tab_inactive_hover)s; color: %(accent)s; }"
         "\nQPushButton { background-color: %(surface)s; border-color: %(border)s; color: %(text)s; }"
         "\nQPushButton:hover { background-color: %(surface_alt)s; border-color: %(accent)s; }"
         "\nQLabel[themeRole=muted] { color: %(muted)s; }"

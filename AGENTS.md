@@ -16,7 +16,7 @@ This is a small Python desktop/CLI utility for inspecting various language and d
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
-- `compile.bat`, `clean.bat`, `ModelInspector.spec`, `build/`, and `dist/` support PyInstaller packaging.
+- `win_compile.bat`, `win_clean.bat`, `ModelInspector.spec`, `build/`, and `dist/` support PyInstaller packaging.
   - Treat `ModelInspector.spec`, `version.txt`, `build/` and `dist/` as generated output.
 - `README.md` github front page, extremely out of date, ignore for now
 - `graphify-out/` contains the repository knowledge graph used by agents for architecture navigation.
@@ -39,7 +39,7 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 ## Testing Guidelines
 
 - Settings data tests cover single-row selection, side-button reordering, persistence, and embedded-control cleanup.
-- Settings dialog tests cover compact fixed 840x460 sizing with screen clamping, dedicated Theme-tab selection, and bounded Data-list/scrollbar geometry; Theme owns its color-editor scroll area.
+- Settings dialog tests cover the current fixed 900x640 default with screen clamping, dedicated Theme-tab selection, and bounded Data-list/scrollbar geometry; a resizable remembered-size proposal remains in `TODO.md`. Theme owns its color-editor scroll area.
 
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
@@ -88,5 +88,5 @@ Existing tests:
 ### Guardrails & Limits
 
 - **Hard Module Ceiling (500 Lines)**: Any generated or extracted file exceeding 500 lines is automatically flagged as an invalid God Node. It must immediately be queued for a second split by a worker before progressing to linkage repair. No "cohesive file exceptions" without explicit Lead Architect approval.
-- **Model Type Enforcement**: Before spawning subagents, verify that requested subagent models map strictly to  `gpt-5.6-sol`, `gpt-5.6-luna`, `gpt-5.6-terra`,`glm-5.3-flash`, `deepseek-v4-flash-high`, or `deepseek-v4-pro` . If a model alias resolves incorrectly or defaults to `gpt-6-astra`, halt execution immediately.
+- **Model Type Enforcement**: Before spawning subagents, verify that requested subagent models map strictly to  `gpt-5.6-sol`, `gpt-5.6-luna`, `gpt-5.6-terra`,`glm-5.3-flash`, `deepseek-v4-flash`, or `deepseek-v4-pro` . If a model alias resolves incorrectly or defaults to `gpt-6-astra`, halt execution immediately.
 - **Wrapper Boundary Policy**: Entry-point wrappers (`gui.py`, `inspect_model.py`) may contain thin re-exports, MRO composition, and compatibility hooks, but zero domain logic.

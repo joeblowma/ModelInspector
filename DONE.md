@@ -1,4 +1,4 @@
-# DONE: Completed, Rejected, and Superseded Work
+# DONE: Completed Work
 
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
@@ -39,6 +39,13 @@ completed foundation does not imply that every refinement in `TODO.md` is done.
   retaining the validated default fallback.
 - [x] Add a dedicated Theme tab with live editing and `Save`, `Save As`, and
   `Reset to Defaults` actions.
+- [x] Load the read-only neutral default from the replaceable bundled
+  `default.jsonc` asset. The New Theme action creates uniquely numbered,
+  writable themes from that asset rather than from the selected theme.
+- [x] Apply editable theme roles live, including muted status text, cached
+  inline styles, and a distinct inactive-tab hover color with old-theme
+  fallback. Friendly Theme-editor labels identify accent use by buttons,
+  badges, inactive tabs, and headers.
 - [x] Require explicit confirmation before Theme `Reset to Defaults`, then
   clear the user theme directory and re-extract bundled themes.
 - [x] Complete the tooltip/content audit across existing controls, not only
@@ -56,61 +63,6 @@ completed foundation does not imply that every refinement in `TODO.md` is done.
   later automatic enabling for that session, while persisted Settings > Data
   per-column visibility is the baseline and always wins. A checked group shows
   only baseline-visible columns; an unchecked group masks every column it owns.
-
-## 2026-08-24 — Immediate UI Glitches and Performance
-
-- [x] Fix bottom-item Data-column reordering so the moved row remains visible,
-  while retaining the earlier deleted-widget crash fix.
-- [x] Remove the persistent blank row from the bottom of the Data-column
-  settings scroller.
-- [x] Improve Settings close performance for large loaded libraries by moving
-  expensive work out of the dialog close path.
-- [x] Load bundled themes correctly in packaged executables through extracted
-  application assets.
-- [x] Keep the Advanced Viewer above its main window without forcing it above
-  unrelated applications.
-- [x] Propagate multimodal model classification as MLLM, including vision-tower
-  detection, to cards and lists.
-- [x] Give the Advanced Viewer ownership of Explorer search while keeping Raw
-  as a single-purpose main tab.
-- [x] Show Advanced Viewer’s current output information at the top of Raw for
-  convenient copying.
-- [x] Remove the unnecessary “top key prefixes” from the Raw view.
-
-## Project Structure and Architecture
-
-- [x] Move executable sources under `src/` and keep `src/gui.py` and
-  `src/inspect_model.py` as thin compatibility/bootstrap wrappers.
-- [x] Split GUI workflows into focused `src/front/` widgets/controllers and
-  inspection logic into focused `src/back/` modules.
-- [x] Keep bundled icons, splash assets, and themes under `assets/` and resolve
-  them in development and packaged execution.
-- [x] Update build/spec entry points for the current source layout.
-- [x] Establish a hard 500-line source-module ceiling and verify the current
-  `src/front` and `src/back` modules against it.
-- [x] Add regression coverage for scan lifecycle, projection, inspection
-  summaries, background tasks, integrated behavior, settings, themes, cache,
-  Explorer, and Advanced Viewer components.
-
-## Readers, Inspection, and Reporting
-
-- [x] Add a shared extension reader abstraction for `.safetensors` and `.gguf`.
-- [x] Implement read-only GGUF metadata, tensor descriptors, dtype summaries,
-  architecture hints, and size reporting.
-- [x] Inspect safetensors headers without loading tensor payloads.
-- [x] Evaluate the official `safetensors` package for metadata-only use. The
-  custom header reader remains the preferred lightweight path; adding the
-  dependency merely for parity was rejected.
-- [x] Research pickle-backed checkpoint risks and require explicit opt-in for
-  any future unsafe deserialization. Actual additional-format support remains
-  in `TODO.md`.
-- [x] Add stable, pretty-printed JSON `.modelinfo` output to CLI and GUI flows.
-- [x] Preserve both user-provided and resolved file paths and keep default dump
-  output beside the user-provided path.
-- [x] Give FLUX LoRA header detection precedence over broad Qwen Edit heuristics
-  for standard rank-64 adapters with 19 dual and 38 single blocks plus generic
-  `add_k_proj`/`add_q_proj` markers; add header-only regression coverage without
-  loading model payloads.
 
 ## 2026-09-04 — File Readers, Model Formats, Sharding, and Sidecars
 
@@ -204,16 +156,14 @@ discovered as separate records with compact primary identities and runtime paths
 
 ## Explorer and Raw Dump
 
-- [x] Add a read-only Explorer with searchable metadata key/value rows.
-- [x] Add a sortable/filterable tensor descriptor table with Name, Shape,
-  Dtype, Component Bucket, and Parameter Count.
-- [x] Detect header-derived VAE, LoRA, text-encoder, and template candidates and
-  expose explicit host-handled inspect/export/extract requests.
-- [x] Keep the legacy Raw Dump navigator beside Explorer.
-- [x] Reject the earlier requirement to replace/remove Raw; retaining both views
-  is the accepted product direction.
+- [x] Keep Explorer and Raw as coexisting views, with searchable metadata and
+  tensor descriptors, a bounded header-only tensor-root summary, lazy
+  host-request loading, and window-bounded scrolling filter controls.
+- [x] Detect header-derived VAE, LoRA, text-encoder, and template candidates
+  and expose explicit host-handled inspect/export/extract requests without
+  loading tensor payloads.
 
-## Advanced Viewer Foundation
+## Advanced Viewer
 
 - [x] Add a topmost modal Advanced Viewer dialog for the selected model.
 - [x] Add architecture/layer/context/RoPE/MTP/expert fact extraction with safe
@@ -223,10 +173,10 @@ discovered as separate records with compact primary identities and runtime paths
 - [x] Add plain-text configuration generation and clipboard copy support.
 - [x] Fix Advanced Viewer Cards bottom spacing, long-card width/wrapping, and
   minimum short-card sizing, with focused geometry regression coverage. The
-  broader Advanced Viewer redesign remains open in `TODO.md`.
-- [x] Keep richer layout, shard visualization, sidecar integration, template
-  validation, and screenshot-aligned redesign work explicitly open in
-  `TODO.md`.
+  accepted Advanced Viewer is the settled presentation direction.
+- [x] Populate the accepted viewer with conservative facts, tensor descriptors,
+  shard/order information, companion discovery, and evidence-conservative
+  capability/domain badges.
 
 ## 2026-09-03 — Integrated Card and Advanced Viewer Pass
 
@@ -244,3 +194,63 @@ discovered as separate records with compact primary identities and runtime paths
   bit precision from their 16-bit baseline, with estimator and dialog coverage.
 - [x] Verify the integrated pass with focused UI/backend coverage, clean
   Pyright, and the full 94-test pytest suite.
+
+## Developer tooling
+
+- [x] Repair `.graphifyignore` ordering so frontend and backend source files are
+  eligible for graph extraction. A full graph rebuild remains unverified and is
+  deferred in `TODO.md`.
+
+## 2026-08-24 — Immediate UI Glitches and Performance
+
+- [x] Fix bottom-item Data-column reordering so the moved row remains visible,
+  while retaining the earlier deleted-widget crash fix.
+- [x] Remove the persistent blank row from the bottom of the Data-column
+  settings scroller.
+- [x] Improve Settings close performance for large loaded libraries by moving
+  expensive work out of the dialog close path.
+- [x] Load bundled themes correctly in packaged executables through extracted
+  application assets.
+- [x] Keep the current Settings default at fixed 900x640 with screen clamping;
+  the later resizable, remembered-size proposal remains in `TODO.md`.
+- [x] Keep the Advanced Viewer above its main window without forcing it above
+  unrelated applications.
+- [x] Propagate multimodal model classification as MLLM, including vision-tower
+  detection, to cards and lists.
+- [x] Give the Advanced Viewer ownership of Explorer search while keeping Raw
+  as a single-purpose main tab.
+- [x] Show Advanced Viewer’s current output information at the top of Raw for
+  convenient copying.
+- [x] Remove the unnecessary “top key prefixes” from the Raw view.
+
+## Project Structure and Architecture
+
+- [x] Move executable sources under `src/` and keep `src/gui.py` and
+  `src/inspect_model.py` as thin compatibility/bootstrap wrappers.
+- [x] Split GUI workflows into focused `src/front/` widgets/controllers and
+  inspection logic into focused `src/back/` modules.
+- [x] Keep bundled icons, splash assets, and themes under `assets/` and resolve
+  them in development and packaged execution.
+- [x] Update build/spec entry points for the current source layout.
+- [x] Establish a hard 500-line source-module ceiling and verify the current
+  `src/front` and `src/back` modules against it.
+- [x] Add regression coverage for scan lifecycle, projection, inspection
+  summaries, background tasks, integrated behavior, settings, themes, cache,
+  Explorer, and Advanced Viewer components.
+
+## Readers, Inspection, and Reporting
+
+- [x] Add a shared extension reader abstraction for `.safetensors` and `.gguf`.
+- [x] Implement read-only GGUF metadata, tensor descriptors, dtype summaries,
+  architecture hints, and size reporting.
+- [x] Inspect safetensors headers without loading tensor payloads.
+- [x] Research pickle-backed checkpoint risks and require explicit opt-in for
+  any future unsafe deserialization. Actual additional-format support remains
+  in `TODO.md`.
+- [x] Add stable, pretty-printed JSON `.modelinfo` output to CLI and GUI flows.
+- [x] Preserve both user-provided and resolved file paths and keep default dump
+  output beside the user-provided path.
+- [x] Give FLUX LoRA header detection precedence over broad Qwen Edit heuristics
+  for standard rank-64 adapters with 19 dual and 38 single blocks plus generic
+  `add_k_proj`/`add_q_proj` markers; add header-only regression coverage without
+  loading model payloads.

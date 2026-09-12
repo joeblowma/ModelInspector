@@ -247,29 +247,29 @@ class WindowLayoutMixin:
         self.table.setColumnWidth(0, 34)
         for i in range(1, len(self._table_columns)):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-        self.table.setColumnWidth(1, 280)  # File
-        self.table.setColumnWidth(2, 70)  # Format
-        self.table.setColumnWidth(3, 90)  # File Size
-        self.table.setColumnWidth(4, 140)  # Architecture
-        self.table.setColumnWidth(5, 100)  # Model Type
-        self.table.setColumnWidth(6, 90)  # Adapter
+        self.table.setColumnWidth(1, 530)  # File
+        self.table.setColumnWidth(2, 100)  # Format
+        self.table.setColumnWidth(3, 80)  # File Size
+        self.table.setColumnWidth(4, 100)  # Architecture
+        self.table.setColumnWidth(5, 90)  # Model Type
+        self.table.setColumnWidth(6, 70)  # Adapter
         self.table.setColumnWidth(7, 100)  # Quantization
-        self.table.setColumnWidth(8, 100)  # Precision
-        self.table.setColumnWidth(9, 115)  # UNet
-        self.table.setColumnWidth(10, 115)  # VAE
-        self.table.setColumnWidth(11, 160)  # Text Encoder
-        self.table.setColumnWidth(12, 120)  # Transformer
+        self.table.setColumnWidth(8, 280)  # Precision
+        self.table.setColumnWidth(9, 280)  # UNet
+        self.table.setColumnWidth(10, 280)  # VAE
+        self.table.setColumnWidth(11, 175)  # Text Encoder
+        self.table.setColumnWidth(12, 280)  # Transformer
         self.table.setColumnWidth(13, 95)  # Parameters
-        self.table.setColumnWidth(14, 70)  # Tensors
+        self.table.setColumnWidth(14, 65)  # Tensors
         self.table.setColumnWidth(15, 85)  # LoRA Rank
-        self.table.setColumnWidth(16, 60)  # MoE
-        self.table.setColumnWidth(17, 80)  # Experts
+        self.table.setColumnWidth(16, 65)  # MoE
+        self.table.setColumnWidth(17, 65)  # Experts
         self.table.setColumnWidth(18, 105)  # Active Experts
-        self.table.setColumnWidth(19, 150)  # Software
+        self.table.setColumnWidth(19, 115)  # Software
         self.table.setColumnWidth(20, 70)  # Images
         self.table.setColumnWidth(21, 100)  # Resolution
         self.table.setColumnWidth(22, 70)  # Epochs
-        self.table.setColumnWidth(23, 80)  # Steps
+        self.table.setColumnWidth(23, 60)  # Steps
         self._apply_table_column_visibility()
         data_tab_layout.addWidget(self.table)
         self.tabs.addTab(data_tab, "Data")

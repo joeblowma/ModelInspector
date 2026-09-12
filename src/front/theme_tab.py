@@ -143,12 +143,6 @@ class ThemeTab(QWidget):
         root.addWidget(preview_group)
 
         actions = QHBoxLayout()
-        self.new_button = QPushButton("New Theme")
-        self.new_button.setObjectName("newThemeButton")
-        self.new_button.setToolTip("Create a new writable theme from the bundled neutral default palette.")
-        self.new_button.clicked.connect(self.new_theme)
-        self.new_btn = self.new_button
-        actions.addWidget(self.new_button)
         self.save_button = QPushButton("Save")
         self.save_button.setObjectName("saveThemeButton")
         self.save_button.setToolTip("Save the current valid palette to its writable user theme file.")
@@ -167,6 +161,12 @@ class ThemeTab(QWidget):
         self.reset_button.clicked.connect(self.reset_to_defaults)
         self.reset_btn = self.reset_button
         actions.addWidget(self.reset_button)
+        self.new_button = QPushButton("New Theme")
+        self.new_button.setObjectName("newThemeButton")
+        self.new_button.setToolTip("Create a new writable theme from the bundled neutral default palette.")
+        self.new_button.clicked.connect(self.new_theme)
+        self.new_btn = self.new_button
+        actions.addWidget(self.new_button)
         actions.addStretch()
         root.addLayout(actions)
 

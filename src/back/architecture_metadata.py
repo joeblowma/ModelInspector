@@ -142,13 +142,31 @@ def _detect_from_metadata(metadata: dict):
     # Chroma
     if "chroma" in all_meta:
         return "Chroma"
+    # Aura Flow
     if "auraflow" in all_meta or "aura_flow" in all_meta or "aura flow" in all_meta:
         return "Aura Flow"
+
+    # Krea 2 before the generic "krea" check (which maps to FLUX.1 Krea).
+    if "krea2" in all_meta or "krea 2" in all_meta:
+        return "Krea 2"
+    # Mage Flow: explicit trainer metadata (ss_base_model_version /
+    # modelspec.architecture "mageflow").
+    if "mageflow" in all_meta:
+        return "Mage Flow"
+    # Ideogram 4: explicit ss_base_model_version ("ideogram4"); its LoRAs
+    # reuse the generic Lumina-style layers.N key layout, so only trust the
+    # dedicated base-model field here.
+    if "ideogram4" in ss or "ideogram 4" in ss:
+        return "Ideogram 4"
 
     # Flux variants (specific before generic)
     if "kontext" in all_meta:
         return "Flux Kontext"
-    if "krea" in all_meta:
+    # Generic "krea" only trusts declared model-version fields (spec /
+    # ss_base_model_version / title / sd_model_name).  Merge-recipe text
+    # (sd_merge_recipe / sd_merge_models) mentioning "Krea" is unrelated
+    # provenance and must not label a Krea 2 file "Flux Krea".
+    if "krea" in meta["declared"]:
         return "Flux Krea"
     # Flux 2 Klein: must have "klein" explicitly
     if "klein" in all_meta:

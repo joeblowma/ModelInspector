@@ -109,9 +109,14 @@ def _build_metadata_blob(metadata: dict):
             if extracted:
                 sshs_meta += " " + " ".join(extracted)
     all_meta += " " + sshs_meta
+    # Declared model-version fields only (no free text such as descriptions
+    # or sd_merge_* recipe blobs).  Used for generic family-name checks where
+    # unrelated merge-recipe mentions must not decide the architecture.
+    declared = f"{spec} {gguf_arch} {ss} {title} {sd_model}"
     return {
         "all_meta": all_meta,
         "sshs_meta": sshs_meta,
+        "declared": declared,
         "spec": spec,
         "gguf_arch": gguf_arch,
         "ss": ss,
@@ -239,6 +244,7 @@ def _detect_zimage_variant(keys, shapes, metadata, details):
     """Distinguish Z-Image from Lumina 2, including Z-Image LoRAs."""
     key_blob = "\n".join(keys)
     has_lumina_marker = "lumina" in key_blob
+    has_cap_embedder = any("cap_embedder" in k for k in keys)
 
     has_wrapped_diffusion = any(k.startswith("model.diffusion_model.") for k in keys)
     has_flat_layers = any(re.match(r"^layers\.\d+\.", k) for k in keys)
@@ -269,7 +275,13 @@ def _detect_zimage_variant(keys, shapes, metadata, details):
 
     if "lumina" in key_blob:
         return "Lumina 2", details
-    return _zimage_label(metadata, key_blob), details
+    if has_cap_embedder:
+        return _zimage_label(metadata, key_blob), details
+    # No Z-Image/Lumina evidence beyond the generic layers.N adapter layout:
+    # other trainers (e.g. Ideogram 4 LoRAs) reuse the same key names, so
+    # leave unconfirmed files Unknown instead of guessing Z-Image.
+    details["zimage_layout"] = "unconfirmed"
+    return "Unknown", details
 
 
 def _detect_wan_variant(keys, shapes, total_params, metadata, details):

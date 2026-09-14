@@ -12,7 +12,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import math
 import re
-from typing import Any, Iterable, Mapping, cast
+from typing import Any, Iterable, Mapping
+
+from .capability_evidence import evidence_backed_capabilities
+from .estimator_metadata import LANGUAGE_DOMAINS, project_kv_cache, runtime_sidecar_lines
 
 
 _MISSING = object()
@@ -195,9 +198,9 @@ def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
     max_context = _first_number(fields, _CONTEXT_KEYS)
     if max_context is None:
         max_context = trained_context
-    hidden_size = _first_number(fields, ("hidden_size", "d_model", "n_embd"))
-    attention_heads = _first_number(fields, ("num_attention_heads", "n_head", "attention_heads"))
-    key_value_heads = _first_number(fields, ("num_key_value_heads", "n_kv_heads")) or attention_heads
+    hidden_size = _first_number(fields, ("hidden_size", "d_model", "n_embd", "embedding_length"))
+    attention_heads = _first_number(fields, ("num_attention_heads", "n_head", "attention_heads", "head_count"))
+    key_value_heads = _first_number(fields, ("num_key_value_heads", "n_kv_heads", "head_count_kv")) or attention_heads
     head_dim = _first_number(fields, ("head_dim", "attention_head_dim"))
     if head_dim is None and hidden_size and attention_heads:
         head_dim = max(1, hidden_size // attention_heads)
@@ -239,18 +242,22 @@ def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
         if vision:
             capabilities.append("Vision")
             evidence["Vision"] = ("architecture/components metadata",)
-    normalized_capabilities = capability_facts.get("capabilities")
-    if isinstance(normalized_capabilities, (list, tuple)):
-        if "thinking" in normalized_capabilities and "Thinking" not in capabilities:
-            capabilities.append("Thinking")
-        if "tools" in normalized_capabilities and "Tool Use" not in capabilities:
-            capabilities.insert(0, "Tool Use")
+    certain_keys = set(
+        evidence_backed_capabilities(capability_facts, require_evidence=False)
+    )
+    if "thinking" in certain_keys and "Thinking" not in capabilities:
+        capabilities.append("Thinking")
+    if "tools" in certain_keys and "Tool Use" not in capabilities:
+        capabilities.insert(0, "Tool Use")
     raw_evidence = capability_facts.get("evidence")
     if isinstance(raw_evidence, Mapping):
         for name, traces in raw_evidence.items():
+            key = str(name)
+            if key in {"thinking", "tools"} and key not in certain_keys:
+                continue
             if isinstance(traces, (list, tuple)):
                 legacy_name = {"thinking": "Thinking", "tools": "Tool Use"}.get(
-                    str(name), str(name)
+                    key, key
                 )
                 evidence[legacy_name] = tuple(str(item) for item in traces)
 
@@ -320,60 +327,6 @@ def _unit(value: int) -> str:
     return f"{amount:.2f} TiB"
 
 
-def _runtime_sidecar_lines(
-    inspection: Mapping[str, Any] | None,
-    sidecars: Iterable[Mapping[str, Any]] | Mapping[str, Any] | None,
-) -> list[str]:
-    """Format associated sidecar role/path pairs without inspecting files."""
-    source = inspection if isinstance(inspection, Mapping) else {}
-    records: list[Mapping[str, Any]]
-    if isinstance(sidecars, Mapping):
-        records = [cast(Mapping[str, Any], sidecars)]
-    elif sidecars is not None:
-        records = []
-        for item in sidecars:
-            if isinstance(item, Mapping):
-                records.append(item)
-            else:
-                role, path = getattr(item, "role", None), getattr(item, "path", None)
-                if role is not None or path is not None:
-                    records.append({"role": role, "path": path})
-    else:
-        records = []
-    if not records:
-        for key in ("sidecars", "sidecar_inspections", "sidecar_records"):
-            value = source.get(key)
-            if isinstance(value, list):
-                records = [item for item in value if isinstance(item, Mapping)]
-                if records:
-                    break
-
-    roles = source.get("sidecar_roles")
-    paths = source.get("sidecar_paths")
-    identities = source.get("sidecar_identities")
-    roles = list(roles) if isinstance(roles, (list, tuple)) else []
-    paths = list(paths) if isinstance(paths, (list, tuple)) else []
-    if not records and isinstance(identities, list):
-        records = [item for item in identities if isinstance(item, Mapping)]
-
-    pairs: list[tuple[str, str]] = []
-    count = max(len(records), len(roles), len(paths))
-    for index in range(count):
-        record: Mapping[str, Any] = records[index] if index < len(records) else {}
-        role = record.get("sidecar_role", record.get("role")) or (
-            roles[index] if index < len(roles) else "unknown"
-        )
-        path = record.get("sidecar_path", record.get("filepath", record.get("path"))) or (
-            paths[index] if index < len(paths) else ""
-        )
-        role_text, path_text = str(role), str(path)
-        if role_text or path_text:
-            pairs.append((role_text or "unknown", path_text or "unknown"))
-    if not pairs:
-        return []
-    return ["Associated sidecars:"] + [f"Sidecar {role}: {path}" for role, path in pairs]
-
-
 def project_resources(
     inspection: Mapping[str, Any] | ModelFacts | None,
     *,
@@ -407,21 +360,36 @@ def project_resources(
     weight_bytes = int(parameter_count * weights_bits / 8)
     if not parameter_count:
         assumptions.append("parameter count unavailable; weight estimate is zero")
-
-    layers = facts.layer_count
-    hidden = _first_number(fields, ("hidden_size", "d_model", "n_embd")) or facts.hidden_size
-    heads = _first_number(fields, ("num_attention_heads", "n_head", "attention_heads")) or facts.attention_heads
-    kv_heads = _first_number(fields, ("num_key_value_heads", "n_kv_heads")) or facts.key_value_heads or heads
-    head_dim = _first_number(fields, ("head_dim", "attention_head_dim")) or facts.head_dim
-    if layers and kv_heads and head_dim:
-        kv_cache_bytes = int(2 * layers * kv_heads * head_dim * context * batch * kv_bits / 8)
-    else:
-        kv_cache_bytes = int(
-            weight_bytes * 0.12 * (context / 4096) * batch * (kv_bits / 16.0)
-        )
+    if (
+        facts.expert_count
+        and facts.active_expert_count
+        and facts.active_expert_count < facts.expert_count
+    ):
         assumptions.append(
-            "layer/head metadata unavailable; conservative 16-bit KV-cache fallback scaled by selected precision"
+            "mixture-of-experts checkpoint: parameter count sums all experts "
+            "and may overestimate active weights"
         )
+
+    heads = _first_number(fields, ("num_attention_heads", "n_head", "attention_heads", "head_count")) or facts.attention_heads
+    kv_heads = _first_number(fields, ("num_key_value_heads", "n_kv_heads", "head_count_kv")) or facts.key_value_heads or heads
+    head_dim = _first_number(fields, ("head_dim", "attention_head_dim")) or facts.head_dim
+    language_present = facts.domain in LANGUAGE_DOMAINS or bool(
+        {"LLM", "Multimodal", "VLM"} & set(facts.domains)
+    )
+    kv_cache_bytes, kv_assumptions = project_kv_cache(
+        layers=facts.layer_count,
+        kv_heads=kv_heads,
+        head_dim=head_dim,
+        key_dim=_first_number(fields, ("key_dim", "key_length")),
+        value_dim=_first_number(fields, ("value_dim", "value_length")),
+        context=int(context),
+        batch=int(batch),
+        kv_bits=float(kv_bits),
+        weight_bytes=weight_bytes,
+        language_present=language_present,
+        text_blob=_text(fields),
+    )
+    assumptions.extend(kv_assumptions)
     activation_bytes = int(weight_bytes * 0.08 * batch)
     overhead_bytes = int(weight_bytes * 0.12)
     vram_bytes = weight_bytes + kv_cache_bytes + activation_bytes + overhead_bytes
@@ -469,7 +437,7 @@ def runtime_configuration(
         lines.insert(0, f"Layers: {facts.layer_count}")
     if projection.assumptions:
         lines.append("Assumptions: " + "; ".join(projection.assumptions))
-    lines.extend(_runtime_sidecar_lines(inspection, sidecars))
+    lines.extend(runtime_sidecar_lines(inspection, sidecars))
     return "\n".join(lines)
 
 

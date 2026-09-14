@@ -13,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from back.companion_discovery import (
+    COMPANION_NAMES,
     MAX_COMPANION_BYTES,
     build_architecture_facts,
     discover_companion_metadata,
@@ -258,3 +259,79 @@ def test_summary_preserves_compact_facts_but_not_raw_metadata() -> None:
     assert "metadata" not in summary
     assert "tensor_info" not in summary
     assert summary["architecture_facts"] is not result["architecture_facts"]
+
+
+def test_gguf_sibling_config_is_a_bounded_fallback(tmp_path: Path) -> None:
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"GGUF")
+    (tmp_path / "config.json").write_text(
+        json.dumps({"model_type": "llama", "num_hidden_layers": 4}),
+        encoding="utf-8",
+    )
+
+    companion = discover_companion_metadata(model)
+
+    assert companion["root"] == str(tmp_path.resolve())
+    assert companion["config"]["model_type"] == "llama"
+    assert [identity["name"] for identity in companion["identities"]] == list(
+        COMPANION_NAMES
+    )
+
+    other = tmp_path / "model.onnx"
+    other.write_bytes(b"not a model")
+    assert discover_companion_metadata(other) == {"identities": [], "warnings": []}
+
+
+def test_chat_template_json_is_used_only_without_a_jinja_file(tmp_path: Path) -> None:
+    model = tmp_path / "model.safetensors"
+    _write_safetensors(model, _language_tensors())
+    (tmp_path / "chat_template.json").write_text(
+        json.dumps({"chat_template": "{% if enable_thinking %}<think>{% endif %}"}),
+        encoding="utf-8",
+    )
+
+    json_only = discover_companion_metadata(model)
+
+    assert [entry["source"] for entry in json_only["chat_templates"]] == [
+        "chat_template.json:chat_template"
+    ]
+
+    (tmp_path / "chat_template.jinja").write_text(
+        "{% if tools %}<|tool|>{% endif %}", encoding="utf-8"
+    )
+    preferred = discover_companion_metadata(model)
+
+    assert [entry["source"] for entry in preferred["chat_templates"]] == [
+        "chat_template.jinja"
+    ]
+
+
+def test_gguf_tensor_count_wins_over_stale_sibling_config() -> None:
+    keys = [
+        "blk.0.attn_q.weight",
+        "blk.31.attn_q.weight",
+        "token_embd.weight",
+    ]
+
+    facts = build_architecture_facts(keys, {"config": {"num_hidden_layers": 99}}, {})
+
+    assert facts == {"layer_count": 32, "block_counts": {"text": 32}}
+
+
+def test_adding_chat_template_json_invalidates_a_cached_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    model = tmp_path / "model.safetensors"
+    _write_safetensors(model, _language_tensors())
+    first = inspect_file(str(model))
+
+    (tmp_path / "chat_template.json").write_text(
+        json.dumps({"chat_template": "{% if enable_thinking %} thinking{% endif %}"}),
+        encoding="utf-8",
+    )
+    refreshed = inspect_file(str(model))
+
+    assert refreshed["companion_identities"] != first["companion_identities"]
+    assert refreshed["capability_facts"]["capabilities"] == ["thinking"]
+    assert refreshed["capability_facts"]["evidence_strength"] == {"thinking": "strong"}

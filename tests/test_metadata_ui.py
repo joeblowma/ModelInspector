@@ -120,6 +120,27 @@ def test_structured_capability_badges_require_nonempty_evidence() -> None:
     dialog.close()
 
 
+def test_weak_evidence_strength_suppresses_a_capability_badge() -> None:
+    _app()
+    from front.metadata_ui import capability_badge_values
+
+    values = capability_badge_values(
+        {
+            "capability_facts": {
+                "domain": "LLM",
+                "capabilities": ["thinking", "tools"],
+                "evidence": {
+                    "thinking": ["chat_template.jinja:thinking marker (weak)"],
+                    "tools": ["config.json:supports_tools"],
+                },
+                "evidence_strength": {"thinking": "weak", "tools": "strong"},
+            }
+        }
+    )
+
+    assert values == ("Tool Use",)
+
+
 def test_compact_facts_render_counts_and_evidence_backed_badges() -> None:
     _app()
     full = {

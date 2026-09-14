@@ -24,9 +24,11 @@ MAX_JSON_STRING_CHARS = 32_768
 COMPANION_NAMES = (
     "config.json",
     "chat_template.jinja",
+    "chat_template.json",
     "tokenizer_config.json",
     "processor_config.json",
 )
+_MODEL_SUFFIXES = (".safetensors", ".safetensors.index.json", ".gguf")
 
 _LAYER_KEYS = (
     "num_hidden_layers",
@@ -44,17 +46,6 @@ _VISION_ROOTS = (
     "image_encoder",
     "clip_vision_model",
 )
-_OTHER_MODALITY_KEYS = {
-    "audio_config",
-    "speech_config",
-    "video_config",
-    "depth_config",
-    "point_cloud_config",
-    "lidar_config",
-    "audio_token_index",
-    "video_token_index",
-    "speech_token_index",
-}
 _VISION_ONLY_NAMES = re.compile(
     r"(?:^|[_ .-])(clip|vit|siglip|vision|image|siglip2|swin)(?:$|[_ .-])",
     re.IGNORECASE,
@@ -95,16 +86,7 @@ _AUDIO_INDEX_PATTERNS = (
 _VIDEO_INDEX_PATTERNS = (
     re.compile(r"(?:^|\.)(?:video|temporal)[^.]*\.(?:layers|blocks)\.(\d+)(?:\.|$)"),
 )
-_THINKING_TEMPLATE_RE = re.compile(
-    r"(?:<\s*/?\s*think\b|reasoning_content|enable[_ -]?thinking|"
-    r"thinking_mode|\b(?:thinking|reasoning)\s*(?:[:=]|\b))",
-    re.IGNORECASE,
-)
-_TOOLS_TEMPLATE_RE = re.compile(
-    r"(?:\btool(?:s|_calls?)?\b|\bfunction[_ -]?calls?\b|"
-    r"<\|[^|]*(?:tool|function)[^|]*\|>)",
-    re.IGNORECASE,
-)
+_GGUF_BLOCK_RE = re.compile(r"(?:^|\.)blk\.(\d+)(?:\.|$)")
 
 
 def _bounded_digest(path: Path, expected_size: int) -> str | None:
@@ -252,16 +234,18 @@ def _template_strings(value: Any, source: str) -> list[tuple[str, str]]:
 
 
 def discover_companion_metadata(filepath: str | Path) -> dict[str, Any]:
-    """Read bounded companions beside a resolved safetensors model.
+    """Read bounded companions beside a resolved model file.
 
-    The returned mapping is safe to attach to an inspection result.  Missing,
-    malformed, inaccessible, and oversized files are represented by warnings
-    rather than exceptions.  ``identities`` includes absent candidates so a
-    newly-created config invalidates an old cached result at the pipeline
-    boundary.
+    Real GGUF/Safetensors exports frequently keep ``config.json`` or chat
+    templates next to the weights.  GGUF header metadata stays authoritative;
+    these siblings are only a same-resolved-parent fallback.  The returned
+    mapping is safe to attach to an inspection result.  Missing, malformed,
+    inaccessible, and oversized files are represented by warnings rather than
+    exceptions.  ``identities`` includes absent candidates so a newly-created
+    config invalidates an old cached result at the pipeline boundary.
     """
     path_text = str(filepath).lower()
-    if not (path_text.endswith(".safetensors") or path_text.endswith(".safetensors.index.json")):
+    if not path_text.endswith(_MODEL_SUFFIXES):
         return {"identities": [], "warnings": []}
     parent = _resolved_parent(filepath)
     if parent is None:
@@ -291,6 +275,22 @@ def discover_companion_metadata(filepath: str | Path) -> dict[str, Any]:
         template = _read_template(template_path, "chat_template.jinja", warnings)
         if template is not None:
             templates.append(("chat_template.jinja", template))
+    else:
+        json_template_path = parent / "chat_template.json"
+        if json_template_path.is_file():
+            parsed_template = _read_json(
+                json_template_path, "chat_template.json", warnings
+            )
+            if parsed_template is not None:
+                result["chat_template"] = parsed_template
+                templates.extend(
+                    _template_strings(
+                        parsed_template.get("chat_template")
+                        if isinstance(parsed_template, Mapping)
+                        else None,
+                        "chat_template.json:chat_template",
+                    )
+                )
     for name, parsed in json_values.items():
         if name in {"tokenizer_config.json", "config.json"}:
             templates.extend(_template_strings(parsed.get("chat_template") if isinstance(parsed, Mapping) else None, f"{name}:chat_template"))
@@ -355,19 +355,32 @@ def build_architecture_facts(
         text_count = _first_positive(config, _LAYER_KEYS)
     tensor_text_count = _indexed_count(keys, _TEXT_INDEX_PATTERNS)
     tensor_vision_count = _indexed_count(keys, _VISION_INDEX_PATTERNS)
-    if text_count is None and tensor_text_count is not None:
+    # An embedded GGUF header's ``blk.N`` tensor layout is the actual count;
+    # a stale sibling config.json must not override it.
+    gguf_header = any(_GGUF_BLOCK_RE.search(str(key).lower()) for key in keys)
+    if gguf_header and tensor_text_count is not None:
+        text_count = tensor_text_count
+    elif text_count is None:
         text_count = tensor_text_count
 
     block_counts: dict[str, int] = {}
     if text_count is not None:
         block_counts["text"] = text_count
-    vision_count = _first_positive(vision_config, _LAYER_KEYS) or tensor_vision_count
+    vision_count = _first_positive(vision_config, _LAYER_KEYS)
+    if gguf_header and tensor_vision_count is not None:
+        vision_count = tensor_vision_count
+    else:
+        vision_count = vision_count or tensor_vision_count
     if vision_count is not None:
         block_counts["vision"] = vision_count
     for label, patterns in (("audio", _AUDIO_INDEX_PATTERNS), ("video", _VIDEO_INDEX_PATTERNS)):
         nested = config.get(f"{label}_config")
-        count = _first_positive(nested, _LAYER_KEYS) if isinstance(nested, Mapping) else None
-        count = count or _indexed_count(keys, patterns)
+        nested_count = _first_positive(nested, _LAYER_KEYS) if isinstance(nested, Mapping) else None
+        tensor_count = _indexed_count(keys, patterns)
+        if gguf_header and tensor_count is not None:
+            count = tensor_count
+        else:
+            count = nested_count or tensor_count
         if count is not None:
             block_counts[label] = count
 

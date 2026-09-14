@@ -122,6 +122,33 @@ def test_projection_records_conservative_fallbacks_when_metadata_is_missing() ->
     assert "Estimated VRAM:" in runtime_configuration(projection)
 
 
+def test_gguf_metadata_supplies_kv_cache_dimensions() -> None:
+    inspection = {
+        "total_params": 7_000_000_000,
+        "metadata": {
+            "general.architecture": "llama",
+            "llama.block_count": 32,
+            "llama.embedding_length": 4096,
+            "llama.attention.head_count": 32,
+            "llama.attention.head_count_kv": 8,
+            "llama.context_length": 4096,
+        },
+    }
+
+    facts = facts_from_inspection(inspection)
+    assert facts.layer_count == 32
+    assert facts.hidden_size == 4096
+    assert facts.attention_heads == 32
+    assert facts.key_value_heads == 8
+    assert facts.head_dim == 128
+    assert facts.max_context == 4096
+
+    projection = project_resources(
+        inspection, context_length=4096, kv_cache_dtype="fp16"
+    )
+    assert projection.kv_cache_bytes == 2 * 32 * 8 * 128 * 4096 * 16 // 8
+
+
 def test_fallback_kv_cache_scales_with_selected_precision() -> None:
     inspection = {"total_params": 1_000_000}
     fp16 = project_resources(inspection, kv_cache_bits=16)
@@ -253,3 +280,118 @@ def test_pipeline_vision_flag_rejects_partial_vision_tower(monkeypatch, tmp_path
 
     assert result["components"]["vision"] is False
     assert result["model_type"] != "MLLM"
+
+
+def test_normalized_weak_capability_is_not_promoted_to_a_definite_fact() -> None:
+    facts = facts_from_inspection(
+        {
+            "architecture": "LlamaForCausalLM",
+            "model_type": "LLM",
+            "capability_facts": {
+                "domain": "LLM",
+                "capabilities": ["thinking", "tools"],
+                "evidence": {
+                    "thinking": ["chat_template.jinja:thinking marker (weak)"],
+                    "tools": ["config.json:supports_tools"],
+                },
+                "evidence_strength": {"thinking": "weak", "tools": "strong"},
+            },
+        }
+    )
+
+    assert facts.capabilities == ("Tool Use",)
+    assert "Thinking" not in facts.evidence
+    assert facts.evidence["Tool Use"] == ("config.json:supports_tools",)
+
+
+def test_llama_gguf_aliases_still_use_the_kv_formula() -> None:
+    inspection = {
+        "total_params": 7_000_000_000,
+        "architecture": "llama",
+        "metadata": {
+            "general.architecture": "llama",
+            "llama.block_count": 32,
+            "llama.embedding_length": 4096,
+            "llama.attention.head_count": 32,
+            "llama.attention.head_count_kv": 8,
+            "llama.context_length": 4096,
+        },
+    }
+
+    facts = facts_from_inspection(inspection)
+    projection = project_resources(inspection, context_length=4096)
+
+    assert facts.domains == ("LLM",)
+    assert projection.kv_cache_bytes == 2 * 32 * 8 * 128 * 4096 * 16 // 8
+    assert not any("non-transformer" in item for item in projection.assumptions)
+
+
+def test_vision_only_model_does_not_get_a_language_kv_projection() -> None:
+    inspection = {
+        "total_params": 100_000_000,
+        "architecture": "CLIPVisionModel",
+        "model_type": "Unknown",
+        "components": {"vision": True},
+        "capability_facts": {"domain": None, "capabilities": [], "evidence": {}},
+    }
+
+    projection = project_resources(inspection, context_length=4096)
+
+    assert any("non-transformer" in item for item in projection.assumptions)
+    assert projection.kv_cache_bytes == int(projection.weight_bytes * 0.12)
+
+
+def test_mla_metadata_keeps_kv_heuristic_and_is_labeled() -> None:
+    inspection = {
+        "total_params": 7_000_000_000,
+        "architecture": "DeepseekV3ForCausalLM",
+        "model_type": "LLM",
+        "arch_details": {
+            "num_hidden_layers": 61,
+            "hidden_size": 7168,
+            "num_attention_heads": 128,
+            "num_key_value_heads": 128,
+        },
+        "metadata": {"kv_lora_rank": 512},
+    }
+
+    projection = project_resources(inspection, context_length=4096)
+
+    assert any("MLA" in item for item in projection.assumptions)
+    assert projection.kv_cache_bytes == int(projection.weight_bytes * 0.12)
+
+
+def test_equal_explicit_key_value_dims_are_honored_asymmetric_are_conservative() -> None:
+    base = {
+        "total_params": 7_000_000_000,
+        "architecture": "LlamaForCausalLM",
+        "model_type": "LLM",
+        "metadata": {
+            "llama.block_count": 32,
+            "llama.embedding_length": 4096,
+            "llama.attention.head_count": 32,
+            "llama.attention.head_count_kv": 8,
+        },
+    }
+    equal = dict(base)
+    equal["metadata"] = dict(base["metadata"], **{
+        "llama.attention.key_length": 128,
+        "llama.attention.value_length": 128,
+    })
+    asymmetric = dict(base)
+    asymmetric["metadata"] = dict(base["metadata"], **{
+        "llama.attention.key_length": 128,
+        "llama.attention.value_length": 256,
+    })
+
+    equal_projection = project_resources(equal, context_length=4096)
+    asymmetric_projection = project_resources(asymmetric, context_length=4096)
+
+    assert equal_projection.kv_cache_bytes == 32 * 8 * (128 + 128) * 4096 * 16 // 8
+    assert any("asymmetric" in item for item in asymmetric_projection.assumptions)
+
+
+def test_moe_total_param_overestimate_is_labeled() -> None:
+    projection = project_resources(_inspection())
+
+    assert any("mixture-of-experts" in item for item in projection.assumptions)

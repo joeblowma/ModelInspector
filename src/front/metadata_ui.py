@@ -15,6 +15,7 @@ from typing import Any
 
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
 
+from back.capability_evidence import evidence_backed_capabilities
 from model_cache import get_cached_model_data
 from model_readers import read_model_header
 
@@ -58,39 +59,25 @@ def domain_tag_description(domain: str) -> str:
     return _DOMAIN_DESCRIPTIONS.get(str(domain).upper(), "Detected language domain")
 
 
-def _has_evidence(value: Any) -> bool:
-    if isinstance(value, (list, tuple, set, frozenset)):
-        return bool(value)
-    return value not in (None, "", False, 0)
-
-
 def capability_badge_values(
     inspection: Mapping[str, Any] | None,
     fallback: Iterable[str] = (),
 ) -> tuple[str, ...]:
     """Return conservative chat-capability labels for the Advanced Viewer.
 
-    A structured ``capability_facts`` value is authoritative.  Its capability
-    must have a non-empty evidence entry before a badge is shown.  The legacy
-    fallback is retained for older in-memory results and accepts only the two
-    explicit chat labels; filename-derived Vision heuristics never become a
+    A structured ``capability_facts`` value is authoritative and is projected
+    through the shared backend helper, so a capability needs non-empty evidence
+    and an explicit ``weak``/``low``/``uncertain`` strength suppresses it.  The
+    legacy fallback is retained for older in-memory results and accepts only the
+    two explicit chat labels; filename-derived Vision heuristics never become a
     chat-capability badge.
     """
     source = inspection if isinstance(inspection, Mapping) else {}
     facts = _capability_facts(source)
     if facts is not None:
-        raw_capabilities = facts.get("capabilities")
-        raw_evidence = facts.get("evidence")
-        raw_values = raw_capabilities if isinstance(raw_capabilities, (list, tuple, set, frozenset)) else ()
-        capabilities = {
-            str(value).strip().lower()
-            for value in raw_values
-        }
-        evidence = raw_evidence if isinstance(raw_evidence, Mapping) else {}
+        certain = set(evidence_backed_capabilities(facts))
         return tuple(
-            label
-            for key, label in _CAPABILITY_LABELS
-            if key in capabilities and _has_evidence(evidence.get(key))
+            label for key, label in _CAPABILITY_LABELS if key in certain
         ) or ("Unknown",)
 
     accepted = {label for _, label in _CAPABILITY_LABELS}

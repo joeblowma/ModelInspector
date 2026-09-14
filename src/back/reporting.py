@@ -12,6 +12,7 @@ from pathlib import Path
 from model_readers import analyze_tensors, model_format_for_path
 
 from .architecture_metadata import detect_architecture
+from .capability_evidence import evidence_backed_capabilities
 from .inspection_pipeline import inspect_file
 from .model_classification import (
     _friendly_encoder_name,
@@ -125,9 +126,11 @@ def print_report(
     domain = capability_facts.get("domain")
     if domain:
         print(f"  Domain:         {domain}")
-    capabilities = capability_facts.get("capabilities")
-    if isinstance(capabilities, list) and capabilities:
-        print(f"  Capabilities:   {', '.join(str(item) for item in capabilities)}")
+    capabilities = evidence_backed_capabilities(
+        capability_facts, require_evidence=False
+    )
+    if capabilities:
+        print(f"  Capabilities:   {', '.join(capabilities)}")
     layer_count = architecture_facts.get("layer_count")
     if layer_count is not None:
         print(f"  Layer count:    {layer_count}")

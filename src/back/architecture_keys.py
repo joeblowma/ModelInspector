@@ -163,6 +163,26 @@ def _detect_from_keys(
     if "individual_token_refiner" in key_blob:
         return "HunyuanVideo", details
 
+    # Conservative multi-key signatures for newer families.  Each requires
+    # several discriminative substrings so broad families (Wan, SD, Qwen,
+    # Z-Image) are not stolen by a single generic token.  Negative cases for
+    # each signature live in tests/test_unknown_reduction.py.
+    if "ada.txt" in key_blob and "ada.vid" in key_blob:
+        # SeedVR2 video restoration: dual txt/vid adaLN streams.
+        return "SeedVR2", details
+
+    if "beta_proj" in key_blob and "attn_res" in key_blob:
+        # SANA Video: beta projection plus attention-residual module.
+        return "SANA Video", details
+
+    if "llm_adapter" in key_blob and "adaln_modulation_cross_attn" in key_blob:
+        # Anima: DiT blocks with an embedded LLM adapter.
+        return "Anima", details
+
+    if "conv_du" in key_blob and "body." in key_blob:
+        # RCAN-family super-resolution: channel-attention conv_du in body.N.
+        return "RCAN (upscaler)", details
+
     if "double_stream_modulation" in key_blob:
         db = _max_block_index(keys, "double_blocks.") + 1
         sb = _max_block_index(keys, "single_blocks.") + 1
@@ -188,6 +208,20 @@ def _detect_from_keys(
         if "audio_adaln_single" in key_blob:
             return "LTX 2", details
         return "LTX", details
+
+    if (
+        "attn.wq" in key_blob
+        and "attn.wo" in key_blob
+        and "mlp.gate" in key_blob
+        and "mlp.down" in key_blob
+        and ("txtfusion" in key_blob or "qknorm" in key_blob)
+    ):
+        # Krea 2: per-projection wq/wo attention with SwiGLU mlp.gate/down
+        # (including .weight_scale quantized exports) PLUS a Krea-unique
+        # token observed on every real header: txtfusion blocks or per-head
+        # qknorm scales.  wq/wo/gate/down alone are generic SwiGLU-transformer
+        # names and must not claim Krea 2.
+        return "Krea 2", details
 
     if (
         "model.single_layers." in key_blob

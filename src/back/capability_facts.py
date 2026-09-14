@@ -26,14 +26,28 @@ _OTHER_MODALITY_KEYS = {
     "video_token_index",
     "speech_token_index",
 }
-_THINKING_TEMPLATE_RE = re.compile(
-    r"(?:<\s*/?\s*think\b|reasoning_content|enable[_ -]?thinking|"
-    r"thinking_mode|\b(?:thinking|reasoning)\s*(?:[:=]|\b))",
+_THINKING_STRONG_RE = re.compile(
+    r"<\s*/?\s*think\b|reasoning_content|enable[_ -]?thinking|thinking_mode|"
+    r"reasoning_effort|<\|[^|]*(?:think|reasoning)[^|]*\|>",
     re.IGNORECASE,
 )
-_TOOLS_TEMPLATE_RE = re.compile(
-    r"(?:\btool(?:s|_calls?)?\b|\bfunction[_ -]?calls?\b|"
-    r"<\|[^|]*(?:tool|function)[^|]*\|>)",
+_THINKING_WEAK_RE = re.compile(
+    r"\b(?:thinking|reasoning|chain[_ -]?of[_ -]?thought)\b", re.IGNORECASE
+)
+_TOOLS_STRONG_RE = re.compile(
+    r"\btool_calls?\b|\bfunction_calls?\b|\btool_call_id\b|parallel_tool_calls|"
+    r"<\|[^|]*(?:tool|function)[^|]*\|>",
+    re.IGNORECASE,
+)
+_TOOLS_WEAK_RE = re.compile(r"\b(?:tools|tool|functions?)\b", re.IGNORECASE)
+_JINJA_COMMENT_RE = re.compile(r"\{#.*?#\}", re.DOTALL)
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_NEGATION_RE = re.compile(
+    r"\b(?:no|not|never|without|disable[sd]?|unsupported)\b", re.IGNORECASE
+)
+_POST_NEGATION_RE = re.compile(
+    r"^\s*(?:are|is|am|was|were|:|=)?\s*"
+    r"(?:not|never|no|disabled|unsupported|off|false)\b",
     re.IGNORECASE,
 )
 _QWEN_VL_ARCHITECTURE_RE = re.compile(
@@ -56,9 +70,77 @@ def _walk_values(value: Any, prefix: str = ""):
             yield from _walk_values(child, f"{prefix}[{index}]")
 
 
-def _truthy_capability(value: Any) -> bool:
-    if value in (None, False, 0, "", "false", "False", "none", "None", []):
+_POSITIVE_SCHEMA_KEYS = frozenset(
+    {
+        "enabled",
+        "enable",
+        "supported",
+        "support",
+        "active",
+        "available",
+        "is_enabled",
+        "is_supported",
+    }
+)
+_POSITIVE_TOKENS = frozenset(
+    {
+        "true",
+        "yes",
+        "on",
+        "enabled",
+        "enable",
+        "supported",
+        "support",
+        "1",
+        "active",
+        "available",
+    }
+)
+
+
+def _positive_scalar(value: Any) -> bool:
+    """Accept only an explicit true/positive scalar, never arbitrary data."""
+    if value is True:
+        return True
+    if value is False or value is None or isinstance(value, bool):
         return False
+    if isinstance(value, (int, float)):
+        return value > 0
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if _NEGATION_RE.search(lowered):
+            return False
+        return lowered in _POSITIVE_TOKENS
+    return False
+
+
+def _truthy_capability(value: Any) -> bool:
+    """Conservative capability flag check.
+
+    A bare arbitrary string, nested mapping, or list of prose is not evidence.
+    Only a positive scalar, a recognized ``enabled``/``supported`` schema leaf,
+    or a container holding such a leaf counts.
+    """
+    if value is None or value is False:
+        return False
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            if str(key).strip().lower() in _POSITIVE_SCHEMA_KEYS:
+                return _positive_scalar(child)
+        return False
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(_positive_scalar(item) for item in value)
+    return _positive_scalar(value)
+
+
+def _present(value: Any) -> bool:
+    """Structural presence for modality configs (not a capability flag)."""
+    if value is None or value is False:
+        return False
+    if isinstance(value, (str, Mapping, list, tuple, set, frozenset)):
+        return len(value) > 0
+    if isinstance(value, (int, float)):
+        return value != 0
     return True
 
 
@@ -71,8 +153,44 @@ def _explicit_capability(values: list[tuple[str, Any]], names: set[str]) -> list
     return evidence
 
 
+def _strip_template_noise(text: str) -> str:
+    """Drop Jinja/HTML comments so prose cannot fake capability evidence."""
+    return _HTML_COMMENT_RE.sub(" ", _JINJA_COMMENT_RE.sub(" ", text))
+
+
+def _negated(text: str, start: int, end: int) -> bool:
+    """True when a weak marker is negated before or immediately after it."""
+    if _NEGATION_RE.search(text[max(0, start - 32) : start]):
+        return True
+    return bool(_POST_NEGATION_RE.match(text[end : end + 24]))
+
+
+def _template_capability_evidence(
+    templates: list[tuple[str, str]],
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Classify structural template markers as strong and bare prose as weak."""
+    strong: dict[str, list[str]] = {"thinking": [], "tools": []}
+    weak: dict[str, list[str]] = {"thinking": [], "tools": []}
+    checks = (
+        ("thinking", "thinking", _THINKING_STRONG_RE, _THINKING_WEAK_RE),
+        ("tools", "tool", _TOOLS_STRONG_RE, _TOOLS_WEAK_RE),
+    )
+    for source, template in templates:
+        cleaned = _strip_template_noise(template)
+        for key, label, strong_re, weak_re in checks:
+            if strong_re.search(cleaned):
+                strong[key].append(f"{source}:{label} marker")
+                continue
+            for match in weak_re.finditer(cleaned):
+                if not _negated(cleaned, match.start(), match.end()):
+                    weak[key].append(f"{source}:{label} marker (weak)")
+                    break
+    return strong, weak
+
+
 def _vision_evidence(
     config: Mapping[str, Any],
+    processor: Mapping[str, Any],
     keys: list[str],
     components: Mapping[str, Any],
     architecture_text: str,
@@ -83,6 +201,11 @@ def _vision_evidence(
         evidence.append("config.json:vision_config")
     if components.get("vision"):
         evidence.append("tensor header:vision component")
+    processor_type = str(
+        processor.get("image_processor_type") or processor.get("image_processor") or ""
+    ).strip().lower()
+    if processor_type and re.search(r"image|vision|clip|vl|vit|siglip", processor_type):
+        evidence.append("processor_config.json:image_processor_type")
     if not standalone_projector and _QWEN_VL_ARCHITECTURE_RE.search(architecture_text):
         evidence.append("architecture/header:known Qwen-VL family")
     return evidence
@@ -104,7 +227,7 @@ def _other_modality_evidence(
         if leaf in _OTHER_MODALITY_KEYS or any(
             token in leaf for token in ("audio", "speech", "video", "depth", "point_cloud")
         ):
-            if _truthy_capability(value):
+            if _present(value):
                 evidence.append(path)
         if leaf in {"modalities", "modality"} and isinstance(value, list):
             other = [
@@ -115,7 +238,7 @@ def _other_modality_evidence(
             if other:
                 evidence.append(f"{path}:{','.join(other[:4])}")
     if re.search(
-        r"(?:audio|speech|video|omni|anytoany|multi.?modal)",
+        r"(?:audio|speech|video|omni|anytoany)",
         architecture_text,
         re.IGNORECASE,
     ):
@@ -177,7 +300,7 @@ def build_capability_facts(
     language_evidence = list(dict.fromkeys(language_evidence))
 
     vision_evidence = _vision_evidence(
-        config, keys, components or {}, architecture_text, standalone_projector
+        config, processor, keys, components or {}, architecture_text, standalone_projector
     )
     other_evidence = _other_modality_evidence(config, processor, architecture_text)
     if language_evidence:
@@ -221,25 +344,33 @@ def build_capability_facts(
             "function_calls",
         },
     )
-    for source, template in templates:
-        if _THINKING_TEMPLATE_RE.search(template):
-            thinking_evidence.append(f"{source}:thinking marker")
-        if _TOOLS_TEMPLATE_RE.search(template):
-            tools_evidence.append(f"{source}:tool marker")
+    strong_templates, weak_templates = _template_capability_evidence(templates)
+    thinking_evidence.extend(strong_templates["thinking"])
+    tools_evidence.extend(strong_templates["tools"])
+    thinking_weak = list(dict.fromkeys(weak_templates["thinking"]))
+    tools_weak = list(dict.fromkeys(weak_templates["tools"]))
     thinking_evidence = list(dict.fromkeys(thinking_evidence))
     tools_evidence = list(dict.fromkeys(tools_evidence))
     capabilities: list[str] = []
     evidence: dict[str, list[str]] = {}
-    if thinking_evidence:
+    evidence_strength: dict[str, str] = {}
+    if thinking_evidence or thinking_weak:
         capabilities.append("thinking")
-        evidence["thinking"] = thinking_evidence
-    if tools_evidence:
+        evidence["thinking"] = thinking_evidence + thinking_weak
+        evidence_strength["thinking"] = "strong" if thinking_evidence else "weak"
+    if tools_evidence or tools_weak:
         capabilities.append("tools")
-        evidence["tools"] = tools_evidence
+        evidence["tools"] = tools_evidence + tools_weak
+        evidence_strength["tools"] = "strong" if tools_evidence else "weak"
     domain_evidence = language_evidence + vision_evidence + other_evidence
     if domain_evidence:
         evidence["domain"] = list(dict.fromkeys(domain_evidence))
-    return {"domain": domain, "capabilities": capabilities, "evidence": evidence}
+    return {
+        "domain": domain,
+        "capabilities": capabilities,
+        "evidence": evidence,
+        "evidence_strength": evidence_strength,
+    }
 
 
 __all__ = ["build_capability_facts"]

@@ -2,7 +2,26 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+# Held for the whole session: PyQt6 crashes (0xC0000409) if the QApplication is
+# garbage-collected. Tests still obtain the same instance via
+# ``QApplication.instance()``.
+_QAPP = None
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _qapp_holder():
+    global _QAPP
+    from PyQt6.QtWidgets import QApplication
+
+    _QAPP = QApplication.instance() or QApplication([])
+    return _QAPP
 
 
 def _summary(path: str, architecture: str, model_type: str) -> dict:

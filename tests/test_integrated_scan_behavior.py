@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import background_tasks
 import gui
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QWidgetAction
+from PyQt6.QtWidgets import QApplication
 
 
 def _app() -> QApplication:
@@ -75,11 +75,9 @@ def _wait_for_analysis(window: gui.MainWindow, timeout: float = 10.0) -> None:
 
 
 def _filter_actions(button) -> list[str]:
-    actions = []
-    for action in button._menu.actions():
-        if isinstance(action, QWidgetAction) and action.defaultWidget() is not None:
-            actions.append(cast(Any, action.defaultWidget()).text())
-    return actions
+    # The menu's item list is a QScrollArea (no .text()); read the per-family
+    # checkbox labels directly instead of the default widgets.
+    return [cb.text() for cb in button._arch_checks.values()]
 
 
 def test_integrated_worker_projection_filters_sorting_and_raw_summary(

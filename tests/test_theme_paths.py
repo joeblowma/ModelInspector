@@ -95,7 +95,11 @@ def test_development_resource_root_still_points_to_repository_assets(monkeypatch
 
 
 def test_pyinstaller_theme_data_entries_target_themes_directory():
+    # ModelInspector.spec is generated output (gitignored) from win_compile.bat.
+    # It is not part of the maintained source, so a clean checkout may lack it.
     spec_path = Path(__file__).resolve().parents[1] / "ModelInspector.spec"
+    if not spec_path.exists():
+        pytest.skip("ModelInspector.spec is generated output; absent in a clean checkout")
     tree = ast.parse(spec_path.read_text(encoding="utf-8"))
     analysis_call = next(
         node.value
@@ -107,8 +111,13 @@ def test_pyinstaller_theme_data_entries_target_themes_directory():
     )
     datas_node = next(keyword.value for keyword in analysis_call.keywords if keyword.arg == "datas")
     data_entries = {tuple(ast.literal_eval(item)) for item in datas_node.elts}
+    # pyi-makespec --add-data "assets/themes:assets/themes" bundles the whole
+    # directory (source "assets/themes"); older specs enumerated individual
+    # files (source "assets/themes/*.jsonc"). Both target the same destination.
     theme_entries = {
-        entry for entry in data_entries if entry[0].startswith("assets/themes/")
+        entry
+        for entry in data_entries
+        if entry[0] == "assets/themes" or entry[0].startswith("assets/themes/")
     }
 
     assert theme_entries

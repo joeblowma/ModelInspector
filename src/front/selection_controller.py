@@ -3,8 +3,9 @@
 from pathlib import Path
 
 from PyQt6.QtCore import QMimeData, Qt
-from PyQt6.QtWidgets import QApplication, QCheckBox, QFileDialog, QMenu
+from PyQt6.QtWidgets import QApplication, QCheckBox, QMenu
 
+from front.file_operation_controller import FileOperationControllerMixin
 from front.model_card import card_stat_items
 
 
@@ -14,7 +15,7 @@ def _clipboard():
     return clipboard
 
 
-class SelectionControllerMixin:
+class SelectionControllerMixin(FileOperationControllerMixin):
     """Selection behavior; state is initialized by ``WindowCoreMixin``."""
 
     _selected_paths: set[str]
@@ -252,30 +253,10 @@ class SelectionControllerMixin:
         urls = [QUrl.fromLocalFile(p) for p in selected]
         mime.setUrls(urls)
         _clipboard().setMimeData(mime)
-
-    def _move_selected_files(self):
-        selected = self._visible_selected_paths()
-        if not selected:
-            return
-        target = QFileDialog.getExistingDirectory(self, "Select destination folder")
-        if not target:
-            return
-        import shutil
-
-        moved = set()
-        for src in selected:
-            try:
-                dst = str(Path(target) / Path(src).name)
-                shutil.move(src, dst)
-                moved.add(src)
-            except Exception:
-                pass
-        if moved:
-            self._queued_files = [p for p in self._queued_files if p not in moved]
-            self._results = [r for r in self._results if r.get("filepath") not in moved]
-            self._selected_paths -= moved
-            self._rebuild_views_from_results()
-            self._update_file_count()
+        self._set_progress_status(
+            f"Copied {len(selected)} file(s) to clipboard as file URLs."
+        )
+        self._clear_progress_status(delay_ms=3500)
 
     def _remove_selected_results(self):
         selected = set(self._visible_selected_paths())
@@ -286,6 +267,9 @@ class SelectionControllerMixin:
         self._selected_paths -= selected
         self._rebuild_views_from_results()
         self._update_file_count()
+        noun = "entry" if len(selected) == 1 else "entries"
+        self._set_progress_status(f"Removed {len(selected)} selected {noun}.")
+        self._clear_progress_status(delay_ms=3500)
 
     def _copy_selected_names(self):
         selected = self._visible_selected_paths()
@@ -293,6 +277,10 @@ class SelectionControllerMixin:
             return
         text = "\n".join(Path(p).name for p in selected)
         _clipboard().setText(text)
+        self._set_progress_status(
+            f"Copied {len(selected)} file name(s) to clipboard."
+        )
+        self._clear_progress_status(delay_ms=3500)
 
     def _copy_selected_paths(self):
         selected = self._visible_selected_paths()
@@ -300,6 +288,10 @@ class SelectionControllerMixin:
             return
         text = "\n".join(selected)
         _clipboard().setText(text)
+        self._set_progress_status(
+            f"Copied {len(selected)} file path(s) to clipboard."
+        )
+        self._clear_progress_status(delay_ms=3500)
 
     def _rebuild_views_from_results(self):
         current_results = list(self._results)

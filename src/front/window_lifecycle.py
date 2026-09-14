@@ -160,7 +160,12 @@ class WindowLifecycleMixin:
         self._lifecycle_closed = True
         running_workers = {
             worker
-            for worker in (self._worker, self._discovery_worker)
+            for worker in (
+                self._worker,
+                self._discovery_worker,
+                self._file_op_worker,
+                getattr(self, "_cache_sync_worker", None),
+            )
             if worker is not None and worker.isRunning()
         }
         if running_workers:

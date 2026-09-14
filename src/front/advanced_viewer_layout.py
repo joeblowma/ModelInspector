@@ -76,12 +76,13 @@ def build_advanced_viewer_ui(dialog: Any) -> None:
     dialog._overview_layout = overview_layout
 
     summary = QGroupBox("At a glance")
-    summary.setToolTip("Facts are extracted from inspected metadata; Unknown means metadata was unavailable.")
+    summary.setToolTip("Facts are extracted from inspected metadata; unavailable facts are hidden.")
     summary_grid = QGridLayout(summary)
     summary_grid.setHorizontalSpacing(16)
     summary_grid.setVerticalSpacing(8)
     dialog._summary_values = {}
     dialog._summary_labels = []
+    dialog._summary_rows = {}
     summary_fields = (
         ("architecture", "Architecture"),
         ("layer_count", "Layer Count"),
@@ -102,12 +103,13 @@ def build_advanced_viewer_ui(dialog: Any) -> None:
         value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         value.setStyleSheet(_value_style(colors))
         label.setToolTip(f"Inspected model {title.lower()}.")
-        value.setToolTip(f"Inspected model {title.lower()}; unavailable values are shown as Unknown.")
+        value.setToolTip(f"Inspected model {title.lower()}; unavailable values are hidden.")
         row, column = divmod(index, 2)
         summary_grid.addWidget(label, row, column * 2)
         summary_grid.addWidget(value, row, column * 2 + 1)
         dialog._summary_labels.append(label)
         dialog._summary_values[key] = value
+        dialog._summary_rows[key] = (label, value)
     summary_grid.setColumnStretch(1, 1)
     summary_grid.setColumnStretch(3, 1)
     overview_layout.addWidget(summary)

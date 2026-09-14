@@ -77,8 +77,8 @@ def test_settings_dialog_is_fixed_and_bottom_controls_are_visible(app, theme_dat
         screen = dialog.screen()
         assert screen is not None
         available = screen.availableGeometry()
-        assert dialog.width() == min(840, max(1, available.width() - 48))
-        assert dialog.height() == min(460, max(1, available.height() - 48))
+        assert dialog.width() == min(900, max(1, available.width() - 48))
+        assert dialog.height() == min(640, max(1, available.height() - 48))
 
         buttons = dialog.findChild(QDialogButtonBox)
         assert buttons is not None
@@ -95,7 +95,7 @@ def test_settings_data_tree_uses_available_dialog_height(app, theme_data_dir):
     dialog = SettingsDialog(
         data_columns=[
             ColumnDefinition(f"column_{index}", f"Column {index}")
-            for index in range(18)
+            for index in range(30)
         ]
     )
     try:

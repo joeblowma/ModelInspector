@@ -95,6 +95,8 @@ class WindowCoreMixin:
         self._results: list[dict] = []
         self._worker: AnalysisWorker | None = None
         self._discovery_worker: DiscoveryWorker | None = None
+        self._file_op_worker = None  # FileOperationWorker | None (front.file_operation_worker)
+        self._file_op_dialog = None  # QProgressDialog | None
         self._scan_generation = 0
         self._discovery_generation = 0
         self._discovery_paths: list[str] = []
@@ -219,6 +221,8 @@ class WindowCoreMixin:
         )
 
     def _run_selected_action(self):
+        if self._file_op_worker is not None and self._file_op_worker.isRunning():
+            return
         _, callback = self._selected_actions().get(
             self._selected_action, self._selected_actions()["copy_files"]
         )
@@ -425,6 +429,9 @@ class WindowCoreMixin:
             self._discovery_worker.cancel()
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
+        file_op = getattr(self, "_file_op_worker", None)
+        if file_op is not None and file_op.isRunning():
+            file_op.cancel()
         self._set_cancel_available(False)
         self._set_progress_status("Cancelling after the current file or directory...")
 

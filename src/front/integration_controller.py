@@ -43,8 +43,13 @@ class IntegrationMixin:
         assert header is not None
         header.sectionMoved.connect(lambda *_args: self._capture_data_layout())
         header.sectionResized.connect(lambda *_args: self._capture_data_layout())
-        self._refresh_cache_controls()
-        QTimer.singleShot(0, self._schedule_cache_sync)
+        # One cache report feeds both the initial controls and the deferred
+        # background sync.  Nothing can change the cache between construction
+        # and the zero-delay timer, so a second enumeration/stat pass would be
+        # pure startup cost on large caches.
+        startup_report = self._cache_report()
+        self._refresh_cache_controls(startup_report)
+        QTimer.singleShot(0, lambda: self._schedule_cache_sync(startup_report))
 
     def _open_settings(self) -> None:
         from front.settings_dialog import SettingsDialog
@@ -287,8 +292,9 @@ class IntegrationMixin:
         entries = [identities.get(path, {"filepath": path}) for path in paths]
         return verify_cache_entries(entries)
 
-    def _refresh_cache_controls(self) -> None:
-        report = self._cache_report()
+    def _refresh_cache_controls(self, report=None) -> None:
+        if report is None:
+            report = self._cache_report()
         availability = report.availability
         label = getattr(self, "cache_counts_label", None)
         if label is not None:
@@ -345,9 +351,10 @@ class IntegrationMixin:
         self._refresh_cache_controls()
         self._refresh_tracked_settings_dialog()
 
-    def _schedule_cache_sync(self) -> None:
+    def _schedule_cache_sync(self, report=None) -> None:
         """Refresh changed, available headers in a worker without blocking Qt."""
-        report = self._cache_report()
+        if report is None:
+            report = self._cache_report()
         paths = [entry.path for entry in report.entries if entry.action == "refresh" and entry.is_active]
         if not paths or getattr(self, "_cache_sync_worker", None) is not None:
             return

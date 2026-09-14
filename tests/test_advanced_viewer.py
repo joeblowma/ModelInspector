@@ -63,14 +63,46 @@ def test_viewer_populates_facts_and_recalculates_projection():
     dialog.close()
 
 
-def test_missing_values_are_visible_and_filename_is_not_inference_source():
+def test_unknown_summary_rows_are_hidden_and_filename_is_not_inference_source():
     _app()
     dialog = AdvancedViewerDialog({"filepath": "vision_model.safetensors"})
-    assert dialog._summary_values["architecture"].text() == "Unknown"
-    assert dialog._summary_values["layer_count"].text() == "Unknown"
+    for key, value_label in dialog._summary_values.items():
+        assert value_label.text() == "Unknown"
+        label, _ = dialog._summary_rows[key]
+        assert label.isHidden() and value_label.isHidden()
     assert [badge.text() for badge in dialog._capability_badges] == ["Unknown"]
     assert [badge.text() for badge in dialog._domain_badges] == ["Unknown"]
     assert dialog._projection.assumptions
+    dialog.close()
+
+
+def test_known_zero_false_rows_stay_visible_and_unknown_rows_return():
+    _app()
+    dialog = AdvancedViewerDialog(
+        {
+            "architecture": "LlamaForCausalLM",
+            "num_hidden_layers": 0,
+            "rope_theta": 0,
+            "num_mtp_layers": False,
+        }
+    )
+    # Known values — including explicit 0/False — must stay visible.
+    assert dialog._summary_values["architecture"].text() == "LlamaForCausalLM"
+    assert dialog._summary_values["layer_count"].text() == "0"
+    assert dialog._summary_values["rope"].text() == "rope_theta=0"
+    assert dialog._summary_values["mtp"].text() == "num_mtp_layers=False"
+    for key in ("architecture", "layer_count", "rope", "mtp"):
+        label, value = dialog._summary_rows[key]
+        assert not label.isHidden() and not value.isHidden()
+    # Still-unknown rows stay hidden.
+    assert dialog._summary_rows["experts_total"][1].isHidden()
+
+    # A later inspection with known facts re-shows the hidden rows.
+    dialog.set_inspection({"expert_count": 8, "expert_used_count": 2})
+    for key in ("experts_total", "experts_active"):
+        label, value = dialog._summary_rows[key]
+        assert not label.isHidden() and not value.isHidden()
+    assert dialog._summary_values["experts_total"].text() == "8"
     dialog.close()
 
 

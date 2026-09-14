@@ -6,8 +6,8 @@ import os
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtWidgets import QApplication, QSplashScreen, QMessageBox, QWidget
 
 from app_paths import asset_path
 from back.theme_loader import BUILTIN_THEME, Theme, ThemeLoadResult, load_theme
@@ -250,3 +250,31 @@ def close_startup_splash() -> None:
     """Dismiss PyInstaller's optional splash screen after the window is shown."""
     if pyi_splash is not None:
         pyi_splash.close()
+
+
+def show_startup_splash() -> QSplashScreen | None:
+    """Show the bundled splash and paint it before heavy construction starts.
+
+    ``MainWindow`` construction blocks the event loop (cache enumeration), so
+    the splash is shown and repainted synchronously here.  Returns the splash
+    for :func:`finish_startup_splash`, or ``None`` when the asset is missing.
+    """
+    splash_file = asset_path("splash.png")
+    if not splash_file.is_file():
+        return None
+    splash = QSplashScreen(QPixmap(str(splash_file)))
+    splash.show()
+    # repaint() processes events internally, so the splash is on screen even
+    # though the application event loop has not started yet.
+    splash.repaint()
+    return splash
+
+
+def finish_startup_splash(splash: QSplashScreen | None, window: QWidget) -> None:
+    """Close the splash only once ``window`` receives its first paint event.
+
+    ``QSplashScreen.finish`` watches the widget and closes on its first paint,
+    so the splash never disappears before the main window is actually drawn.
+    """
+    if splash is not None:
+        splash.finish(window)

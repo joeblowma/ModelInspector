@@ -238,7 +238,13 @@ class AdvancedViewerDialog(QDialog):
             "mtp": self._mapping_text(facts.mtp),
         }
         for key, value in values.items():
-            self._summary_values[key].setText(str(value) if value not in (None, "") else _UNKNOWN)
+            text = str(value) if value not in (None, "") else _UNKNOWN
+            # Equality, not identity: str() may build a fresh "Unknown".
+            unknown = text == _UNKNOWN
+            label, value_label = self._summary_rows[key]
+            label.setVisible(not unknown)
+            value_label.setVisible(not unknown)
+            value_label.setText(text)
 
     def _set_initial_quantization(self) -> None:
         raw = self._inspection.get("quantization")

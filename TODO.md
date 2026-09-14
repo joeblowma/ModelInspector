@@ -16,20 +16,69 @@ This is a prioritized plan, not a list of release gates. Completed work is in
 4. Add GitHub Actions that produce a Windows executable package and wheels,
    including packaging validation.
 
-## Deferred product work
+## Completed sidequests
 
 ### Inspection and metadata enrichment
 
-- Extend architecture coverage to reduce Unknown results.
+Implemented and integrated; validation is complete:
+
+- Architecture coverage: SeedVR2, SANA Video, RCAN, Anima, and Krea 2 key
+  signatures; explicit Mage Flow / Ideogram 4 trainer metadata; narrower Krea
+  merge-recipe false positives; conservative ZImage handling.
+- GGUF same-parent bounded companion fallback for `config.json`,
+  `tokenizer_config.json`, and `processor_config.json`, plus
+  `chat_template.jinja` and `chat_template.json` only — ambiguous arbitrarily
+  named templates are ignored.
+- Think/Tool structural evidence split into strong vs weak; the shared
+  `capability_evidence` projection filters weak evidence out of the GUI,
+  reports, and the estimator.
+- Conservative processor-backed VLM and explicit audio/omni MMLM detection
+  with no mmproj filename guessing; GGUF reliable alias KV with labelled
+  vision/MLA/asymmetric heuristics and the `estimator_metadata` helper.
+
+Validation summary — Initial full run: 311 passed, 4 skipped, 4 failed. All
+four failures were corrected; affected-module rerun: 34 passed. Full suite was
+not rerun after those fixes:
+
+- Original full suite: 319 tests — 311 passed, 4 skipped, 4 failed. All four
+  failures were stale assertions, since fixed: the current 900x640
+  settings-dialog default, 30-row overflow fixtures, and the generated spec
+  accepting the bundled directory; plus one new cache-sync-close regression
+  test.
+- Final affected-module rerun: 34 passed. Earlier changed GUI/file-operation
+  group: 45 passed.
+- Header-only real CLI smoke passed for SeedVR2 and EXAONE files, both
+  human-readable and `--json` output.
+- Headless actual `py src/gui.py` startup smoke passed (no human visual
+  inspection).
+- Lifecycle module `pyright` reports 0 errors.
+- The 4 skips are symlink fixtures unavailable on the temp drive.
+
+### GUI startup, feedback, and file operations
+
+- Native splash painted from the existing asset before `MainWindow`
+  construction; startup cache report computed once (not fully async); unknown
+  summary caption/value hidden while retaining zero/False; all six selected
+  actions give feedback; threaded modal move/dump with no-clobber failures
+  retained and cooperative cancel between files. Copy Files remains clipboard
+  file URLs — no actual disk copy.
+
+## Deferred product work
+
+### Inspection and metadata enrichment — evidence-gated followups
+
+- Ambiguous Mage Flow vs Qwen files with identical headers remain structural
+  Qwen; explicit trainer metadata is the only disambiguator, and ambiguous
+  arbitrarily named Jinja templates stay excluded.
+- No real ZImage LoRA was available, so ZImage coverage is synthetic only.
 - Review conservative LLM, VLM, and MMLM card-family presentation labels as
   architecture coverage improves.
-- Deepen chat-template parsing for Think/Tool facts when safe metadata provides
-  a template, and distinguish evidence-backed badges from weaker heuristics.
-- Expand safe companion metadata fallbacks (`config.json`,
-  `tokenizer_config.json`, `processor_config.json`, and Jinja details) without
-  claiming validation against the nonexistent `./test` symlink fixtures.
-- Consider more complete runtime-configuration arguments and comparable memory
-  projections only when their metadata inputs are reliable.
+- Wider runtime-configuration arguments and comparable memory projections
+  stay postponed until their metadata inputs are reliable; broader runtime
+  coverage remains unreliable.
+- Move/dump progress has no byte-level progress; per-file progress is
+  indeterminate; cancellation between files; the native splash is not a fully
+  asynchronous cache load.
 
 ### Library linking and paths — non-release
 

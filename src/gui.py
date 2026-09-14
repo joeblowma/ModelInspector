@@ -10,7 +10,13 @@ cache test seams, and the standalone Qt entry point.
 import sys
 
 from app_paths import asset_path as _asset
-from front.application import DARK_STYLE, close_startup_splash, configure_application
+from front.application import (
+    DARK_STYLE,
+    close_startup_splash,
+    configure_application,
+    finish_startup_splash,
+    show_startup_splash,
+)
 from PyQt6.QtWidgets import QApplication, QMainWindow
 
 from front.analysis_controller import AnalysisMixin
@@ -83,9 +89,16 @@ def main() -> int:
     """Launch the desktop application."""
     application = QApplication(sys.argv)
     configure_application(application)
-    window = MainWindow()
+    splash = show_startup_splash()
+    try:
+        window = MainWindow()
+    except BaseException:
+        if splash is not None:
+            splash.close()
+        raise
     window.show()
     close_startup_splash()
+    finish_startup_splash(splash, window)
     return application.exec()
 
 

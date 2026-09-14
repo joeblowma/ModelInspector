@@ -26,6 +26,13 @@ class AnalysisControllerMixin:
             return
         if self._worker and self._worker.isRunning():
             return
+        # File-operation guard: never scan files mid-move/dump.
+        if self._file_operation_running():
+            self._set_progress_status(
+                "Wait for the current file operation to finish before scanning."
+            )
+            self._clear_progress_status(delay_ms=4000)
+            return
         includes_checkpoint = any(
             Path(path).suffix.lower() in {".ckpt", ".pt", ".pth"} for path in paths
         )

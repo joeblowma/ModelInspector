@@ -1,9 +1,8 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false, reportOperatorIssue=false
 # pylint: disable=no-member
 from pathlib import Path; from time import perf_counter
-from back.reporting import write_modelinfo_dump, write_modelinfo_json
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QApplication, QCheckBox, QLabel
+from PyQt6.QtWidgets import QCheckBox, QLabel
 from front.filter_widgets import SortableTableWidgetItem; from front.model_card import ModelCard
 from back.theme_loader import get_global_theme_colors
 def _combo_data_str(value): return str(value) if value else None
@@ -27,61 +26,6 @@ class ViewControllerMixin:
             if current:
                 return [current]
         return []
-    def _dump_all(self):
-        """Write .modelinfo files for selected models or the current Raw model."""
-        targets = self._dump_modelinfo_targets()
-        if not targets:
-            self._set_progress_status(
-                "Select one or more models to dump, or open a model in Raw."
-            )
-            self._clear_progress_status(delay_ms=3500)
-            return
-        count = 0
-        output_paths = []
-        total = len(targets)
-        self.progress.setVisible(True)
-        self.progress.setRange(0, total)
-        self.progress.setValue(0)
-        self._set_progress_status(f"Writing .modelinfo: 0/{total}")
-        QApplication.processEvents()
-        for filepath in targets:
-            if not filepath:
-                continue
-            data = self._result_for_filepath(filepath) or {}
-            try:
-                self._set_progress_status(
-                    f"Writing .modelinfo: {count}/{total} | Current file: {Path(filepath).name}"
-                )
-                QApplication.processEvents()
-                outputs = [write_modelinfo_dump(filepath)]
-                if self._dump_json_modelinfo:
-                    outputs.append(
-                        write_modelinfo_json(
-                            filepath,
-                            options={
-                                "allow_filename_alias_detection": self._allow_filename_alias_detection
-                            },
-                        )
-                    )
-                if data:
-                    data["modelinfo_outputs"] = outputs
-                output_paths.extend(outputs)
-                count += 1
-                self.progress.setValue(count)
-            except Exception:
-                pass
-        if self._selected_action == "dump_modelinfo":
-            self.selected_action_btn.setText(f"Dumped {count} file(s)")
-        self._set_progress_status(f"Wrote .modelinfo for {count}/{total} file(s)")
-        self._clear_progress_status(delay_ms=4000)
-        if output_paths:
-            preview = "\n".join(output_paths[:20])
-            if len(output_paths) > 20:
-                preview += f"\n...and {len(output_paths) - 20} more"
-            self.selected_action_btn.setToolTip(
-                f"Last .modelinfo output paths:\n{preview}"
-            )
-        QTimer.singleShot(3000, self._refresh_selected_action_button)
     def _clear_cards(self):
         if not self._results:
             # Real clear transitions drain results before clearing cards;

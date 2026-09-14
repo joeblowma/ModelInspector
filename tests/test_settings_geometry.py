@@ -25,7 +25,7 @@ def _large_column_set() -> list[ColumnDefinition]:
             f"Long column label {index} for geometry regression coverage",
             width=280,
         )
-        for index in range(18)
+        for index in range(30)
     ]
 
 

@@ -220,6 +220,48 @@ def test_close_is_deferred_until_slow_thread_finishes(tmp_path, monkeypatch):
             window.close()
 
 
+def test_close_is_deferred_until_cache_sync_finishes(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+
+    class SlowCacheSync(QThread):
+        def cancel(self):
+            self.requestInterruption()
+
+        def run(self):
+            self.msleep(400)
+
+    worker = SlowCacheSync()
+    window._cache_sync_worker = worker
+    window.show()
+    app.processEvents()
+    worker.start()
+    try:
+        started = time.monotonic()
+        assert window.close() is False
+        assert time.monotonic() - started < 0.15
+        assert worker.isRunning()
+        assert window.isVisible()
+        assert window._close_pending
+        assert QApplication.instance() is app
+        assert worker.parent() is None
+        assert window.close() is False
+        assert window._close_waiting_workers == {worker}
+        assert worker.wait(2000)
+        deadline = time.monotonic() + 2
+        while window.isVisible() and time.monotonic() < deadline:
+            app.processEvents()
+        assert not window.isVisible()
+        assert not window._close_pending
+    finally:
+        if worker.isRunning():
+            worker.wait(2000)
+        if window.isVisible():
+            window.close()
+
+
 def test_raw_full_dump_prefixes_cached_and_generated_output(tmp_path, monkeypatch):
     from front import window_lifecycle
 

@@ -24,6 +24,7 @@ def test_default_app_data_dir_is_home_local_model_inspector(monkeypatch, tmp_pat
 
 def test_existing_legacy_data_dir_stays_in_place(monkeypatch, tmp_path):
     monkeypatch.delenv("SMI_DATA_DIR", raising=False)
+    monkeypatch.delenv("SMI_CACHE_DIR", raising=False)
     monkeypatch.setattr(app_paths, "app_base_dir", lambda: tmp_path)
     home = _patch_home(monkeypatch, tmp_path)
     legacy = tmp_path / ".model-inspector"
@@ -146,6 +147,7 @@ def test_default_output_dir_override_and_independence_from_legacy_data(
     assert app_paths.default_output_dir() == tmp_path / "out"
     # A legacy in-place data dir must not pull save dialogs back to it.
     monkeypatch.delenv("SMI_OUTPUT_DIR", raising=False)
+    monkeypatch.delenv("SMI_DATA_DIR", raising=False)
     monkeypatch.setattr(app_paths, "app_base_dir", lambda: tmp_path)
     (tmp_path / ".model-inspector").mkdir()
     home = _patch_home(monkeypatch, tmp_path)

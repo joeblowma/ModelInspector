@@ -44,6 +44,15 @@ def _inspection() -> dict:
             "num_mtp_layers": 2,
         },
         "metadata": {"tool_use": True, "thinking": True},
+        "capability_facts": {
+            "domain": "LLM",
+            "capabilities": ["thinking", "tools"],
+            "evidence": {
+                "thinking": ["config.json:enable_thinking"],
+                "tools": ["config.json:supports_tools"],
+            },
+            "evidence_strength": {"thinking": "strong", "tools": "strong"},
+        },
     }
 
 
@@ -98,6 +107,21 @@ def test_filename_alone_does_not_claim_a_domain_or_capability() -> None:
     assert facts.capabilities == ()
 
 
+def test_raw_metadata_prose_does_not_fabricate_capabilities_without_facts() -> None:
+    facts = facts_from_inspection(
+        {
+            "architecture": "LlamaForCausalLM",
+            "model_type": "LLM",
+            "metadata": {
+                "notes": "supports tools and chain_of_thought reasoning",
+                "tools": "documented but not a capability flag",
+            },
+        }
+    )
+    assert facts.capabilities == ()
+    assert facts.evidence == {}
+
+
 def test_projection_uses_explicit_dimensions_and_quantization() -> None:
     projection = project_resources(
         _inspection(),
@@ -106,12 +130,40 @@ def test_projection_uses_explicit_dimensions_and_quantization() -> None:
         quantization="Q4_K_M",
         kv_cache_dtype="bf16",
     )
-    assert projection.weight_bits == 4
+    assert projection.weight_bits == 4.5
     assert projection.kv_cache_bits == 16
     assert projection.context_length == 4096
     assert projection.batch_size == 2
     assert projection.kv_cache_bytes > 0
     assert projection.vram_bytes > projection.weight_bytes
+
+
+def test_projection_uses_complete_inspected_tensor_bytes_before_quant_fallback() -> None:
+    inspection = {
+        "total_params": 200,
+        "model_type": "MLM",
+        "quantization": "Q4_K_M",
+        "tensor_info": {
+            "one": {"n_bytes": 100},
+            "two": {"n_bytes": 20},
+        },
+    }
+
+    projection = project_resources(inspection)
+
+    assert projection.weight_bytes == 120
+    assert projection.weight_bits == 4.8
+    assert any("inspected tensor storage" in item for item in projection.assumptions)
+    assert any("no full dequantization" in item for item in projection.assumptions)
+
+
+def test_mixed_gguf_fallback_is_labeled_when_tensor_bytes_are_incomplete() -> None:
+    projection = project_resources(
+        {"total_params": 200, "quantization": "Q4_K_M", "tensor_info": {"one": {}}}
+    )
+
+    assert projection.weight_bytes == 200 * 4.5 // 8
+    assert any("mixed GGUF" in item for item in projection.assumptions)
 
 
 def test_projection_records_conservative_fallbacks_when_metadata_is_missing() -> None:
@@ -219,7 +271,7 @@ def test_theme_can_load_by_explicit_path(tmp_path: Path) -> None:
     assert loaded.theme.id == "github"
 
 
-def test_vision_tower_keys_classify_as_mllm_without_mislabeling_text_models():
+def test_vision_tower_keys_classify_as_vlm_without_mislabeling_text_models():
     from back.model_classification import classify_model_type, has_vision_component
 
     components = {
@@ -238,7 +290,7 @@ def test_vision_tower_keys_classify_as_mllm_without_mislabeling_text_models():
     )
 
     assert components["vision"] is True
-    assert classify_model_type(components, "Qwen2VLForConditionalGeneration") == "MLLM"
+    assert classify_model_type(components, "Qwen2VLForConditionalGeneration") == "VLM"
     assert has_vision_component(["model.layers.0.self_attn.q_proj.weight"]) is False
 
 
@@ -279,7 +331,7 @@ def test_pipeline_vision_flag_rejects_partial_vision_tower(monkeypatch, tmp_path
     result = inspection_pipeline.inspect_file(str(tmp_path / "partial.safetensors"))
 
     assert result["components"]["vision"] is False
-    assert result["model_type"] != "MLLM"
+    assert result["model_type"] != "VLM"
 
 
 def test_normalized_weak_capability_is_not_promoted_to_a_definite_fact() -> None:
@@ -324,6 +376,21 @@ def test_llama_gguf_aliases_still_use_the_kv_formula() -> None:
     assert facts.domains == ("LLM",)
     assert projection.kv_cache_bytes == 2 * 32 * 8 * 128 * 4096 * 16 // 8
     assert not any("non-transformer" in item for item in projection.assumptions)
+
+
+def test_modality_language_domain_aliases_still_get_the_kv_formula() -> None:
+    base = {
+        "total_params": 1_000_000,
+        "arch_details": {
+            "num_hidden_layers": 2,
+            "num_key_value_heads": 2,
+            "head_dim": 16,
+        },
+    }
+    for domain in ("LLM", "VLM", "MLM", "MMLM", "MLLLM", "MLLM"):
+        inspection = dict(base, capability_facts={"domain": domain})
+        projection = project_resources(inspection, context_length=32)
+        assert projection.kv_cache_bytes == 2 * 2 * 2 * 16 * 32 * 16 // 8
 
 
 def test_vision_only_model_does_not_get_a_language_kv_projection() -> None:

@@ -41,7 +41,7 @@ def test_flat_layout_lists_every_top_level_module() -> None:
 
 def test_front_and_back_packages_are_declared() -> None:
     packages = set(_project()["tool"]["setuptools"]["packages"])
-    assert {"front", "back"} <= packages
+    assert {"front", "back", "assets", "assets.themes"} <= packages
     assert (ROOT / "src" / "front").is_dir()
     assert (ROOT / "src" / "back").is_dir()
 
@@ -60,5 +60,11 @@ def test_assets_are_mapped_and_included() -> None:
 def test_project_metadata_and_runtime_dependencies() -> None:
     project = _project()["project"]
     assert project["name"] == "modelinspector"
-    assert project["requires-python"] == ">=3.11"
+    assert project["requires-python"] == ">=3.12"
+    classifiers = set(project["classifiers"])
+    assert {
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
+    } <= classifiers
     assert {"PyQt6", "gguf", "numpy"} <= set(project["dependencies"])

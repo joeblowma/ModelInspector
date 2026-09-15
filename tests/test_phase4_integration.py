@@ -11,7 +11,7 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtWidgets import QApplication
 
 from back.settings_store import open_settings
@@ -37,7 +37,7 @@ def test_jsonc_store_migrates_ini_and_recovers_malformed_content(tmp_path: Path)
     assert "Malformed" in recovered.diagnostic
 
 
-def test_settings_cache_load_reconciles_filters_and_preserves_active_selection(
+def test_settings_cache_load_replaces_prior_results_with_cached_summaries(
     monkeypatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
@@ -94,25 +94,86 @@ def test_settings_cache_load_reconciles_filters_and_preserves_active_selection(
         window._load_cache_all()
 
         assert set(window.arch_filter_btn._arch_checks) == {
-            "Architecture A", "Architecture B", "Architecture C"
+            "Architecture A", "Architecture C"
         }
         assert set(window.tag_filter_btn._arch_checks) == {
-            "Checkpoint", "LoRA", "Text Encoder"
+            "Checkpoint", "Text Encoder"
         }
-        assert set(window.format_filter_btn._arch_checks) == {
-            ".safetensors", ".gguf", ".ckpt"
-        }
+        assert set(window.format_filter_btn._arch_checks) == {".safetensors", ".ckpt"}
         assert window.arch_filter_btn._arch_checks["Architecture A"].isChecked()
-        assert not window.arch_filter_btn._arch_checks["Architecture C"].isChecked()
+        assert window.arch_filter_btn._arch_checks["Architecture C"].isChecked()
         assert window.tag_filter_btn._arch_checks["Checkpoint"].isChecked()
-        assert not window.tag_filter_btn._arch_checks["Text Encoder"].isChecked()
+        assert window.tag_filter_btn._arch_checks["Text Encoder"].isChecked()
         assert window.format_filter_btn._arch_checks[".safetensors"].isChecked()
-        assert not window.format_filter_btn._arch_checks[".ckpt"].isChecked()
-        assert window.table.isRowHidden(window._row_for_filepath(cached))
+        assert window.format_filter_btn._arch_checks[".ckpt"].isChecked()
+        assert not window.table.isRowHidden(window._row_for_filepath(cached))
         assert window.raw_combo.findData(existing_a) >= 0
-        assert window.raw_combo.findData(cached) == -1
-        assert window.selected_count_label.text() == window.table_selected_count_label.text() == "1 selected"
-        assert window.progress_label.text() == "Loaded 1 cached summaries"
+        assert window.raw_combo.findData(cached) >= 0
+        assert window.selected_count_label.text() == window.table_selected_count_label.text() == "0 selected"
+        assert window.progress_label.text() == "Loaded 2 cached summaries"
+    finally:
+        window.close()
+
+
+def test_table_sorting_is_atomic_for_rows_and_full_path_toggles(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    from gui import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    first = _summary("Z:/models/a.safetensors", "First", "First Type")
+    second = _summary("A:/models/z.safetensors", "Second", "Second Type")
+    try:
+        window.table.setSortingEnabled(True)
+        window.table.sortItems(1)
+        for data in (first, second):
+            window._results.append(data)
+            window._add_table_row(data)
+
+        def paths() -> list[str]:
+            return [
+                window.table.item(row, 1).data(Qt.ItemDataRole.UserRole)
+                for row in range(window.table.rowCount())
+            ]
+
+        assert paths() == [first["filepath"], second["filepath"]]
+        assert [window.table.item(row, 5).text() for row in range(2)] == ["First Type", "Second Type"]
+        window._on_show_full_path_changed(Qt.CheckState.Checked.value)
+        assert paths() == [second["filepath"], first["filepath"]]
+        window._on_show_full_path_changed(Qt.CheckState.Unchecked.value)
+        assert paths() == [first["filepath"], second["filepath"]]
+        window._on_show_full_path_changed(Qt.CheckState.Checked.value)
+        window._rebuild_views_from_results()
+        assert paths() == [second["filepath"], first["filepath"]]
+        assert all(window._row_for_filepath(path) is not None for path in paths())
+    finally:
+        window.close()
+        app.processEvents()
+
+
+def test_capability_filter_tags_require_strong_evidence(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    from gui import MainWindow
+
+    window = MainWindow()
+    strong = _summary("R:/strong.safetensors", "Strong", "LLM")
+    strong["capability_facts"] = {
+        "capabilities": ["tools"],
+        "evidence": {"tools": ["config.json:supports_tools"]},
+        "evidence_strength": {"tools": "strong"},
+    }
+    weak = _summary("R:/weak.safetensors", "Weak", "LLM")
+    weak["capability_facts"] = {
+        "capabilities": ["thinking"],
+        "evidence": {"thinking": ["template:thinking marker (weak)"]},
+        "evidence_strength": {"thinking": "weak"},
+    }
+    try:
+        assert window._filter_tags_for_data(strong)[-1] == "Tool Use"
+        assert "Thinking" not in window._filter_tags_for_data(weak)
+        window._active_tag_filter = {"Tool Use"}
+        assert window._is_data_visible(strong)
+        assert not window._is_data_visible(weak)
     finally:
         window.close()
 

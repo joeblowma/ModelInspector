@@ -98,10 +98,23 @@ def app_data_dir() -> Path:
 
 
 def cache_dir() -> Path:
+    """Root for all application caches (inspection, sidecars, dumps, scans)."""
     override = os.environ.get("SMI_CACHE_DIR")
     if override:
         return Path(override)
     return app_data_dir() / "cache"
+
+
+def model_cache_dir() -> Path:
+    """Directory for the primary inspection cache (index/entries/data).
+
+    ``SMI_MODEL_CACHE_DIR`` relocates only the model cache, leaving ancillary
+    caches (sidecars, raw dumps, directory scans) at :func:`cache_dir`.
+    """
+    override = os.environ.get("SMI_MODEL_CACHE_DIR")
+    if override:
+        return Path(override)
+    return cache_dir()
 
 
 def settings_path() -> Path:

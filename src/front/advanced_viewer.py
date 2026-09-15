@@ -159,6 +159,7 @@ class AdvancedViewerDialog(QDialog):
         self._inspection: dict[str, Any] = {}
         self._facts = ModelFacts()
         self._projection: ResourceProjection | None = None
+        self._manual_weight_bits = False
         # Keep this keyword accepted for compatibility with older callers.
         # Card rendering now has a fixed all-statistics advanced policy.
         del card_fields
@@ -247,38 +248,36 @@ class AdvancedViewerDialog(QDialog):
             value_label.setText(text)
 
     def _set_initial_quantization(self) -> None:
-        raw = self._inspection.get("quantization")
-        text = str(raw or "").lower()
-        if not text:
-            self.quantization_combo.setCurrentIndex(0)
-            self.weight_bits_spin.setValue(16.0)
-            return
-        index = 0
-        for candidate in range(1, self.quantization_combo.count()):
-            data = self.quantization_combo.itemData(candidate)
-            if data and (f"q{data:g}" in text or (data == 16 and "16" in text) or (data == 32 and "32" in text)):
-                index = candidate
-                break
+        self._manual_weight_bits = False
         self.quantization_combo.blockSignals(True)
-        self.quantization_combo.setCurrentIndex(index)
+        self.quantization_combo.setCurrentIndex(0)
         self.quantization_combo.blockSignals(False)
-        bits = self.quantization_combo.itemData(index) or 16
-        self.weight_bits_spin.setValue(float(bits))
+        projection = project_resources(self._inspection)
+        self.weight_bits_spin.blockSignals(True)
+        self.weight_bits_spin.setValue(projection.weight_bits)
+        self.weight_bits_spin.blockSignals(False)
 
     def _quantization_changed(self, index: int) -> None:
         bits = self.quantization_combo.itemData(index)
+        self._manual_weight_bits = bits is not None
         if bits is not None:
             self.weight_bits_spin.blockSignals(True)
             self.weight_bits_spin.setValue(float(bits))
             self.weight_bits_spin.blockSignals(False)
         self._recalculate()
 
+    def _weight_bits_changed(self, *_args: Any) -> None:
+        self._manual_weight_bits = True
+        self._recalculate()
+
     def _recalculate(self, *_args: Any) -> None:
+        selected_bits = self.quantization_combo.currentData()
         self._projection = project_resources(
             self._inspection,
             context_length=self.context_spin.value(),
             batch_size=self.batch_spin.value(),
-            weight_bits=self.weight_bits_spin.value(),
+            weight_bits=self.weight_bits_spin.value() if self._manual_weight_bits else None,
+            quantization=None if selected_bits is None else str(selected_bits),
             kv_cache_bits=self.kv_cache_bits_combo.currentData(),
             kv_cache_dtype=self.kv_cache_bits_combo.currentText(),
         )

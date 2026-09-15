@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import QApplication, QLabel
 
 from back.inspection_summary import compact_inspection_summary
 from front.advanced_viewer import AdvancedViewerDialog
+from front.metadata_ui import domain_badge_values, inspection_domain
 from front.model_card import ModelCard
 
 
@@ -47,8 +48,8 @@ def test_domain_tags_preserve_raw_type_and_adapter_labels() -> None:
     _app()
     for domain, model_type, description in (
         ("LLM", "LLM", "language model"),
-        ("VLM", "MLLM", "vision"),
-        ("MMLM", "MLLM", "other modalities"),
+        ("VLM", "VLM", "vision"),
+        ("MLM", "MLM", "other modalities"),
     ):
         card = ModelCard(
             {
@@ -139,6 +140,11 @@ def test_weak_evidence_strength_suppresses_a_capability_badge() -> None:
     )
 
     assert values == ("Tool Use",)
+
+
+def test_legacy_language_domain_aliases_display_canonically() -> None:
+    assert inspection_domain({"capability_facts": {"domain": "MMLM"}}) == "MLM"
+    assert domain_badge_values({}, ("MLLM", "MMLLLM")) == ("VLM", "VLM")
 
 
 def test_compact_facts_render_counts_and_evidence_backed_badges() -> None:

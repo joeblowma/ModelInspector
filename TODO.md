@@ -28,9 +28,9 @@ the follow-up list below.
 
 - [ ] Run `.github/workflows/build.yml` remotely; it has not been executed on
   GitHub yet (nothing pushed).
-- [x] Manually launch and visually inspect the packaged windowed executable;
-  validation so far is a headless offscreen startup (process alive ~10s), not
-  visual QA.
+- [ ] Manually launch and visually inspect the packaged windowed executable.
+  The source GUI was visually audited (commit abd1ed4), but packaged-exe QA is
+  limited to a headless offscreen startup (process alive ~10s), not visual QA.
 
 ## Deferred product work
 
@@ -40,11 +40,13 @@ the follow-up list below.
   Qwen; explicit trainer metadata is the only disambiguator, and ambiguous
   arbitrarily named Jinja templates stay excluded.
 - No real ZImage LoRA was available, so ZImage coverage is synthetic only.
-- Review conservative LLM, VLM, and MMLM card-family presentation labels as
+- Review conservative LLM, VLM, and MLM card-family presentation labels as
   architecture coverage improves.
 - Wider runtime-configuration arguments and comparable memory projections
   stay postponed until their metadata inputs are reliable; broader runtime
-  coverage remains unreliable.
+  coverage remains unreliable. Runtime VRAM/RAM estimates remain heuristics
+  (8%/12% activation/allocator overhead, 12% KV fallback), not calibrated
+  measurements.
 - Move/dump progress has no byte-level progress; per-file progress is
   indeterminate; cancellation between files; the native splash is not a fully
   asynchronous cache load.

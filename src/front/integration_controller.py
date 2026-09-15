@@ -77,6 +77,8 @@ class IntegrationMixin(CacheLoadControllerMixin):
         dialog.themeChanged.connect(self._apply_theme)
         dialog.themePreviewChanged.connect(self._apply_theme_preview)
         self._refresh_cache_dialog(dialog)
+        from app_paths import model_cache_dir
+        previous_cache_dir = str(model_cache_dir())
         accepted = dialog.exec()
         self._settings_dialog = None
         # Remember the window size for both OK and X/close dismissal.
@@ -94,6 +96,10 @@ class IntegrationMixin(CacheLoadControllerMixin):
         self._data_layout = dialog.data_settings_tab.export_configuration()
         self._data_layout["theme"] = dialog.current_theme_id()
         self._schedule_settings_rebuild()
+        if str(model_cache_dir()) != previous_cache_dir:
+            # The model cache was redirected live; refresh the cache-driven UI
+            # for the new location. No existing cache files are moved/deleted.
+            self._refresh_cache_controls()
 
     def _schedule_settings_rebuild(self) -> None:
         """Defer the expensive model reprojection until Settings has closed."""
@@ -338,13 +344,16 @@ class IntegrationMixin(CacheLoadControllerMixin):
         self._refresh_cache_menu_actions(availability)
 
     def _refresh_cache_menu_actions(self, availability=None) -> None:
-        """Show/hide cache-load actions based on cache population and view state."""
+        """Show/hide cache-load actions based on cache population.
+
+        Load Cache clears the current view before loading, so actions stay
+        enabled whenever their category has entries (repeated loads allowed).
+        """
         if availability is None:
             availability = getattr(self._cache_report(), "availability", None)
-        view_nonempty = bool(self._results)
         if availability is None:
-            # Minimal test mocks may only expose entries; still honor the
-            # view-nonempty disable rule.
+            # Minimal test mocks may only expose entries; enable every visible
+            # action since a load now replaces the current view.
             self._refresh_cache_menu_enabled()
             return
         actions = (
@@ -355,11 +364,10 @@ class IntegrationMixin(CacheLoadControllerMixin):
         for action, available in actions:
             if action is not None:
                 action.setVisible(available)
-                action.setEnabled(not view_nonempty)
+                action.setEnabled(available)
 
     def _refresh_cache_menu_enabled(self) -> None:
-        """Disable cache-load actions whenever the view is non-empty (cheap)."""
-        view_nonempty = bool(getattr(self, "_results", None))
+        """Enable every visible cache-load action (cheap fallback)."""
         for name in (
             "_cache_load_active_action",
             "_cache_load_all_action",
@@ -367,7 +375,7 @@ class IntegrationMixin(CacheLoadControllerMixin):
         ):
             action = getattr(self, name, None)
             if action is not None:
-                action.setEnabled(not view_nonempty)
+                action.setEnabled(action.isVisible())
 
     def _refresh_tracked_settings_dialog(self) -> None:
         """Refresh an open Settings dialog's cache counts without dangling access."""

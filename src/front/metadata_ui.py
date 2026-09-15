@@ -30,12 +30,13 @@ __all__ = [
     "inspection_domain",
 ]
 
-_DOMAINS = frozenset(("LLM", "VLM", "MMLM"))
+_DOMAINS = frozenset(("LLM", "VLM", "MLM"))
+_DOMAIN_ALIASES = {"MMLM": "MLM", "MLLM": "VLM", "MMLLLM": "VLM"}
 _CAPABILITY_LABELS = (("tools", "Tool Use"), ("thinking", "Thinking"))
 _DOMAIN_DESCRIPTIONS = {
     "LLM": "Language model",
     "VLM": "Language model with vision",
-    "MMLM": "Language model with other modalities",
+    "MLM": "Language model with other modalities",
 }
 _NATURAL_PARTS = re.compile(r"(\d+)")
 
@@ -50,7 +51,7 @@ def inspection_domain(inspection: Mapping[str, Any] | None) -> str | None:
     source = inspection if isinstance(inspection, Mapping) else {}
     facts = _capability_facts(source)
     raw = facts.get("domain") if facts is not None else None
-    domain = str(raw or "").strip().upper()
+    domain = _DOMAIN_ALIASES.get(str(raw or "").strip().upper(), str(raw or "").strip().upper())
     return domain if domain in _DOMAINS else None
 
 
@@ -93,7 +94,11 @@ def domain_badge_values(
     domain = inspection_domain(inspection)
     if domain:
         return (domain,)
-    values = tuple(str(value) for value in fallback if str(value) != "Unknown")
+    values = tuple(
+        _DOMAIN_ALIASES.get(str(value).upper(), str(value).upper())
+        for value in fallback
+        if str(value) != "Unknown"
+    )
     return values or ("Unknown",)
 
 

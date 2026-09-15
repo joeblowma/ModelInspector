@@ -19,7 +19,8 @@ from PyQt6.QtWidgets import QApplication, QSplashScreen, QMessageBox, QWidget
 
 from app_paths import asset_path
 from back.theme_loader import BUILTIN_THEME, Theme, ThemeLoadResult, load_theme
-from front.startup_arguments import parse_startup_arguments
+from front.help_window import show_help_window
+from front.startup_arguments import format_help, help_requested, parse_startup_arguments
 
 try:
     import pyi_splash  # type: ignore[import-not-found]
@@ -301,6 +302,34 @@ def _apply_settings_override(settings: Path | None) -> None:
         os.environ["SMI_SETTINGS_PATH"] = str(settings)
 
 
+def _stdout_unavailable() -> bool:
+    """True when the process has no usable stdout (frozen windowed builds)."""
+    stream = sys.stdout
+    return stream is None or getattr(stream, "write", None) is None
+
+
+def _run_frozen_help() -> int:
+    """Show ``--help`` in a window when there is no console to print to."""
+    application = QApplication.instance() or QApplication(sys.argv)
+    close_startup_splash()
+    show_help_window(format_help())
+    return 0
+
+
+def _apply_cache_location(args) -> None:
+    """Resolve the effective cache directory after the settings override."""
+    from app_paths import legacy_settings_path, settings_path
+    from back.cache_location import apply_cache_location
+    from back.settings_store import open_settings
+
+    store = open_settings(
+        settings_path(), legacy_settings_path(), defer_initial_save=True
+    )
+    apply_cache_location(
+        getattr(args, "cache", None), getattr(args, "cachedir", None), store
+    )
+
+
 def _queue_when_window_ready(window: QWidget, action) -> None:
     """Run ``action`` on the event loop unless the window already closed."""
 
@@ -349,10 +378,15 @@ def _queue_startup_targets(window: MainWindow, targets: list[str]) -> None:
 def run(argv: list[str] | None = None) -> int:
     """Parse startup arguments and launch the desktop application.
 
-    ``--help`` exits before any ``QApplication`` is created.
+    ``--help`` exits before any ``QApplication`` is created when stdout is
+    available; frozen windowed builds show the help text in a window instead.
     """
-    args = parse_startup_arguments(sys.argv[1:] if argv is None else argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if help_requested(raw) and _stdout_unavailable():
+        return _run_frozen_help()
+    args = parse_startup_arguments(raw)
     _apply_settings_override(args.settings)
+    _apply_cache_location(args)
     application = QApplication(sys.argv)
     configure_application(application)
     splash = show_startup_splash()

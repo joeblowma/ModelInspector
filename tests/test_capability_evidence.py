@@ -99,7 +99,24 @@ def test_omni_architecture_remains_other_modality() -> None:
         {},
     )
 
-    assert facts["domain"] == "MMLM"
+    assert facts["domain"] == "MLM"
+
+
+def test_diffusion_components_with_an_llm_text_encoder_are_not_language_models() -> None:
+    facts = build_capability_facts(
+        ["text_encoders.qwen3_4b.model.layers.0.self_attn.q_proj.weight"],
+        {},
+        {
+            "config": {
+                "text_config": {"num_hidden_layers": 28},
+                "audio_config": {"num_hidden_layers": 12},
+            }
+        },
+        "LTX 2",
+        {"unet": True, "text_encoder": True},
+    )
+
+    assert facts["domain"] is None
 
 
 def test_false_containers_and_arbitrary_nested_data_are_not_capabilities() -> None:

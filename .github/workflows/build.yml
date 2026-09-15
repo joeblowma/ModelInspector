@@ -9,8 +9,92 @@ permissions:
   contents: read
 
 jobs:
-  windows:
-    name: Windows wheel + executable
+  wheel:
+    name: ${{ matrix.os }} Python ${{ matrix.python-version }} wheel
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install build and runtime requirements
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Generate bundled assets
+        shell: pwsh
+        run: |
+          python -c "from PIL import Image; img = Image.open('assets/icon.png'); img.save('assets/icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
+          python assets/ResizeSplash.py assets/splash_base.bmp assets/splash.png 400 600
+          python assets/GetVersion.py
+
+      - name: Validate packaging metadata
+        run: python -m pytest tests/test_packaging.py -q
+
+      - name: Build wheel
+        run: python -m build --wheel
+
+      - name: Assert universal wheel
+        run: python -c "from pathlib import Path; wheels = list(Path('dist').glob('*.whl')); assert len(wheels) == 1, wheels; assert wheels[0].name.endswith('py3-none-any.whl'), wheels[0]"
+
+      - name: Install and exercise wheel on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m venv .ci-venv
+          .\.ci-venv\Scripts\python.exe -m pip install --upgrade pip
+          $wheel = (Get-ChildItem -LiteralPath dist -Filter '*.whl').FullName
+          .\.ci-venv\Scripts\python.exe -m pip install "$wheel"
+          .\.ci-venv\Scripts\modelinspector.exe --help
+          if ($LASTEXITCODE -ne 0) { throw "modelinspector --help exited $LASTEXITCODE" }
+          $exe = ".\.ci-venv\Scripts\modelinspector-gui.exe"
+          $process = Start-Process -FilePath $exe -ArgumentList "--help" -PassThru -NoNewWindow
+          if (-not $process.WaitForExit(60000)) {
+            $process.Kill()
+            throw "modelinspector-gui --help did not exit; GUI help validation is required"
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "modelinspector-gui --help exited $($process.ExitCode)"
+          }
+          .\.ci-venv\Scripts\python.exe -c "import pathlib, app_paths; site = pathlib.Path(app_paths.__file__).resolve().parent; assets = site / 'assets'; themes = assets / 'themes'; assert assets.is_dir(), assets; assert (assets / 'icon.ico').is_file(), assets; assert (themes / 'default.jsonc').is_file(), themes; print('bundled assets ok:', assets)"
+          .\.ci-venv\Scripts\python.exe -c "import json, struct, pathlib; raw = json.dumps({'weight': {'dtype': 'F32', 'shape': [1], 'data_offsets': [0, 4]}}).encode(); pathlib.Path('tiny.safetensors').write_bytes(struct.pack('<Q', len(raw)) + raw + b'\x00' * 4)"
+          .\.ci-venv\Scripts\modelinspector.exe tiny.safetensors --json --write-modelinfo --write-modelinfo-json | Out-File tiny.json -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw "tiny inspection exited $LASTEXITCODE" }
+          $data = Get-Content tiny.json -Raw | ConvertFrom-Json
+          if (-not $data.filepath) { throw "tiny inspection produced no filepath" }
+          if (-not (Test-Path tiny.safetensors.modelinfo) -or -not (Test-Path tiny.safetensors.modelinfo.json)) { throw "tiny modelinfo outputs were not created" }
+          if (-not (Get-Content tiny.safetensors.modelinfo -Raw).Contains("Header-only diagnosis:")) { throw "tiny text modelinfo lacks diagnostics" }
+
+      - name: Install and exercise wheel on Unix
+        if: runner.os != 'Windows'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m venv .ci-venv
+          ./.ci-venv/bin/python -m pip install --upgrade pip
+          ./.ci-venv/bin/python -m pip install dist/*.whl
+          ./.ci-venv/bin/modelinspector --help
+          ./.ci-venv/bin/modelinspector-gui --help
+          ./.ci-venv/bin/python -c "import json, struct, pathlib; raw = json.dumps({'weight': {'dtype': 'F32', 'shape': [1], 'data_offsets': [0, 4]}}).encode(); pathlib.Path('tiny.safetensors').write_bytes(struct.pack('<Q', len(raw)) + raw + b'\x00' * 4)"
+          ./.ci-venv/bin/modelinspector tiny.safetensors --json --write-modelinfo --write-modelinfo-json > tiny.json
+          ./.ci-venv/bin/python -c "import json; assert json.load(open('tiny.json', encoding='utf-8'))['filepath']"
+          test -s tiny.safetensors.modelinfo
+          test -s tiny.safetensors.modelinfo.json
+          grep -F 'Header-only diagnosis:' tiny.safetensors.modelinfo
+
+  pyinstaller:
+    name: Windows executable
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -33,55 +117,6 @@ jobs:
           python -c "from PIL import Image; img = Image.open('assets/icon.png'); img.save('assets/icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
           python assets/ResizeSplash.py assets/splash_base.bmp assets/splash.png 400 600
           python assets/GetVersion.py
-
-      - name: Validate packaging metadata
-        run: python -m pytest tests/test_packaging.py -q
-
-      - name: Build wheel
-        run: python -m build --wheel
-
-      - name: Install wheel into a clean virtual environment
-        shell: pwsh
-        run: |
-          python -m venv .ci-venv
-          .\.ci-venv\Scripts\python.exe -m pip install --upgrade pip
-          $wheel = (Get-ChildItem dist\*.whl | Select-Object -First 1).FullName
-          .\.ci-venv\Scripts\python.exe -m pip install "$wheel"
-
-      - name: Validate CLI entry point
-        shell: pwsh
-        run: |
-          .\.ci-venv\Scripts\modelinspector.exe --help
-          if ($LASTEXITCODE -ne 0) { throw "modelinspector --help exited $LASTEXITCODE" }
-
-      - name: Validate GUI entry point help without hanging Qt
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          $exe = ".\.ci-venv\Scripts\modelinspector-gui.exe"
-          $process = Start-Process -FilePath $exe -ArgumentList "--help" -PassThru -NoNewWindow
-          if (-not $process.WaitForExit(60000)) {
-            $process.Kill()
-            throw "modelinspector-gui --help did not exit; GUI help validation is required"
-          }
-          if ($process.ExitCode -ne 0) {
-            throw "modelinspector-gui --help exited $($process.ExitCode)"
-          }
-
-      - name: Validate bundled assets in the installed wheel
-        shell: pwsh
-        run: |
-          .\.ci-venv\Scripts\python.exe -c "import pathlib, app_paths; site = pathlib.Path(app_paths.__file__).resolve().parent; assets = site / 'assets'; themes = assets / 'themes'; assert assets.is_dir(), assets; assert (assets / 'icon.ico').is_file(), assets; assert (themes / 'default.jsonc').is_file(), themes; print('bundled assets ok:', assets)"
-
-      - name: Functional tiny model inspection
-        shell: pwsh
-        run: |
-          .\.ci-venv\Scripts\python.exe -c "import json, struct, pathlib; raw = json.dumps({'weight': {'dtype': 'F32', 'shape': [1], 'data_offsets': [0, 4]}}).encode(); pathlib.Path('tiny.safetensors').write_bytes(struct.pack('<Q', len(raw)) + raw + b'\x00' * 4)"
-          .\.ci-venv\Scripts\modelinspector.exe tiny.safetensors --json | Out-File tiny.json -Encoding utf8
-          if ($LASTEXITCODE -ne 0) { throw "tiny inspection exited $LASTEXITCODE" }
-          $data = Get-Content tiny.json -Raw | ConvertFrom-Json
-          if (-not $data.filepath) { throw "tiny inspection produced no filepath" }
 
       - name: Build Windows executable
         shell: pwsh
@@ -120,6 +155,5 @@ jobs:
         with:
           name: modelinspector-windows
           path: |
-            dist/*.whl
             dist/ModelInspector.exe
           if-no-files-found: error

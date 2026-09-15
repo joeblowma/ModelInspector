@@ -23,7 +23,10 @@ from model_readers import (
     read_model_header,
 )
 
+from app_paths import legacy_settings_path, settings_path
+from .cache_location import apply_cache_location
 from .inspection_pipeline import inspect_file
+from .settings_store import open_settings
 from .reporting import (
     _inspect_and_write_modelinfo,
     generate_modelinfo_dump,
@@ -77,6 +80,25 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Explicit settings JSONC location override (sets SMI_SETTINGS_PATH "
             "before any settings load; overrides an existing environment value)"
+        ),
+    )
+    parser.add_argument(
+        "--cachedir",
+        metavar="PATH",
+        type=Path,
+        help=(
+            "Relocate ALL application caches to PATH for this run "
+            "(sets SMI_CACHE_DIR; not persisted)"
+        ),
+    )
+    parser.add_argument(
+        "--cache",
+        metavar="PATH",
+        type=Path,
+        help=(
+            "Select the model-cache directory (sets SMI_MODEL_CACHE_DIR) and "
+            "remember it in settings history; the most recently used directory "
+            "becomes the default on the next launch"
         ),
     )
     parser.add_argument(
@@ -146,6 +168,13 @@ def main(argv=None):
     # through the same app_paths seam the GUI uses, before any settings load.
     if args.settings is not None:
         os.environ["SMI_SETTINGS_PATH"] = str(args.settings)
+
+    # Resolve the effective cache directory with the same precedence as the
+    # GUI so CLI inspections reuse the persisted model-cache selection.
+    store = open_settings(
+        settings_path(), legacy_settings_path(), defer_initial_save=True
+    )
+    apply_cache_location(args.cache, args.cachedir, store)
 
     paths = _iter_model_paths(args.targets, args.recursive, args.checkpoint_safety)
     checkpoint_paths = iter_checkpoint_paths(args.targets, args.recursive)

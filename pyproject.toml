@@ -11,10 +11,13 @@ keywords = ["safetensors", "gguf", "onnx"]
 authors = [
     { name = "JBMan", email = "2877235+joeblowma@users.noreply.github.com" }
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = ['PyQt6', 'gguf', 'numpy']
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
 
@@ -44,7 +47,7 @@ py-modules = [
     "model_readers",
     "modelinfo",
 ]
-packages = ["front", "back", "assets"]
+packages = ["front", "back", "assets", "assets.themes"]
 
 [tool.setuptools.package-data]
 assets = ["*.ico", "*.png", "themes/*.jsonc"]

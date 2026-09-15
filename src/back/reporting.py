@@ -223,24 +223,31 @@ def print_report(
     print(f"\n{sep}\n")
 
 
-def generate_modelinfo_dump(filepath: str, options: dict | None = None) -> str:
+def generate_modelinfo_dump(
+    filepath: str, options: dict | None = None, *, inspection: dict | None = None
+) -> str:
     """Generate a detailed text dump for one model file."""
     from modelinfo import generate_modelinfo_dump as _generate_modelinfo_dump
 
-    return _generate_modelinfo_dump(filepath, options=options)
+    return _generate_modelinfo_dump(filepath, options=options, inspection=inspection)
 
 
-def generate_modelinfo_json(filepath: str, options: dict | None = None) -> str:
+def generate_modelinfo_json(
+    filepath: str, options: dict | None = None, *, inspection: dict | None = None
+) -> str:
     """Generate pretty-printed ``.modelinfo`` JSON for one model file."""
     from modelinfo import generate_modelinfo_json as _generate_modelinfo_json
 
-    return _generate_modelinfo_json(filepath, options=options)
+    return _generate_modelinfo_json(filepath, options=options, inspection=inspection)
 
 
 def write_modelinfo_dump(
     filepath: str,
     resolve_output_path: bool = False,
     options: dict | None = None,
+    *,
+    inspection: dict | None = None,
+    header: tuple[dict, dict, int] | None = None,
 ) -> str:
     """Write a text ``.modelinfo`` file beside the inspected model."""
     from modelinfo import write_modelinfo_dump as _write_modelinfo_dump
@@ -249,6 +256,8 @@ def write_modelinfo_dump(
         filepath,
         resolve_output_path=resolve_output_path,
         options=options,
+        inspection=inspection,
+        header=header,
     )
 
 
@@ -256,6 +265,9 @@ def write_modelinfo_json(
     filepath: str,
     options: dict | None = None,
     resolve_output_path: bool = False,
+    *,
+    inspection: dict | None = None,
+    header: tuple[dict, dict, int] | None = None,
 ) -> str:
     """Write a JSON ``.modelinfo`` file beside the inspected model."""
     from modelinfo import write_modelinfo_json as _write_modelinfo_json
@@ -264,6 +276,8 @@ def write_modelinfo_json(
         filepath,
         options=options,
         resolve_output_path=resolve_output_path,
+        inspection=inspection,
+        header=header,
     )
 
 
@@ -276,6 +290,11 @@ def _inspect_and_write_modelinfo(
 ) -> dict:
     """Inspect a file and optionally write either modelinfo representation."""
     info = inspect_file(filepath, options=options)
+    header = None
+    if write_text or write_json:
+        from modelinfo import _read_header_or_cached
+
+        header = _read_header_or_cached(filepath, options=options)
     outputs = []
     if write_text:
         outputs.append(
@@ -283,6 +302,8 @@ def _inspect_and_write_modelinfo(
                 filepath,
                 resolve_output_path=resolve_output_path,
                 options=options,
+                inspection=info,
+                header=header,
             )
         )
     if write_json:
@@ -291,6 +312,8 @@ def _inspect_and_write_modelinfo(
                 filepath,
                 options=options,
                 resolve_output_path=resolve_output_path,
+                inspection=info,
+                header=header,
             )
         )
     if outputs:

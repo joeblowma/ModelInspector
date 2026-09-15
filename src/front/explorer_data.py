@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from math import prod
 from typing import Any
 
-__all__ = ["normalize_tensor_descriptors", "detect_embedded_content", "flatten_metadata"]
+__all__ = ["normalize_tensor_descriptors", "detect_embedded_content", "flatten_metadata", "bucket_label", "natural_name_key", "safe_display", "friendly_bytes", "display_count"]
 
 _MAX_TEXT = 1200
 _MAX_METADATA_ROWS = 2000
@@ -48,6 +48,33 @@ def _safe_text(value: Any, limit: int = _MAX_TEXT) -> str:
     if len(text) <= limit:
         return text
     return f"{text[: max(0, limit - 32)]}… [truncated; {len(text):,} chars]"
+
+
+def safe_display(value: Any, limit: int = 8_000) -> str:
+    """Render a bounded value for a read-only detail pane."""
+    try:
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+    except (TypeError, ValueError, RecursionError):
+        text = repr(value)
+    return text if len(text) <= limit else f"{text[: limit - 32]}… [truncated; {len(text):,} chars]"
+
+
+def display_count(value: Any) -> str:
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError, OverflowError):
+        return "-"
+
+
+def friendly_bytes(value: int | None) -> str:
+    if value is None:
+        return "-"
+    amount = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if amount < 1024 or unit == "TiB":
+            return f"{int(amount):,} {unit}" if unit == "B" else f"{amount:.2f} {unit}"
+        amount /= 1024
+    return "-"
 
 
 def _bounded_value(value: Any, depth: int = 0) -> Any:
@@ -102,26 +129,36 @@ def _dtype_text(value: Any) -> str:
 def _bucket_for_name(name: str) -> str:
     lower = name.lower()
     if any(marker in lower for marker in ("lora", "lycoris", "lokr_", "loha_", "hada_", "dora_")):
-        return "LoRA"
+        return "lora"
     if lower.startswith("first_stage_model.") or lower.startswith(("vae.", "encoder.", "decoder.")):
-        return "VAE"
+        return "vae"
     if lower.startswith("text_encoder_2."):
         return "text_encoder_2"
     if lower.startswith(("text_encoder.", "cond_stage_model.", "conditioner.embedders.", "text_encoders.")):
         return "text_encoder"
     if lower.startswith(("model.visual.")):
-        return "Vision"
-    if lower.startswith(("mtp.*")):
-        return "Draft"
-    if lower.startswith(("text_model.*")):
-        return "Text"
-    if lower.startswith(("blk.*")):
-        return "Weights"
+        return "vision"
+    if lower.startswith("mtp."):
+        return "draft"
+    if lower.startswith("text_model."):
+        return "text"
+    if lower.startswith("blk."):
+        return "weights"
     if any(marker in lower for marker in ("double_blocks.", "single_blocks.", "transformer.")):
         return "transformer"
     if lower.startswith(("unet.", "model.diffusion_model.")):
         return "unet"
-    return "??"
+    return "unknown"
+
+
+def bucket_label(bucket: str) -> str:
+    """Keep display casing separate from canonical filter and detection IDs."""
+    return {"vae": "VAE", "lora": "LoRA", "vision": "Vision", "draft": "Draft", "text": "Text", "weights": "Weights"}.get(bucket, bucket)
+
+
+def natural_name_key(value: str) -> tuple[tuple[int, int | str], ...]:
+    """Sort digit runs numerically while retaining a stable case-insensitive name."""
+    return tuple((0, int(part)) if part.isdigit() else (1, part.casefold()) for part in re.split(r"(\d+)", str(value)))
 
 
 def _looks_like_descriptor(value: Any) -> bool:
@@ -242,29 +279,22 @@ def flatten_metadata(value: Any) -> list[dict[str, Any]]:
 
 
 def detect_embedded_content(inspection: Mapping[str, Any] | None, records: Sequence[Mapping[str, Any]] = ()) -> list[dict[str, Any]]:
-    """Identify candidate component groups and text metadata without payload reads."""
+    """Identify embedded metadata sections without representing tensor groups as data."""
+    del records
     inspection = inspection or {}
-    component_value = inspection.get("components")
-    components: Mapping[str, Any] = component_value if isinstance(component_value, Mapping) else {}
-    buckets = {str(record.get("component_bucket", "")).lower() for record in records}
     candidates: list[dict[str, Any]] = []
 
-    def add(kind: str, name: str, summary: Any, source: str = "tensor headers") -> None:
-        candidates.append({"kind": kind, "name": name, "summary": _safe_text(summary, 300), "source": source})
-
-    if components.get("vae") or "vae" in buckets:
-        add("VAE", "VAE group", sum(record.get("component_bucket") == "vae" for record in records))
-    if components.get("lora") or "lora" in buckets:
-        add("LoRA", "LoRA / adapter group", sum(record.get("component_bucket") == "lora" for record in records))
-    named = inspection.get("named_text_encoders")
-    if isinstance(named, Mapping):
-        for name, count in named.items():
-            add("Text encoder", str(name), count)
-    elif components.get("text_encoder") or "text_encoder" in buckets:
-        add("Text encoder", "Text encoder group", sum("text_encoder" in bucket for bucket in buckets))
     metadata = inspection.get("metadata") if isinstance(inspection.get("metadata"), Mapping) else {}
-    for row in _flatten_metadata(metadata):
-        key = str(row["key"]).lower()
-        if any(marker in key for marker in ("jinja", "chat_template", "chat.template", "template")):
-            add("Text field", str(row["key"]), row["value"], "metadata")
+
+    def collect(value: Any, path: tuple[str, ...] = (), embedded: bool = False) -> None:
+        if isinstance(value, Mapping):
+            for key, item in value.items():
+                key_text = str(key)
+                key_lower = key_text.casefold()
+                collect(item, path + (key_text,), embedded or any(marker in key_lower for marker in ("tokenizer", "token_type", "merges", "chat_template", "chat.template", "template", "tags")))
+            return
+        if embedded:
+            candidates.append({"kind": "Embedded metadata", "name": ".".join(path), "summary": _safe_text(value, 300), "source": "metadata", "value": value, "raw_path": path})
+
+    collect(metadata)
     return candidates

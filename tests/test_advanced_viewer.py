@@ -38,9 +38,16 @@ def test_viewer_populates_facts_and_recalculates_projection():
             "trained_context": 4096,
             "rope_theta": 10000,
             "num_mtp_layers": 2,
-            "tool_use": True,
-            "thinking": True,
-            "quantization": "q4",
+            "capability_facts": {
+                "domain": "LLM",
+                "capabilities": ["thinking", "tools"],
+                "evidence": {
+                    "thinking": ["config.json:enable_thinking"],
+                    "tools": ["config.json:supports_tools"],
+                },
+                "evidence_strength": {"thinking": "strong", "tools": "strong"},
+            },
+            "quantization": "Q4_K_M",
         }
     )
     assert dialog._summary_values["architecture"].text() == "LlamaForCausalLM"
@@ -48,7 +55,14 @@ def test_viewer_populates_facts_and_recalculates_projection():
     assert dialog._summary_values["max_context"].text() == "8,192 tokens"
     assert [badge.text() for badge in dialog._capability_badges] == ["Tool Use", "Thinking"]
     assert [badge.text() for badge in dialog._domain_badges] == ["LLM"]
+    assert dialog.quantization_combo.currentIndex() == 0
+    assert dialog.weight_bits_spin.value() == 4.5
+    assert dialog.weight_bits_spin.decimals() == 2
+    assert dialog.weight_bits_spin.singleStep() == 0.10
     initial_vram = dialog._projection.vram_bytes
+
+    dialog.weight_bits_spin.setValue(5.4)
+    assert dialog._projection.weight_bits == 5.4
 
     dialog.context_spin.setValue(16384)
     assert dialog._projection.context_length == 16384
@@ -169,7 +183,7 @@ def test_embedded_explorer_switches_order_groups_shards_and_keeps_byte_tooltips(
     assert explorer.tensor_model.item(0, 4).text() == "Shard 2"
     assert "Raw bytes: 16 bytes; display: 16 B" in explorer.tensor_model.item(0, 5).toolTip()
     explorer.tensor_order_combo.setCurrentIndex(1)
-    assert [explorer.tensor_model.item(row, 0).text() for row in range(2)] == ["second", "first"]
+    assert [explorer.tensor_model.item(row, 0).text() for row in range(2)] == ["first", "second"]
     copied = dialog.copy_configuration()
     assert "model-mmproj.gguf" in copied and "model-draft.gguf" in copied
     dialog.close()

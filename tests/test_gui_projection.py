@@ -138,7 +138,7 @@ def test_projection_buffer_discards_and_acknowledges_stale_events():
 
 
 
-def test_mllm_model_type_projects_to_card_and_table():
+def test_vlm_model_type_projects_to_card_and_table():
     import gui
 
     app = QApplication.instance() or QApplication([])
@@ -149,7 +149,7 @@ def test_mllm_model_type_projects_to_card_and_table():
         "format": "SAFETENSORS",
         "file_size_friendly": "1.0 KB",
         "architecture": "Qwen2VLForConditionalGeneration",
-        "model_type": "MLLM",
+        "model_type": "VLM",
         "adapter_type": None,
         "quantization": None,
         "precision_summary": "FP16",
@@ -164,14 +164,14 @@ def test_mllm_model_type_projects_to_card_and_table():
         window._add_table_row(data)
 
         card = window._path_to_card[data["filepath"]]
-        assert any("MLLM" in label.text() for label in card.findChildren(QLabel))
-        assert window.table.item(0, 5).text() == "MLLM"
+        assert any("VLM" in label.text() for label in card.findChildren(QLabel))
+        assert window.table.item(0, 5).text() == "VLM"
     finally:
         window.close()
         app.processEvents()
 
 
-def test_mllm_result_auto_enables_diffusion_group_only(monkeypatch, tmp_path: Path) -> None:
+def test_vlm_result_auto_enables_diffusion_group_only(monkeypatch, tmp_path: Path) -> None:
     import gui
 
     window = _window(monkeypatch, tmp_path)
@@ -179,7 +179,7 @@ def test_mllm_result_auto_enables_diffusion_group_only(monkeypatch, tmp_path: Pa
         window._add_table_row(_row_data(
             "mllm.safetensors",
             architecture="Qwen2VLForConditionalGeneration",
-            model_type="MLLM",
+            model_type="VLM",
             components={"transformer": True, "vision": True},
         ))
         assert window._smart_group_state["diffusion"] is True

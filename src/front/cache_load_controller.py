@@ -17,11 +17,17 @@ class CacheLoadControllerMixin:
             return
         loader = self._get_cached_inspection_summary_snapshots
         if getattr(loader, "__self__", None) is not self:
+            self._clear_all()
+            self._disable_table_sorting_for_cache_load()
             self._load_injected_cache_summaries(wanted, loader)
             return
         if self._worker and self._worker.isRunning():
             self._set_progress_status("Wait for analysis to finish before loading cache.")
             return
+        # Load Cache replaces the current view rather than appending to it, so
+        # clear first even for repeated loads.
+        self._clear_all()
+        self._disable_table_sorting_for_cache_load()
         generation = self._projection.begin()
         worker = CacheLoadWorker(wanted)
         self._cache_load_worker = worker
@@ -81,6 +87,7 @@ class CacheLoadControllerMixin:
             self._project_cache_result(data)
             loaded += 1
         self._reconcile_projected_results(True)
+        self._restore_table_sorting()
         self._set_progress_status(f"Loaded {loaded} cached summaries")
 
     def _load_cache(self) -> None:
@@ -129,10 +136,26 @@ class CacheLoadControllerMixin:
         self._add_table_row(data)
         self._apply_visibility_to_projected_item(data)
 
+    def _disable_table_sorting_for_cache_load(self) -> None:
+        """Disable live sorting while batch-inserting cached rows.
+
+        Mirrors the analysis path so cache rows are never inserted under an
+        active sort indicator; the saved state is restored when the load ends.
+        """
+        header = self.table.horizontalHeader()
+        assert header is not None
+        self._table_sort_restore = (
+            self.table.isSortingEnabled(),
+            header.sortIndicatorSection(),
+            header.sortIndicatorOrder(),
+        )
+        self.table.setSortingEnabled(False)
+
     def _finish_cache_load_projection(self, worker) -> None:
         if worker is not self._cache_load_worker:
             return
         self._cache_load_worker = None
+        self._restore_table_sorting()
         outcome = worker.outcome
         if outcome.was_cancelled:
             message = "Cache loading cancelled; partial summaries remain visible"
@@ -143,11 +166,12 @@ class CacheLoadControllerMixin:
                 message += f"; {outcome.stale_count} stale entries syncing"
         self._set_progress_status(message)
         self._clear_progress_status(delay_ms=4000)
-        if not self._results:
-            self._re_enable_cache_load_actions()
+        # Re-enable visible actions after every load so repeated loads remain
+        # possible (each load clears the current view first).
+        self._re_enable_cache_load_actions()
 
     def _re_enable_cache_load_actions(self) -> None:
-        """Re-enable available cache-load actions after a zero-result load.
+        """Re-enable available cache-load actions after a load completes.
 
         Visibility already encodes availability and does not change during a
         load, so only the visible actions are re-enabled.  This avoids a

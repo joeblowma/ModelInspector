@@ -7,7 +7,6 @@ payloads, and emits host-handled requests for candidate actions.
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -32,53 +31,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .explorer_data import (
-    detect_embedded_content,
-    flatten_metadata,
-    normalize_tensor_descriptors,
-)
+from .explorer_data import bucket_label, detect_embedded_content, display_count, flatten_metadata, friendly_bytes, natural_name_key, normalize_tensor_descriptors, safe_display
+from .explorer_metadata import perform_metadata_action, raw_metadata_status
 from .tensor_root_summary import TensorRootSummary
 
 __all__ = ["ExplorerTab", "TENSOR_COLUMNS", "normalize_tensor_descriptors", "detect_embedded_content"]
 
 TENSOR_COLUMNS = ("Name", "Shape", "Dtype", "Bucket", "Shard", "Size", "Parameters")
-_MAX_DETAIL_TEXT = 8000
-
-
-def _safe_display(value: Any, limit: int = _MAX_DETAIL_TEXT) -> str:
-    """Render a bounded value for a read-only detail pane."""
-    try:
-        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
-    except (TypeError, ValueError, RecursionError):
-        text = repr(value)
-    if len(text) <= limit:
-        return text
-    return f"{text[: limit - 32]}… [truncated; {len(text):,} chars]"
-
-
-def _display_count(value: Any) -> str:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError, OverflowError):
-        return "-"
-    return f"{parsed:,}" if abs(parsed) <= 10**30 else "-"
-
-
-def _friendly_bytes(value: int | None) -> str:
-    if value is None:
-        return "-"
-    amount = float(value)
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if amount < 1024 or unit == "TiB":
-            return f"{int(amount):,} {unit}" if unit == "B" else f"{amount:.2f} {unit}"
-        amount /= 1024
-    return "-"
-
-
-def _display_shard(shard_id: int) -> str:
-    return "None" if shard_id == 0 else f"Shard {shard_id}"
-
-
 class _TensorProxy(QSortFilterProxyModel):
     """Proxy that combines free-text filtering, bucket filtering, and sorting."""
 
@@ -107,7 +66,7 @@ class _TensorProxy(QSortFilterProxyModel):
         right_value = right.data(Qt.ItemDataRole.UserRole)
         if isinstance(left_value, (int, float)) or isinstance(right_value, (int, float)):
             return (left_value is None, left_value or 0) < (right_value is None, right_value or 0)
-        return super().lessThan(left, right)
+        return natural_name_key(str(left.data() or "")) < natural_name_key(str(right.data() or ""))
 
 
 class ExplorerTab(QWidget):
@@ -165,6 +124,7 @@ class ExplorerTab(QWidget):
         self.metadata_table.setColumnWidth(1, 2000)
         self.metadata_table.setSortingEnabled(False)
         self.metadata_table.setWordWrap(True)
+        self.metadata_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         vertical_header = self.metadata_table.verticalHeader()
         assert vertical_header is not None
         vertical_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -250,15 +210,15 @@ class ExplorerTab(QWidget):
         self.embedded_detail.setToolTip("Details for the selected embedded-content candidate.")
         embedded_layout.addWidget(self.embedded_detail, 1)
         actions = QHBoxLayout()
-        self.inspect_button = QPushButton("Inspect candidate")
-        self.inspect_button.setToolTip("Emit an inspection request; Explorer performs no payload reads or writes.")
-        self.inspect_button.clicked.connect(lambda: self._emit_candidate(self.inspect_requested))
-        self.export_button = QPushButton("Request export")
-        self.export_button.setToolTip("Emit an export request for the host; Explorer never writes files.")
-        self.export_button.clicked.connect(lambda: self._emit_candidate(self.export_requested))
-        self.extract_button = QPushButton("Request extraction")
-        self.extract_button.setToolTip("Emit a host-handled extraction request; headers alone cannot provide tensor payloads.")
-        self.extract_button.clicked.connect(lambda: self._emit_candidate(self.extraction_requested))
+        self.inspect_button = QPushButton("Inspect")
+        self.inspect_button.setToolTip("Open readable embedded metadata; tensor payloads are never read.")
+        self.inspect_button.clicked.connect(lambda: self._emit_candidate(self.inspect_requested, "inspect"))
+        self.export_button = QPushButton("Save readable artifact")
+        self.export_button.setToolTip("Save readable text or JSON for the selected embedded metadata.")
+        self.export_button.clicked.connect(lambda: self._emit_candidate(self.export_requested, "save"))
+        self.extract_button = QPushButton("Extract raw original bytes")
+        self.extract_button.setToolTip("Save exact source JSON bytes only when the selected metadata is locatable.")
+        self.extract_button.clicked.connect(lambda: self._emit_candidate(self.extraction_requested, "extract"))
         for button in (self.inspect_button, self.export_button, self.extract_button):
             button.setEnabled(False)
             actions.addWidget(button)
@@ -338,9 +298,12 @@ class ExplorerTab(QWidget):
         )
         original_positions = self._order_positions(original_tensor_order)
         sorted_positions = self._order_positions(sorted_tensor_order)
+        shard_positions: dict[int, int] = {}
         for index, record in enumerate(self._all_records):
             record["original_index"] = record["original_index"] if record["original_index"] is not None else original_positions.get(record["name"], index)
             record["sorted_index"] = sorted_positions.get(record["name"], index)
+            record["source_index"] = index
+            record["shard_source_index"] = shard_positions.setdefault(int(record["shard_id"]), len(shard_positions))
         buckets = sorted({str(record["component_bucket"]) for record in self._all_records if record.get("component_bucket")})
         self.tensor_bucket_filter.blockSignals(True)
         self.tensor_bucket_filter.clear()
@@ -362,28 +325,29 @@ class ExplorerTab(QWidget):
     def _render_tensors(self, *_args: Any) -> None:
         original_mode = self.tensor_order_combo.currentData() == "original"
         if original_mode:
-            self._records = sorted(self._all_records, key=lambda row: (int(row["shard_id"]), int(row["original_index"]), row["name"].casefold()))
+            self._records = sorted(self._all_records, key=lambda row: (int(row["shard_source_index"]), int(row["original_index"]), int(row["source_index"])))
         else:
-            self._records = sorted(self._all_records, key=lambda row: (int(row["sorted_index"]), row["name"].casefold()))
+            self._records = sorted(self._all_records, key=lambda row: (int(row["sorted_index"]), natural_name_key(row["name"])))
         self.tensor_table.setSortingEnabled(not original_mode)
         self.tensor_model.removeRows(0, self.tensor_model.rowCount())
         for record in self._records:
             values = (
                 record["name"],
-                _safe_display(list(record["shape"]), 240) if record["shape"] else "-",
+                safe_display(list(record["shape"]), 240) if record["shape"] else "-",
                 record["dtype"],
-                record["component_bucket"],
-                _display_shard(record["shard_id"]),
-                _friendly_bytes(record["n_bytes"]),
-                _display_count(record["parameter_count"]),
+                bucket_label(record["component_bucket"]),
+                "None" if record["shard_id"] == 0 else f"Shard {record['shard_id']}",
+                friendly_bytes(record["n_bytes"]),
+                display_count(record["parameter_count"]),
             )
             items = [QStandardItem(str(value)) for value in values]
             for index, item in enumerate(items):
                 sort_value = record["parameter_count"] if index == 6 else record["n_bytes"] if index == 5 else record["shard_id"] if index == 4 else values[index]
                 item.setData(sort_value, Qt.ItemDataRole.UserRole)
                 item.setData(record["shard_id"], Qt.ItemDataRole.UserRole + 1)
+                item.setData(record["component_bucket"], Qt.ItemDataRole.UserRole + 2)
                 raw_bytes = record["n_bytes"]
-                size_detail = "Raw bytes: unavailable" if raw_bytes is None else f"Raw bytes: {raw_bytes:,} bytes; display: {_friendly_bytes(raw_bytes)}"
+                size_detail = "Raw bytes: unavailable" if raw_bytes is None else f"Raw bytes: {raw_bytes:,} bytes; display: {friendly_bytes(raw_bytes)}"
                 item.setToolTip(f"{size_detail}. Header-derived value; payload is not loaded.")
                 if original_mode:
                     item.setBackground(QColor("#25303b") if record["shard_id"] % 2 else QColor("#202a34"))
@@ -446,7 +410,7 @@ class ExplorerTab(QWidget):
         row = source_index.row()
         if 0 <= row < len(self._records):
             record = self._records[row]
-            self.tensor_detail.setPlainText(_safe_display(record))
+            self.tensor_detail.setPlainText(safe_display(record))
             self.tensor_selected.emit(dict(record))
 
     def _render_embedded(self) -> None:
@@ -459,8 +423,10 @@ class ExplorerTab(QWidget):
         enabled = bool(self._embedded_candidates)
         self.inspect_button.setEnabled(enabled)
         self.export_button.setEnabled(enabled)
-        self.extract_button.setEnabled(enabled)
+        self.extract_button.setEnabled(False)
         self.embedded_detail.clear()
+        if enabled:
+            self.embedded_table.selectRow(0)
 
     def _embedded_selection_changed(self) -> None:
         selection_model = self.embedded_table.selectionModel()
@@ -468,7 +434,11 @@ class ExplorerTab(QWidget):
         if rows:
             row = rows[0].row()
             if 0 <= row < len(self._embedded_candidates):
-                self.embedded_detail.setPlainText(_safe_display(self._embedded_candidates[row]))
+                candidate = self._embedded_candidates[row]
+                self.embedded_detail.setPlainText(safe_display(candidate.get("value")))
+                available, message = raw_metadata_status(self._inspection, candidate)
+                self.extract_button.setEnabled(available)
+                self.extract_button.setToolTip(message)
 
     def _selected_candidate(self) -> dict[str, Any] | None:
         selection_model = self.embedded_table.selectionModel()
@@ -478,7 +448,7 @@ class ExplorerTab(QWidget):
         row = rows[0].row() if rows else -1
         return self._embedded_candidates[row] if 0 <= row < len(self._embedded_candidates) else None
 
-    def _emit_candidate(self, signal) -> None:
+    def _emit_candidate(self, signal, action: str) -> None:
         candidate = self._selected_candidate()
         if candidate is not None:
             signal.emit({
@@ -487,6 +457,9 @@ class ExplorerTab(QWidget):
                 "read_only": True,
                 "payload_available": self._payload_available,
             })
+            feedback = perform_metadata_action(self, self._inspection, candidate, action)
+            if feedback:
+                self.embedded_detail.setPlainText(feedback)
 
     def _update_status(self) -> None:
         if self._loading:

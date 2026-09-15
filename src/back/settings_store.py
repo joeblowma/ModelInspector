@@ -24,6 +24,8 @@ DEFAULTS: dict[str, Any] = {
     "data_layout": {"columns": [], "theme": "default"},
     # Remembered Settings dialog size; 900x640 is the release default.
     "settings_size": {"width": 900, "height": 640},
+    # Most-recently-used model-cache directories (most recent first).
+    "cache_dir_history": [],
 }
 
 _TEMPLATE = (

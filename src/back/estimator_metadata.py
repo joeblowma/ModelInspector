@@ -10,7 +10,33 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, Mapping, cast
 
-LANGUAGE_DOMAINS = frozenset({"LLM", "VLM", "MMLM"})
+LANGUAGE_DOMAINS = frozenset({"LLM", "VLM", "MLM", "MMLM", "MLLLM", "MLLM"})
+
+# Exact GGML block rates: block headers/scales are part of resident weights,
+# so nominal names such as Q4 do not by themselves mean four bits per value.
+_GGUF_EFFECTIVE_BITS = {
+    "q2_k": 2.5625,
+    "q3_k": 3.4375,
+    "q4_k": 4.5,
+    "q5_k": 5.5,
+    "q6_k": 6.5625,
+    "q4_0": 4.5,
+    "q4_1": 5.0,
+    "q5_0": 5.5,
+    "q5_1": 6.0,
+    "q8_0": 8.5,
+    "iq1_s": 1.5625,
+    "iq1_m": 1.75,
+    "iq2_xxs": 2.0625,
+    "iq2_xs": 2.3125,
+    "iq2_s": 2.5625,
+    "iq3_xxs": 3.0625,
+    "iq3_s": 3.4375,
+    "iq4_nl": 4.5,
+    "iq4_xs": 4.25,
+}
+_QUANT_TOKEN_RE = r"(?<![a-z0-9]){}(?![a-z0-9])"
+_MIXED_QUANT_RE = re.compile(r"\b(?:q[2-8]_k_[ms]|iq\d_[a-z]+_[ms])\b", re.IGNORECASE)
 
 _MLA_RE = re.compile(
     r"mla|multihead_latent|kv_lora_rank|qk_nope_head_dim|qk_rope_head_dim",
@@ -29,6 +55,56 @@ _MLA_ASSUMPTION = (
     "an exact projection"
 )
 _ASYMMETRIC = "asymmetric key/value dimensions; conservative fallback used"
+
+
+def quantization_bits(value: Any, default: float = 16.0) -> float:
+    """Return an effective storage rate, including known GGUF block overhead."""
+    if not isinstance(value, bool):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            number = 0.0
+        if 1 <= number <= 64:
+            return number
+    text = str(value or "").lower().replace("-", "_")
+    for token, bits in _GGUF_EFFECTIVE_BITS.items():
+        if re.search(_QUANT_TOKEN_RE.format(re.escape(token)), text):
+            return bits
+    for token, bits in (("int2", 2), ("int3", 3), ("int4", 4), ("int8", 8), ("uint8", 8), ("float32", 32), ("float16", 16), ("bf16", 16), ("fp32", 32), ("fp16", 16)):
+        if token in text:
+            return float(bits)
+    match = re.search(r"(?<![a-z0-9])q([2-8])(?![a-z0-9])", text)
+    return float(match.group(1)) if match else default
+
+
+def inspected_tensor_bytes(inspection: Mapping[str, Any]) -> int | None:
+    """Return exact descriptor storage only when every inspected tensor has it."""
+    for key in ("tensor_info", "tensors", "tensor_data", "descriptors", "headers"):
+        tensors = inspection.get(key)
+        if not isinstance(tensors, Mapping) or not tensors:
+            continue
+        sizes: list[int] = []
+        for descriptor in tensors.values():
+            if not isinstance(descriptor, Mapping) or isinstance(descriptor.get("n_bytes"), bool):
+                break
+            try:
+                size = int(descriptor["n_bytes"])
+            except (KeyError, TypeError, ValueError):
+                break
+            if size < 0:
+                break
+            sizes.append(size)
+        else:
+            return sum(sizes)
+    return None
+
+
+def quantization_assumption(value: Any) -> str | None:
+    """Flag model-level mixed labels, which cannot describe each tensor exactly."""
+    text = str(value or "").lower().replace("-", "_")
+    if _MIXED_QUANT_RE.search(text):
+        return "mixed GGUF quantization label; exact tensor bytes are preferred over a block-rate fallback"
+    return None
 
 
 def project_kv_cache(
@@ -136,4 +212,11 @@ def runtime_sidecar_lines(
     return ["Associated sidecars:"] + [f"Sidecar {role}: {path}" for role, path in pairs]
 
 
-__all__ = ["LANGUAGE_DOMAINS", "project_kv_cache", "runtime_sidecar_lines"]
+__all__ = [
+    "LANGUAGE_DOMAINS",
+    "inspected_tensor_bytes",
+    "project_kv_cache",
+    "quantization_assumption",
+    "quantization_bits",
+    "runtime_sidecar_lines",
+]

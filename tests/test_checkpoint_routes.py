@@ -139,7 +139,7 @@ def test_reporting_and_modelinfo_forward_explicit_header_policy(monkeypatch) -> 
         patch.setattr(
             modelinfo,
             "generate_modelinfo_dump",
-            lambda _filepath, options=None: reporting_seen.append(options) or "dump",
+            lambda _filepath, options=None, inspection=None: reporting_seen.append(options) or "dump",
         )
         assert reporting.generate_modelinfo_dump("model.pt", options=options) == "dump"
         assert reporting_seen == [options]

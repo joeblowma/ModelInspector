@@ -169,7 +169,7 @@ def classify_model_type(
     if components.get("lora"):
         return "LoRA"
     if components.get("vision"):
-        return "MLLM"
+        return "VLM"
 
     has_backbone = components.get("unet") or components.get("transformer")
     has_aux = (

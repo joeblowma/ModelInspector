@@ -1,5 +1,7 @@
 """Settings dialog widget used by the Model Inspector GUI."""
 
+import os
+
 from PyQt6.QtCore import QSize, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -7,6 +9,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -30,6 +33,15 @@ _DIALOG_MINIMUM_HEIGHT = 480
 _DIALOG_SCREEN_MARGIN = 24
 _DIALOG_DEFAULT_SIZE = (_DIALOG_DEFAULT_WIDTH, _DIALOG_DEFAULT_HEIGHT)
 _DIALOG_MINIMUM_SIZE = (_DIALOG_MINIMUM_WIDTH, _DIALOG_MINIMUM_HEIGHT)
+
+
+def _cache_task_running(window: object) -> bool:
+    """True while a worker that reads/writes the model cache is active."""
+    for name in ("_worker", "_cache_load_worker", "_cache_sync_worker"):
+        worker = getattr(window, name, None)
+        if worker is not None and getattr(worker, "isRunning", lambda: False)():
+            return True
+    return False
 
 
 def _normalise_size(value: object) -> tuple[int, int] | None:
@@ -257,6 +269,36 @@ class SettingsDialog(QDialog):
         self.cache_counts_label.setToolTip("Cached summaries by file availability. Historic files remain viewable without loading model payloads.")
         cache_layout.addWidget(self.cache_counts_label)
         general_tab_layout.addWidget(cache_group)
+
+        cache_location_group = QGroupBox("Model Cache Location")
+        cl_layout = QVBoxLayout(cache_location_group)
+        cl_layout.setSpacing(8)
+        cl_row = QHBoxLayout()
+        cl_row.setSpacing(6)
+        cl_row.addWidget(QLabel("Cache directory:"))
+        self.cache_dir_combo = QComboBox()
+        self.cache_dir_combo.setEditable(True)
+        self.cache_dir_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.cache_dir_combo.setMinimumWidth(320)
+        self.cache_dir_combo.setToolTip(
+            "Directory holding cached inspection summaries. Prior directories "
+            "that still exist are listed; the most recently used becomes the "
+            "default on next launch."
+        )
+        cl_row.addWidget(self.cache_dir_combo, 1)
+        self.cache_dir_browse_btn = QPushButton("Browse...")
+        self.cache_dir_browse_btn.clicked.connect(self._browse_cache_dir)
+        cl_row.addWidget(self.cache_dir_browse_btn)
+        cl_layout.addLayout(cl_row)
+        cache_location_note = QLabel(
+            "Changing the cache directory redirects the model cache only; "
+            "settings and themes stay where they are."
+        )
+        cache_location_note.setWordWrap(True)
+        self._muted_theme_labels.append(cache_location_note)
+        cl_layout.addWidget(cache_location_note)
+        general_tab_layout.addWidget(cache_location_group)
+        self._populate_cache_dirs()
         general_tab_layout.addStretch()
         tabs.addTab(general_tab, "General")
 
@@ -326,6 +368,67 @@ class SettingsDialog(QDialog):
         size = self.size()
         return (size.width(), size.height())
 
+    # ------------------------------------------------------- cache location
+
+    def _populate_cache_dirs(self) -> None:
+        """Fill the cache-directory combo with the current and prior valid dirs."""
+        from app_paths import legacy_settings_path, model_cache_dir, settings_path
+        from back.cache_location import existing_cache_dir_history
+        from back.settings_store import open_settings
+
+        current = str(model_cache_dir())
+        store = open_settings(
+            settings_path(), legacy_settings_path(), defer_initial_save=True
+        )
+        dirs = list(existing_cache_dir_history(store))
+        current_key = os.path.normcase(os.path.normpath(current))
+        if current_key not in {
+            os.path.normcase(os.path.normpath(raw)) for raw in dirs
+        }:
+            dirs.insert(0, current)
+        self.cache_dir_combo.clear()
+        for raw in dirs:
+            self.cache_dir_combo.addItem(raw)
+        self.cache_dir_combo.setCurrentText(current)
+
+    def _browse_cache_dir(self) -> None:
+        start = self.cache_dir_combo.currentText().strip() or os.path.expanduser("~")
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Choose Model Cache Directory", start
+        )
+        if chosen:
+            self.cache_dir_combo.setCurrentText(chosen)
+
+    def _persist_cache_dir(self) -> bool:
+        """Redirect the live model cache and record the selection in history.
+
+        Returns False (and keeps the dialog open) when a cache worker is
+        mid-read/write, so the model cache is never switched underneath it.
+        The caller surfaces the busy state instead of silently dropping the
+        user's selection.
+        """
+        text = self.cache_dir_combo.currentText().strip()
+        if not text:
+            return True
+        parent = self.parent()
+        if parent is not None and _cache_task_running(parent):
+            QMessageBox.warning(
+                self,
+                "Cache busy",
+                "Wait for the current scan or cache load to finish before "
+                "changing the model cache directory.",
+            )
+            return False
+        from app_paths import legacy_settings_path, settings_path
+        from back.cache_location import redirect_model_cache
+        from back.settings_store import open_settings
+
+        store = open_settings(
+            settings_path(), legacy_settings_path(), defer_initial_save=True
+        )
+        redirect_model_cache(store, text)
+        return True
+
     # ----------------------------------------------------------- theme bridge
 
     def refresh_theme(self, theme_colors: dict[str, str] | None = None) -> None:
@@ -364,6 +467,10 @@ class SettingsDialog(QDialog):
         return self.theme_tab.current_theme_id()
 
     def accept(self) -> None:  # type: ignore[override]
+        if not self._persist_cache_dir():
+            # A cache worker is running; keep the dialog open so the user can
+            # retry after it finishes instead of silently losing the change.
+            return
         self._accepted = True
         super().accept()
 

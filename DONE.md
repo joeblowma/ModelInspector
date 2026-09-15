@@ -3,6 +3,68 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-09-15 — Integration review and release hardening
+
+Integration review of the release-readiness diff with targeted defect fixes,
+plus the packaging/reporting milestone and a full-suite/type baseline.
+
+### Cache location separation and safety
+
+- [x] `--cache` selects the model cache only (`SMI_MODEL_CACHE_DIR`:
+  `index.json`, `entries/`, `data/`), while `--cachedir` relocates the cache
+  root (`SMI_CACHE_DIR`: the inspection cache plus sidecars, raw dumps, and
+  directory scans). `app_paths.model_cache_dir()` falls back to the root, so
+  an existing cache is never orphaned by a model-cache override.
+- [x] The Settings cache-location control remembers a most-recently-used
+  history and refuses to switch live while a scan/cache worker is running: it
+  keeps the dialog open with a "Cache busy" warning instead of silently
+  dropping the selection.
+- [x] Clear Cache removes both the model cache and the cache root.
+
+### Evidence-aware labels and conservative facts
+
+- [x] Vision-language models classify as `VLM` and other-modality language
+  models as `MLM`. Legacy `MLLM`/`MMLLLM`/`MMLM` aliases migrate evidence-aware
+  (audio-multimodal facts map to `MLM`, not `VLM`), and a vision+audio model
+  keeps its vision component instead of degrading to a checkpoint/backbone.
+- [x] The estimator no longer fabricates `Tool Use`/`Thinking` capabilities
+  from raw substring metadata; only evidence-backed capability facts surface.
+- [x] GGUF block-rate quantization (Q4_K=4.5, Q5_K=5.5, ...) and complete
+  inspected tensor byte counts drive the weight estimate, with mixed-quant and
+  inspected-storage assumptions labelled.
+
+### Explorer metadata and sort invariants
+
+- [x] Explorer embedded metadata is bounded and read-only. Inspect shows the
+  decoded text (real template newlines), Save writes a readable text/JSON
+  artifact, and Extract writes exact source JSON bytes only for locatable
+  safetensors/GGUF metadata; tensor payloads are never read. Raw extraction is
+  unavailable for other formats or when the source file is missing.
+- [x] Batch table inserts no longer re-sync card order per row; sort state is
+  restored once per batch, and full-path toggles preserve the active sort.
+
+### Reporting/packaging milestone
+
+- [x] `modelinfo_diagnostics` projects header-only diagnostics into text and
+  JSON `.modelinfo` output, with credential-key redaction that does not
+  over-redact tokenizer metadata (`tokenizer.*`, `*_token_id`, `num_tokens`).
+- [x] `reporting` forwards an already-inspected result and header into
+  modelinfo writers, avoiding a duplicate header read on the dump path.
+- [x] `pyproject.toml` declares Python 3.12-3.14 classifiers and the
+  `assets`/`assets.themes` packages; `.github/workflows/build.yml` builds a
+  universal wheel across a 3x3 OS/Python matrix plus the Windows executable.
+
+### Validation (2026-09-15)
+
+- [x] Full isolated pytest: 417 passed, 4 skipped (`PYTHONPATH=src`,
+  `QT_QPA_PLATFORM=offscreen`, isolated SMI data/cache paths).
+- [x] Pyright on `src`: 38 errors, 0 warnings — the existing dynamic-layout
+  (`advanced_viewer*`) and optional-member (`filter_widgets`) baseline; no new
+  cache-location diagnostics.
+- [x] Headless offscreen source-GUI startup smoke (process alive ~5s; only the
+  local PyQt font-directory warning on stderr); not visual QA.
+- [x] Module ceiling audit: no source or test module exceeds 500 lines.
+
 ## 2026-09-14 — Release-readiness bugbash
 
 User-facing bug fixes and pre-release packaging from the day's bugbash. This

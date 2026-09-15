@@ -15,12 +15,18 @@ import re
 from typing import Any, Iterable, Mapping
 
 from .capability_evidence import evidence_backed_capabilities
-from .estimator_metadata import LANGUAGE_DOMAINS, project_kv_cache, runtime_sidecar_lines
+from .estimator_metadata import (
+    LANGUAGE_DOMAINS,
+    inspected_tensor_bytes,
+    project_kv_cache,
+    quantization_assumption,
+    quantization_bits,
+    runtime_sidecar_lines,
+)
 
 
 _MISSING = object()
 _NUMBER_RE = re.compile(r"^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*([kmgtpe]?)\s*(?:b)?\s*$", re.I)
-_QUANT_BITS = {"q2": 2, "q3": 3, "q4": 4, "q5": 5, "q6": 6, "q8": 8}
 _LAYER_KEYS = ("num_hidden_layers", "n_layer", "n_layers", "num_layers", "layer_count", "block_count", "n_blocks")
 _EXPERT_KEYS = ("num_experts", "n_experts", "expert_count", "num_local_experts")
 _ACTIVE_EXPERT_KEYS = (
@@ -159,11 +165,6 @@ def _text(fields: Mapping[str, Any]) -> str:
     return " ".join(values).lower()
 
 
-def _contains(fields: Mapping[str, Any], words: Iterable[str]) -> bool:
-    text = _text(fields)
-    return any(word in text for word in words)
-
-
 def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
     """Extract facts safely from a possibly incomplete inspection mapping."""
     source = inspection if isinstance(inspection, Mapping) else {}
@@ -231,17 +232,6 @@ def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
     evidence: dict[str, tuple[str, ...]] = {}
     capabilities: list[str] = []
     normalized_facts = isinstance(capability_facts_raw, Mapping)
-    if not normalized_facts:
-        if _contains(fields, ("tool_use", "tool-use", "function_call", "function calling", "tool calling", "tools")):
-            capabilities.append("Tool Use")
-            evidence["Tool Use"] = ("inspection metadata",)
-        if _contains(fields, ("thinking", "reasoning", "chain_of_thought", "deepseek-r1")):
-            capabilities.append("Thinking")
-            evidence["Thinking"] = ("inspection metadata",)
-        vision = bool(re.search(r"vision|image|multimodal|vl|clip|vit", combined))
-        if vision:
-            capabilities.append("Vision")
-            evidence["Vision"] = ("architecture/components metadata",)
     certain_keys = set(
         evidence_backed_capabilities(capability_facts, require_evidence=False)
     )
@@ -263,9 +253,9 @@ def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
 
     lora = "lora" in model_type_text or bool(source.get("adapter_type") or source.get("lora_rank") or components.get("lora"))
     diffusion = bool(components.get("unet") or components.get("vae")) or bool(re.search(r"diffusion|stable.?diffusion|sdxl|flux", combined))
-    domain_value = capability_facts.get("domain")
+    domain_value = str(capability_facts.get("domain") or "").upper()
     if normalized_facts:
-        domains = [str(domain_value)] if domain_value in {"LLM", "VLM", "MMLM"} else []
+        domains = [domain_value] if domain_value in LANGUAGE_DOMAINS else []
         domains.extend(name for name, present in (("Diffusion", diffusion), ("LoRA", lora)) if present)
     else:
         vision = bool(re.search(r"vision|image|multimodal|vl|clip|vit", combined))
@@ -296,26 +286,8 @@ def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
         capabilities=tuple(capabilities),
         evidence=evidence,
         block_counts=block_counts,
-        domain=str(domain_value) if domain_value in {"LLM", "VLM", "MMLM"} else None,
+        domain=domain_value if domain_value in LANGUAGE_DOMAINS else None,
     )
-
-
-def _bits(value: Any, default: float) -> float:
-    parsed = _number(value)
-    if parsed is not None and 1 <= parsed <= 64:
-        return parsed
-    text = str(value or "").lower()
-    for token, bits in (("int2", 2), ("int3", 3), ("int4", 4), ("int8", 8), ("uint8", 8), ("float32", 32), ("float16", 16), ("bf16", 16)):
-        if token in text:
-            return float(bits)
-    for token, bits in _QUANT_BITS.items():
-        if token in text:
-            return float(bits)
-    if "float32" in text or "fp32" in text:
-        return 32.0
-    if "float16" in text or "fp16" in text or "bf16" in text:
-        return 16.0
-    return default
 
 
 def _unit(value: int) -> str:
@@ -339,17 +311,23 @@ def project_resources(
 ) -> ResourceProjection:
     """Estimate VRAM/RAM without reading model weights.
 
-    If layer/head metadata is absent, a deliberately conservative 12% of
-    weight bytes per 4K context is used for KV cache.  Weight storage includes
-    12% quantization/runtime overhead; activations include 8% per batch item.
+    Tensor descriptor byte counts are used for resident weights when complete.
+    Otherwise, known GGUF block overhead is included in the precision fallback.
+    The remaining activation, allocator, and unknown-KV figures are heuristics,
+    not a runtime measurement.
     """
     facts = inspection if isinstance(inspection, ModelFacts) else facts_from_inspection(inspection)
     fields = _fields(inspection if isinstance(inspection, Mapping) else {})
     assumptions: list[str] = []
-    weights_bits = _bits(weight_bits if weight_bits is not None else quantization or fields.get("quantization"), 16.0)
+    quantization_value = quantization or fields.get("quantization")
+    weights_bits = quantization_bits(
+        weight_bits if weight_bits is not None else quantization_value, 16.0
+    )
     if weight_bits is None and not quantization and not fields.get("quantization"):
         assumptions.append("weight precision unavailable; assumed 16-bit")
-    kv_bits = _bits(kv_cache_bits if kv_cache_bits is not None else kv_cache_dtype, 16.0)
+    kv_bits = quantization_bits(
+        kv_cache_bits if kv_cache_bits is not None else kv_cache_dtype, 16.0
+    )
     context = _number(context_length, integer=True) if context_length is not None else facts.max_context
     if context is None or context < 1:
         context = 4096
@@ -357,7 +335,23 @@ def project_resources(
     batch = _number(batch_size, integer=True) or 1
     batch = max(1, min(batch, 4096))
     parameter_count = facts.total_params or 0
-    weight_bytes = int(parameter_count * weights_bits / 8)
+    stored_weight_bytes = (
+        inspected_tensor_bytes(inspection)
+        if weight_bits is None and isinstance(inspection, Mapping)
+        else None
+    )
+    if stored_weight_bytes is not None:
+        weight_bytes = stored_weight_bytes
+        if parameter_count:
+            weights_bits = weight_bytes * 8 / parameter_count
+        assumptions.append("weights use inspected tensor storage; container metadata is excluded")
+    else:
+        weight_bytes = int(parameter_count * weights_bits / 8)
+        if weight_bits is not None and isinstance(inspection, Mapping):
+            assumptions.append("manual weight precision overrides inspected tensor storage")
+        mixed_quantization = quantization_assumption(quantization_value)
+        if mixed_quantization:
+            assumptions.append(mixed_quantization)
     if not parameter_count:
         assumptions.append("parameter count unavailable; weight estimate is zero")
     if (
@@ -374,7 +368,7 @@ def project_resources(
     kv_heads = _first_number(fields, ("num_key_value_heads", "n_kv_heads", "head_count_kv")) or facts.key_value_heads or heads
     head_dim = _first_number(fields, ("head_dim", "attention_head_dim")) or facts.head_dim
     language_present = facts.domain in LANGUAGE_DOMAINS or bool(
-        {"LLM", "Multimodal", "VLM"} & set(facts.domains)
+        (LANGUAGE_DOMAINS | {"Multimodal"}) & set(facts.domains)
     )
     kv_cache_bytes, kv_assumptions = project_kv_cache(
         layers=facts.layer_count,
@@ -390,6 +384,12 @@ def project_resources(
         text_blob=_text(fields),
     )
     assumptions.extend(kv_assumptions)
+    assumptions.append(
+        "resident weights stay at stored/selected precision; no full dequantization assumed"
+    )
+    assumptions.append(
+        "activation and runtime overhead use 8%/12% weight heuristics; backend allocations vary"
+    )
     activation_bytes = int(weight_bytes * 0.08 * batch)
     overhead_bytes = int(weight_bytes * 0.12)
     vram_bytes = weight_bytes + kv_cache_bytes + activation_bytes + overhead_bytes

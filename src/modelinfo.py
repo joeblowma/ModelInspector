@@ -7,6 +7,7 @@ from pathlib import Path
 from back.adapter_detection import _collect_lora_up_dims
 from back.architecture_keys import FINGERPRINTS
 from back.inspection_pipeline import _resolve_display_path, inspect_file
+from back.modelinfo_diagnostics import build_header_diagnostics, safe_metadata
 from back.tensor_summary import _numeric_sort_key
 from model_cache import get_cached_inspection_snapshot, get_cached_model_data
 from model_readers import analyze_tensors, read_model_header
@@ -72,15 +73,67 @@ def _descriptor_shard_id(descriptor: object) -> int:
         return 0
 
 
-def generate_modelinfo_dump(filepath: str, options: dict | None = None) -> str:
+def _inspection_or_cached(
+    filepath: str, options: dict | None, inspection: dict | None
+) -> dict:
+    if isinstance(inspection, dict):
+        return inspection
+    try:
+        return inspect_file(filepath, options=options)
+    except Exception:
+        return get_cached_inspection_snapshot(filepath) or {}
+
+
+def _append_diagnostics(lines: list[str], diagnostics: dict) -> None:
+    lines.append("\n  Header-only diagnosis:")
+    for key, label in (
+        ("reader", "Reader"),
+        ("format", "Format"),
+        ("architecture", "Architecture"),
+        ("model_type", "Model type"),
+        ("domain", "Domain"),
+    ):
+        lines.append(f"    {label}: {diagnostics[key]}")
+    capabilities = diagnostics["capabilities"]
+    lines.append(f"    Capabilities: {', '.join(capabilities) if capabilities else '(none)'}")
+    dtype_counts = diagnostics["dtype_counts"]
+    lines.append(
+        "    Dtypes: " + ", ".join(f"{name} ({count})" for name, count in dtype_counts.items())
+    )
+    for name, values in diagnostics["evidence"].items():
+        lines.append(f"    Evidence {name}: {', '.join(str(value) for value in values)}")
+    shard_manifest = diagnostics.get("shard_manifest")
+    if isinstance(shard_manifest, dict):
+        lines.append(
+            "    Shards: "
+            f"{shard_manifest.get('member_count', '?')}/{shard_manifest.get('expected_count', '?')}"
+        )
+    companion_files = diagnostics.get("companion_files")
+    if companion_files:
+        names = [str(item.get("path") or "<unnamed>") for item in companion_files]
+        lines.append(f"    Companion files: {', '.join(names)}")
+
+
+def generate_modelinfo_dump(
+    filepath: str,
+    options: dict | None = None,
+    *,
+    inspection: dict | None = None,
+    header: tuple[dict, dict, int] | None = None,
+) -> str:
     """Generate detailed .modelinfo text dump using the requested header policy."""
-    if options is None:
+    if header is not None:
+        metadata, tensor_info, file_size = header
+    elif options is None:
         metadata, tensor_info, file_size = _read_header_or_cached(filepath)
     else:
         metadata, tensor_info, file_size = _read_header_or_cached(filepath, options=options)
     original_keys = list(tensor_info)
     keys = sorted(tensor_info.keys(), key=_numeric_sort_key)
-    _, total_params, shapes = analyze_tensors(tensor_info)
+    dtype_counts, total_params, shapes = analyze_tensors(tensor_info)
+    summary = _inspection_or_cached(filepath, options, inspection)
+    diagnostics = build_header_diagnostics(filepath, summary, metadata, dtype_counts)
+    metadata = safe_metadata(metadata)
 
     lines = []
     sep = "=" * 70
@@ -94,6 +147,7 @@ def generate_modelinfo_dump(filepath: str, options: dict | None = None) -> str:
         f"  Keys: {len(keys)}    Params: {total_params:,}    Size: {file_size:,} bytes"
     )
     lines.append(sep)
+    _append_diagnostics(lines, diagnostics)
 
     if metadata:
         lines.append("\n  __metadata__:")
@@ -103,11 +157,13 @@ def generate_modelinfo_dump(filepath: str, options: dict | None = None) -> str:
                 val = val[:197] + "..."
             lines.append(f"    {mk}: {val}")
 
-    lines.append("\n  Fingerprint substring scan:")
     blob = "\n".join(keys)
-    for fp in FINGERPRINTS:
-        if fp in blob:
-            count = sum(1 for k in keys if fp in k)
+    fingerprint_hits = [
+        (fp, sum(1 for key in keys if fp in key)) for fp in FINGERPRINTS if fp in blob
+    ]
+    if fingerprint_hits:
+        lines.append("\n  Fingerprint substring hits:")
+        for fp, count in fingerprint_hits:
             lines.append(f"    [HIT]  {fp:<40} ({count} keys)")
 
     up_dims = _collect_lora_up_dims(keys, shapes)
@@ -134,14 +190,22 @@ def generate_modelinfo_dump(filepath: str, options: dict | None = None) -> str:
     return "\n".join(lines)
 
 
-def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dict:
+def build_modelinfo_json_data(
+    filepath: str,
+    options: dict | None = None,
+    *,
+    inspection: dict | None = None,
+    header: tuple[dict, dict, int] | None = None,
+) -> dict:
     """Build the structured .modelinfo JSON payload for a model file."""
-    metadata, tensor_info, file_size = _read_header_or_cached(filepath, options=options)
+    if header is None:
+        metadata, tensor_info, file_size = _read_header_or_cached(filepath, options=options)
+    else:
+        metadata, tensor_info, file_size = header
     dtype_counts, total_params, shapes = analyze_tensors(tensor_info)
-    try:
-        summary = inspect_file(filepath, options=options)
-    except Exception:
-        summary = get_cached_inspection_snapshot(filepath) or {}
+    summary = _inspection_or_cached(filepath, options, inspection)
+    diagnostics = build_header_diagnostics(filepath, summary, metadata, dtype_counts)
+    metadata = safe_metadata(metadata)
 
     original_keys = list(tensor_info)
     summary_order = summary.get("original_tensor_order")
@@ -181,7 +245,8 @@ def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dic
         "resolved_filepath": _resolve_display_path(filepath),
         "filename": Path(filepath).name,
         "file_size": file_size,
-        "inspection": summary,
+        "inspection": safe_metadata(summary),
+        "diagnostics": diagnostics,
         "metadata": metadata,
         "tensor_summary": {
             "tensor_count": len(tensor_info),
@@ -197,12 +262,20 @@ def build_modelinfo_json_data(filepath: str, options: dict | None = None) -> dic
     for key in ("shard_manifest", "shard_identity"):
         value = summary.get(key) or metadata.get(f"smi.{key}")
         if value is not None:
-            result[key] = value
+            result[key] = safe_metadata(value)
     return result
 
 
-def generate_modelinfo_json(filepath: str, options: dict | None = None) -> str:
-    data = build_modelinfo_json_data(filepath, options=options)
+def generate_modelinfo_json(
+    filepath: str,
+    options: dict | None = None,
+    *,
+    inspection: dict | None = None,
+    header: tuple[dict, dict, int] | None = None,
+) -> str:
+    data = build_modelinfo_json_data(
+        filepath, options=options, inspection=inspection, header=header
+    )
     return json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
 
 
@@ -210,10 +283,17 @@ def write_modelinfo_dump(
     filepath: str,
     resolve_output_path: bool = False,
     options: dict | None = None,
+    *,
+    inspection: dict | None = None,
+    header: tuple[dict, dict, int] | None = None,
 ) -> str:
     out_path = modelinfo_text_path(filepath, resolve_output_path=resolve_output_path)
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write(generate_modelinfo_dump(filepath, options=options))
+        f.write(
+            generate_modelinfo_dump(
+                filepath, options=options, inspection=inspection, header=header
+            )
+        )
     return out_path
 
 
@@ -221,8 +301,15 @@ def write_modelinfo_json(
     filepath: str,
     options: dict | None = None,
     resolve_output_path: bool = False,
+    *,
+    inspection: dict | None = None,
+    header: tuple[dict, dict, int] | None = None,
 ) -> str:
     out_path = modelinfo_json_path(filepath, resolve_output_path=resolve_output_path)
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write(generate_modelinfo_json(filepath, options=options))
+        f.write(
+            generate_modelinfo_json(
+                filepath, options=options, inspection=inspection, header=header
+            )
+        )
     return out_path

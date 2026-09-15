@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("PyQt6")
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QAbstractItemView, QApplication
 
 from front.explorer_tab import ExplorerTab, normalize_tensor_descriptors
 from front.window_core import _model_file_filter
@@ -64,7 +64,7 @@ def test_explorer_displays_bounded_metadata_tensors_and_candidates(app):
     assert widget.tensor_model.item(0, 6).text() == "6"
     assert widget.metadata_table.rowCount() >= 3
     assert all(len(widget.metadata_table.item(row, 1).text()) < 1300 for row in range(widget.metadata_table.rowCount()))
-    assert widget.embedded_table.rowCount() >= 3
+    assert widget.embedded_table.rowCount() == 1
     assert "payloads are not loaded" in widget.status_label.text()
 
 
@@ -91,16 +91,16 @@ def test_candidate_requests_are_signals_and_mark_header_only(app):
     emitted = []
     widget.extraction_requested.connect(emitted.append)
     widget.set_inspection(
-        {"components": {"vae": True}},
+        {"metadata": {"tokenizer.chat_template": "{{ messages }}"}},
         {"vae.weight": {"shape": [2], "dtype": "F16"}},
     )
 
-    widget.extract_button.click()
+    widget._emit_candidate(widget.extraction_requested, "extract")
 
     assert emitted
     assert emitted[0]["read_only"] is True
     assert emitted[0]["payload_available"] is False
-    assert emitted[0]["candidate"]["kind"] == "VAE"
+    assert emitted[0]["candidate"]["kind"] == "Embedded metadata"
 
 
 def test_tensor_order_shards_and_sizes_are_visible_with_safe_fallbacks(app):
@@ -125,9 +125,53 @@ def test_tensor_order_shards_and_sizes_are_visible_with_safe_fallbacks(app):
 
     widget.tensor_order_combo.setCurrentIndex(1)
     assert not widget.tensor_table.isSortingEnabled()
-    assert [widget.tensor_model.item(row, 0).text() for row in range(3)] == ["single", "second", "first"]
+    assert [widget.tensor_model.item(row, 0).text() for row in range(3)] == ["first", "second", "single"]
     assert widget.tensor_model.item(1, 5).text() == "16 B"
     assert widget.tensor_model.item(1, 0).background().color().isValid()
+
+
+def test_tensor_sorting_is_natural_and_original_order_keeps_discovery_shards(app):
+    widget = ExplorerTab()
+    widget.set_tensor_data(
+        {
+            "model.layers.10.weight": {"shape": [1], "dtype": "F16"},
+            "model.layers.9.weight": {"shape": [1], "dtype": "F16"},
+        }
+    )
+    assert [widget.tensor_proxy.index(row, 0).data() for row in range(2)] == [
+        "model.layers.9.weight",
+        "model.layers.10.weight",
+    ]
+
+    widget.set_tensor_data(
+        {
+            "two.second": {"shape": [1], "dtype": "F16", "shard_id": 2, "original_index": 1},
+            "two.first": {"shape": [1], "dtype": "F16", "shard_id": 2, "original_index": 0},
+            "one.first": {"shape": [1], "dtype": "F16", "shard_id": 1, "original_index": 0},
+        }
+    )
+    widget.tensor_order_combo.setCurrentIndex(1)
+    assert [widget.tensor_model.item(row, 0).text() for row in range(3)] == [
+        "two.first",
+        "two.second",
+        "one.first",
+    ]
+
+
+def test_bucket_ids_remain_canonical_and_metadata_scrolls_per_pixel(app):
+    rows = normalize_tensor_descriptors(
+        {
+            "vae.decoder": {},
+            "lora_up.weight": {},
+            "mtp.block": {},
+            "text_model.layer": {},
+            "blk.0.weight": {},
+        }
+    )
+    assert [row["component_bucket"] for row in rows] == ["vae", "lora", "draft", "text", "weights"]
+
+    widget = ExplorerTab()
+    assert widget.metadata_table.horizontalScrollMode() == QAbstractItemView.ScrollMode.ScrollPerPixel
 
 
 def test_model_file_dialog_filter_includes_onnx_and_explicit_checkpoint_warning_group():

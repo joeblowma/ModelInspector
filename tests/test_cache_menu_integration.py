@@ -181,7 +181,8 @@ def test_cache_load_menu_labels_and_semantics(monkeypatch, tmp_path: Path) -> No
 
 
 def test_cache_menu_actions_hidden_disabled_states(monkeypatch, tmp_path: Path) -> None:
-    """Cache-load QActions hidden when population absent; disabled when view nonempty."""
+    """Cache-load QActions hidden when population absent; enabled when present
+    even with a non-empty view (each load clears the current view first)."""
     monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
     app = QApplication.instance() or QApplication([])
     from gui import MainWindow
@@ -220,8 +221,8 @@ def test_cache_menu_actions_hidden_disabled_states(monkeypatch, tmp_path: Path) 
         window._refresh_cache_menu_actions()
         assert window._cache_load_active_action.isVisible()
         assert not window._cache_load_archived_action.isVisible()
-        assert not window._cache_load_active_action.isEnabled()
-        assert not window._cache_load_all_action.isEnabled()
+        assert window._cache_load_active_action.isEnabled()
+        assert window._cache_load_all_action.isEnabled()
     finally:
         window.close()
 

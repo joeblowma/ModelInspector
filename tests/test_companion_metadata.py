@@ -19,7 +19,7 @@ from back.companion_discovery import (
     discover_companion_metadata,
 )
 from back.capability_facts import build_capability_facts
-from back.inspection_pipeline import inspect_file
+from back.inspection_pipeline import _refresh_cached_result, inspect_file
 from back.inspection_summary import compact_inspection_summary
 
 
@@ -125,7 +125,38 @@ def test_nested_multimodal_config_normalizes_text_and_vision_counts(tmp_path: Pa
         "block_counts": {"text": 28, "vision": 24},
     }
     assert result["capability_facts"]["domain"] == "VLM"
-    assert result["model_type"] == "MLLM"
+    assert result["model_type"] == "VLM"
+
+
+def test_vision_audio_model_keeps_vision_language_type(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    model = tmp_path / "omni-vision.safetensors"
+    _write_safetensors(
+        model,
+        _language_tensors()
+        + [
+            "vision_tower.vision_model.encoder.layers.0.self_attn.q_proj.weight",
+            "vision_tower.vision_model.encoder.layers.23.self_attn.q_proj.weight",
+        ],
+    )
+    (tmp_path / "config.json").write_text(
+        json.dumps(
+            {
+                "model_type": "qwen2_5_omni",
+                "text_config": {"num_hidden_layers": 28},
+                "vision_config": {"num_hidden_layers": 24},
+                "audio_config": {"num_hidden_layers": 12},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = inspect_file(str(model))
+
+    # Multimodal language domain, but the vision component must not be dropped
+    # (which would misclassify it as a checkpoint/backbone).
+    assert result["capability_facts"]["domain"] == "MLM"
+    assert result["model_type"] == "VLM"
 
 
 def test_chat_templates_are_static_evidence_and_mmlm_is_distinct(tmp_path: Path) -> None:
@@ -152,10 +183,70 @@ def test_chat_templates_are_static_evidence_and_mmlm_is_distinct(tmp_path: Path)
         _language_tensors(), {}, companion, "Qwen2.5-Omni", {"vision": True}
     )
 
-    assert facts["domain"] == "MMLM"
+    assert facts["domain"] == "MLM"
     assert facts["capabilities"] == ["thinking", "tools"]
     assert "chat_template.jinja:thinking marker" in facts["evidence"]["thinking"]
     assert "chat_template.jinja:tool marker" in facts["evidence"]["tools"]
+
+
+def test_diffusion_checkpoint_with_audio_and_llm_text_encoder_stays_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    model = tmp_path / "diffusion.safetensors"
+    _write_safetensors(
+        model,
+        [
+            "model.diffusion_model.blocks.0.weight",
+            "text_encoders.qwen3_4b.model.layers.0.self_attn.q_proj.weight",
+        ],
+    )
+    (tmp_path / "config.json").write_text(
+        json.dumps(
+            {
+                "model_type": "ltx2",
+                "text_config": {"num_hidden_layers": 28},
+                "audio_config": {"num_hidden_layers": 12},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = inspect_file(str(model))
+
+    assert result["capability_facts"]["domain"] is None
+    assert result["model_type"] == "Checkpoint"
+
+
+def test_cached_legacy_mllm_with_audio_domain_migrates_to_mlm() -> None:
+    """A legacy vision label on audio-multimodal facts must not become VLM."""
+    refreshed = _refresh_cached_result(
+        "R:/omni.safetensors",
+        {
+            "model_type": "MLLM",
+            "capability_facts": {"domain": "MMLM"},
+            "format": "SAFETENSORS",
+            "metadata": {},
+        },
+    )
+
+    assert refreshed["model_type"] == "MLM"
+    assert refreshed["capability_facts"]["domain"] == "MLM"
+
+
+def test_cached_legacy_mllm_with_vision_domain_stays_vlm() -> None:
+    refreshed = _refresh_cached_result(
+        "R:/vision.safetensors",
+        {
+            "model_type": "MLLM",
+            "capability_facts": {"domain": "VLM"},
+            "format": "SAFETENSORS",
+            "metadata": {},
+        },
+    )
+
+    assert refreshed["model_type"] == "VLM"
+    assert refreshed["capability_facts"]["domain"] == "VLM"
 
 
 @pytest.mark.parametrize("architecture", ["qwen2vl", "qwen2.5-vl", "qwen3_vl"])

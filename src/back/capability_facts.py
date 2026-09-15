@@ -57,6 +57,9 @@ _PROJECTOR_KEY_RE = re.compile(
     r"(?:^|[._])(?:mmproj|projector|multi[_-]?modal[_-]?projector)(?:[._]|$)",
     re.IGNORECASE,
 )
+_DIFFUSION_MODEL_RE = re.compile(
+    r"(?:diffusion|stable[-_ ]diffusion|flux|sdxl|sd3|unet|vae)", re.IGNORECASE
+)
 
 
 def _walk_values(value: Any, prefix: str = ""):
@@ -272,10 +275,19 @@ def build_capability_facts(
     values.extend(_walk_values(processor, "processor_config.json"))
     values.extend(_walk_values(metadata, "header metadata"))
     standalone_projector = _is_standalone_projector(keys)
+    component_flags = components or {}
+    diffusion_checkpoint = bool(
+        _DIFFUSION_MODEL_RE.search(architecture_text)
+        or component_flags.get("unet")
+        or (
+            component_flags.get("transformer")
+            and (component_flags.get("vae") or component_flags.get("text_encoder"))
+        )
+    )
 
     language_evidence: list[str] = []
     text_config = config.get("text_config")
-    if not standalone_projector and isinstance(text_config, Mapping) and _first_positive(text_config, _LAYER_KEYS):
+    if not standalone_projector and not diffusion_checkpoint and isinstance(text_config, Mapping) and _first_positive(text_config, _LAYER_KEYS):
         language_evidence.append("config.json:text_config")
     if not standalone_projector and _LANGUAGE_HINTS.search(architecture_text) and not _NON_LANGUAGE_HINTS.search(
         architecture_text
@@ -295,7 +307,7 @@ def build_capability_facts(
         )
         for key in lowered_keys
     )
-    if language_tensor:
+    if language_tensor and not diffusion_checkpoint:
         language_evidence.append("tensor header:language signature")
     language_evidence = list(dict.fromkeys(language_evidence))
 
@@ -305,7 +317,7 @@ def build_capability_facts(
     other_evidence = _other_modality_evidence(config, processor, architecture_text)
     if language_evidence:
         if other_evidence:
-            domain = "MMLM"
+            domain = "MLM"
         elif vision_evidence:
             domain = "VLM"
         else:

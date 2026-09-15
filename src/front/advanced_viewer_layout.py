@@ -159,10 +159,10 @@ def build_advanced_viewer_ui(dialog: Any) -> None:
 
     dialog.weight_bits_spin = QDoubleSpinBox()
     dialog.weight_bits_spin.setRange(1.0, 64.0)
-    dialog.weight_bits_spin.setDecimals(1)
-    dialog.weight_bits_spin.setSingleStep(1.0)
+    dialog.weight_bits_spin.setDecimals(2)
+    dialog.weight_bits_spin.setSingleStep(0.10)
     dialog.weight_bits_spin.setSuffix(" bits")
-    dialog.weight_bits_spin.setToolTip("Explicit weight precision used by the estimator; quantization presets update this value.")
+    dialog.weight_bits_spin.setToolTip("Effective resident weight precision. Auto uses inspected tensor bytes when complete; presets or edits override it.")
     projection_form.addRow("Weight bits", dialog.weight_bits_spin)
 
     dialog.batch_spin = QSpinBox()
@@ -251,6 +251,6 @@ def build_advanced_viewer_ui(dialog: Any) -> None:
 
     dialog.context_spin.valueChanged.connect(dialog._recalculate)
     dialog.quantization_combo.currentIndexChanged.connect(dialog._quantization_changed)
-    dialog.weight_bits_spin.valueChanged.connect(dialog._recalculate)
+    dialog.weight_bits_spin.valueChanged.connect(dialog._weight_bits_changed)
     dialog.batch_spin.valueChanged.connect(dialog._recalculate)
     dialog.kv_cache_bits_combo.currentIndexChanged.connect(dialog._recalculate)

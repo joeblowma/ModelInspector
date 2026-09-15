@@ -328,15 +328,21 @@ class SelectionControllerMixin(FileOperationControllerMixin):
 
     def _on_show_full_path_changed(self, state):
         self._show_full_paths = state == Qt.CheckState.Checked.value
+        header = self.table.horizontalHeader()
+        assert header is not None
+        sorting_enabled = self.table.isSortingEnabled()
+        sort_column = header.sortIndicatorSection()
+        sort_order = header.sortIndicatorOrder()
+        self.table.setSortingEnabled(False)
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 1)
             if not item:
                 continue
             fp = item.data(Qt.ItemDataRole.UserRole) or ""
-            if self._show_full_paths and fp:
-                item.setText(fp)
-            else:
-                item.setText(Path(fp).name if fp else item.text())
+            item.setText(fp if self._show_full_paths and fp else Path(fp).name if fp else item.text())
+        header.setSortIndicator(sort_column, sort_order)
+        self.table.setSortingEnabled(sorting_enabled)
+        self._sync_order_from_table()
 
     def _copy_selected_table_cells(self):
         indexes = [

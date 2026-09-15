@@ -3,9 +3,19 @@
 from pathlib import Path; from time import perf_counter
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QCheckBox, QLabel
+from back.capability_evidence import evidence_backed_capabilities
 from front.filter_widgets import SortableTableWidgetItem; from front.model_card import ModelCard
 from back.theme_loader import get_global_theme_colors
 def _combo_data_str(value): return str(value) if value else None
+def _capability_domain(data):
+    facts = data.get("capability_facts")
+    return facts.get("domain") if isinstance(facts, dict) else None
+def _canonical_model_type(value, domain=None):
+    text = str(value or "").strip()
+    upper = text.upper()
+    if upper in {"MLLM", "MMLLLM"}:
+        return "MLM" if str(domain or "").strip().upper() in {"MMLM", "MLM"} else "VLM"
+    return "MLM" if upper == "MMLM" else text
 _QUANT_DTYPE_CANON = {
     "F32": "f32", "F16": "f16", "BF16": "bf16",
     "float32": "f32", "float16": "f16", "bfloat16": "bf16",
@@ -62,6 +72,7 @@ class ViewControllerMixin:
         self._refresh_card_layout_geometry()
 
     def _add_card(self, data: dict):
+        data["model_type"] = _canonical_model_type(data.get("model_type"), _capability_domain(data))
         fp = str(data.get("filepath") or "")
         if fp and fp in self._path_to_card:
             return
@@ -132,6 +143,26 @@ class ViewControllerMixin:
             card.setMaximumWidth(maximum_width)
         cards_viewport.update()
     def _add_table_row(self, data: dict):
+        """Populate a row without a live sort reordering it mid-insert.
+
+        Re-enabling sorting re-sorts the table in place; the batch paths that
+        append rows already disable sorting for the whole batch, so no per-row
+        ``_sync_order_from_table`` is needed here (it would turn a batch insert
+        into O(n^2) and defeat the terminal-projection single-pass invariant).
+        """
+        header = self.table.horizontalHeader()
+        assert header is not None
+        sorting_enabled = self.table.isSortingEnabled()
+        sort_column = header.sortIndicatorSection()
+        sort_order = header.sortIndicatorOrder()
+        self.table.setSortingEnabled(False)
+        try:
+            self._add_table_row_unsorted(data)
+        finally:
+            header.setSortIndicator(sort_column, sort_order)
+            self.table.setSortingEnabled(sorting_enabled)
+
+    def _add_table_row_unsorted(self, data: dict):
         row = self.table.rowCount()
         self.table.insertRow(row)
         comps = data.get("components", {})
@@ -177,7 +208,7 @@ class ViewControllerMixin:
         )
         values = [
             data["filename"], data.get("format", "-"), data["file_size_friendly"],
-            data["architecture"], data["model_type"], data.get("adapter_type") or "-",
+            data["architecture"], _canonical_model_type(data.get("model_type"), _capability_domain(data)), data.get("adapter_type") or "-",
             _data_quantization_display(data), data.get("precision_summary", "-"),
             unet_str, vae_str, text_enc_str, trans_str, data["total_params_friendly"],
             str(data["tensor_count"]), rank_str, moe_str, expert_count_str,
@@ -320,7 +351,7 @@ class ViewControllerMixin:
         if data.get("architecture") == "ERROR":
             tags.append("ERROR")
             return list(dict.fromkeys(tags))
-        model_type = data.get("model_type")
+        model_type = _canonical_model_type(data.get("model_type"), _capability_domain(data))
         if model_type:
             tags.append(str(model_type))
         adapter_type = data.get("adapter_type")
@@ -331,6 +362,11 @@ class ViewControllerMixin:
         quantization = data.get("quantization")
         if quantization:
             tags.append(str(quantization))
+        certain_capabilities = set(evidence_backed_capabilities(data.get("capability_facts")))
+        if "tools" in certain_capabilities:
+            tags.append("Tool Use")
+        if "thinking" in certain_capabilities:
+            tags.append("Thinking")
         return list(dict.fromkeys(tags))
     def _format_filter_for_data(self, data: dict) -> str:
         filepath = str(data.get("filepath") or "")

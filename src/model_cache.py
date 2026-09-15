@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from app_paths import cache_dir
+from app_paths import cache_dir, model_cache_dir
 from back.cache_storage import (
     get_cached_directory_scan as _get_cached_directory_scan,
     get_cached_raw_dump as _get_cached_raw_dump,
@@ -43,11 +43,11 @@ def _legacy_cache_path() -> Path | None:
         return Path(override)
     return None
 def _index_path() -> Path:
-    return cache_dir() / "index.json"
+    return model_cache_dir() / "index.json"
 def _entry_path(entry_id: str) -> Path:
-    return cache_dir() / "entries" / f"{entry_id}.json"
+    return model_cache_dir() / "entries" / f"{entry_id}.json"
 def _data_path(entry_id: str) -> Path:
-    return cache_dir() / "data" / f"{entry_id}.json"
+    return model_cache_dir() / "data" / f"{entry_id}.json"
 def _cache_key(filepath: str, options: dict | None) -> str:
     try:
         resolved = str(Path(filepath).resolve(strict=True)).lower()
@@ -125,7 +125,7 @@ def _iter_cached_entries():
 
     seen = set()
     try:
-        entry_paths = sorted((cache_dir() / "entries").glob("*.json"))
+        entry_paths = sorted((model_cache_dir() / "entries").glob("*.json"))
     except Exception:
         entry_paths = []
     for path in entry_paths:
@@ -430,7 +430,7 @@ def get_cached_model_data(filepath: str, options: dict | None = None) -> dict | 
         pass
 
     wanted = _path_match_values(filepath)
-    data_dir = cache_dir() / "data"
+    data_dir = model_cache_dir() / "data"
     try:
         candidates = list(data_dir.glob("*.json"))
     except Exception:
@@ -482,9 +482,9 @@ def clear_inspection_cache() -> int:
         legacy_sidecars = legacy_path.with_name(legacy_path.stem + ".sidecars")
         if legacy_sidecars.exists():
             paths.append(legacy_sidecars)
-    cache_path = cache_dir()
-    if cache_path.exists():
-        paths.append(cache_path)
+    for cache_path in {cache_dir(), model_cache_dir()}:
+        if cache_path.exists():
+            paths.append(cache_path)
 
     removed = 0
     for path in paths:

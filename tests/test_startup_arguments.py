@@ -54,7 +54,7 @@ def test_help_exits_zero_when_streams_are_none(monkeypatch):
 
 
 def test_settings_override_applied_before_settings_load(monkeypatch, tmp_path):
-    monkeypatch.delenv("SMI_SETTINGS_PATH", raising=False)
+    monkeypatch.setenv("SMI_SETTINGS_PATH", "")
     application._apply_settings_override(tmp_path / "chosen.jsonc")
     assert os.environ["SMI_SETTINGS_PATH"] == str(tmp_path / "chosen.jsonc")
     # Explicit CLI beats a pre-existing environment value.
@@ -131,7 +131,9 @@ def test_startup_targets_skipped_after_window_close(monkeypatch, tmp_path):
 def test_cli_settings_flag_sets_env_before_inspection(monkeypatch, tmp_path, capsys):
     from back.cli import main
 
-    monkeypatch.delenv("SMI_SETTINGS_PATH", raising=False)
+    monkeypatch.setenv("SMI_SETTINGS_PATH", "")
+    monkeypatch.setenv("SMI_CACHE_DIR", "")
+    monkeypatch.setenv("SMI_DATA_DIR", str(tmp_path / "data"))
     empty = tmp_path / "empty"
     empty.mkdir()
     # Empty folder target: no supported files, no model bytes read.

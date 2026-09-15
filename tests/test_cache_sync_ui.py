@@ -82,11 +82,11 @@ def _report(availability: CacheAvailability, entries=(), action_plan=()) -> Simp
 
 
 # ---------------------------------------------------------------------------
-# F1: cache-load actions disable as soon as a result lands or a cache load runs
+# F1: cache-load actions stay enabled so repeated loads clear-then-reload
 # ---------------------------------------------------------------------------
 
 
-def test_result_landing_disables_cache_load_actions(monkeypatch, tmp_path: Path) -> None:
+def test_result_landing_keeps_cache_load_actions_enabled(monkeypatch, tmp_path: Path) -> None:
     window = _window(monkeypatch, tmp_path)
     try:
         availability = _availability(total=1, active=1)
@@ -99,17 +99,18 @@ def test_result_landing_disables_cache_load_actions(monkeypatch, tmp_path: Path)
         assert window._cache_load_active_action.isEnabled()
 
         # A result lands: the projection path appends to _results, then renders.
+        # Load Cache now clears before loading, so actions remain enabled.
         landed = _summary("R:/landed.safetensors", "Arch", "Checkpoint")
         window._results.append(landed)
         window._add_table_row(landed)
-        assert not window._cache_load_active_action.isEnabled()
-        assert not window._cache_load_all_action.isEnabled()
+        assert window._cache_load_active_action.isEnabled()
+        assert window._cache_load_all_action.isEnabled()
         assert not window._cache_load_archived_action.isEnabled()
     finally:
         window.close()
 
 
-def test_cache_load_disables_actions_after_loading(monkeypatch, tmp_path: Path) -> None:
+def test_cache_load_reenables_actions_after_loading(monkeypatch, tmp_path: Path) -> None:
     window = _window(monkeypatch, tmp_path)
     try:
         cached = "R:/cached.safetensors"
@@ -126,8 +127,34 @@ def test_cache_load_disables_actions_after_loading(monkeypatch, tmp_path: Path) 
             lambda _paths: {cached: _summary(cached, "Arch", "Checkpoint")},
         )
         window._load_cache()
-        assert not window._cache_load_active_action.isEnabled()
-        assert not window._cache_load_all_action.isEnabled()
+        assert window._cache_load_active_action.isEnabled()
+        assert window._cache_load_all_action.isEnabled()
+    finally:
+        window.close()
+
+
+def test_repeated_cache_load_clears_not_appends(monkeypatch, tmp_path: Path) -> None:
+    """A second Load Cache clears the first load's results rather than appending."""
+    window = _window(monkeypatch, tmp_path)
+    try:
+        cached = "R:/cached.safetensors"
+        availability = _availability(total=1, active=1)
+        monkeypatch.setattr(
+            window, "_cache_report",
+            lambda: _report(
+                availability,
+                entries=(SimpleNamespace(path=cached, classification="active"),),
+            ),
+        )
+        monkeypatch.setattr(
+            window, "_get_cached_inspection_summary_snapshots",
+            lambda _paths: {cached: _summary(cached, "Arch", "Checkpoint")},
+        )
+        window._load_cache()
+        assert len(window._results) == 1
+        window._load_cache()
+        assert len(window._results) == 1
+        assert window._results[0]["filepath"] == cached
     finally:
         window.close()
 

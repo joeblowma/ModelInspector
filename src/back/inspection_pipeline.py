@@ -96,6 +96,20 @@ def _refresh_cached_result(filepath: str, cached: dict) -> dict:
     if not refreshed.get("format"):
         refreshed["format"] = model_format_for_path(filepath)
 
+    facts = refreshed.get("capability_facts")
+    legacy_domain = (
+        str(facts.get("domain") or "").strip().upper()
+        if isinstance(facts, dict)
+        else ""
+    )
+    legacy_model_type = str(refreshed.get("model_type") or "").strip().upper()
+    if legacy_model_type in {"MLLM", "MMLLLM"}:
+        # Evidence-aware: an old vision label on a model with other-modality
+        # facts is a multimodal language model, not a vision one.
+        refreshed["model_type"] = "MLM" if legacy_domain == "MMLM" else "VLM"
+    if isinstance(facts, dict) and legacy_domain == "MMLM":
+        refreshed["capability_facts"] = {**facts, "domain": "MLM"}
+
     metadata = refreshed.get("metadata") or {}
     file_type = metadata.get("general.file_type")
     quantization = str(refreshed.get("quantization") or "")
@@ -284,8 +298,9 @@ def inspect_file(
     capability_facts = build_capability_facts(
         keys, metadata, companion, architecture, components
     )
-    if capability_facts["domain"] in {"VLM", "MMLM"}:
-        components["vision"] = True
+    # A vision+audio model keeps its vision component even though its language
+    # domain is MLM (other-modality); only the VLM domain forces vision on.
+    components["vision"] = components["vision"] or capability_facts["domain"] == "VLM"
     model_type = classify_model_type(
         components,
         architecture,

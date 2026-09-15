@@ -65,14 +65,16 @@ plus the packaging/reporting milestone and a full-suite/type baseline.
   local PyQt font-directory warning on stderr); not visual QA.
 - [x] Module ceiling audit: no source or test module exceeds 500 lines.
 
-### Remote CI follow-up (pending rerun)
+### Remote CI validation
 
-- [ ] First remote build run `35006721326`: all six Windows/macOS wheel jobs
-  passed; all three Ubuntu wheel jobs failed before packaging assertions because
-  PyQt6 could not load `libEGL.so.1`. The Windows PyInstaller build completed,
-  but the frozen `--help` smoke timed out waiting for its intentional modal help
-  dialog. The Linux runtime and frozen-help process-tree smoke fixes await a
-  rerun; this is not a completed remote-validation result.
+- [x] Remote build run `35007857714` at
+  `e3c5f2e23c50bed6dff51a37d722c437b9a403cb` completed successfully: all nine
+  wheel jobs (Windows, macOS, and Ubuntu on Python 3.12-3.14) and the Windows
+  PyInstaller job passed. This supersedes the initial `35006721326` Linux EGL
+  and frozen-help-smoke failures.
+- [x] The frozen `--help` smoke verifies that the onefile child process starts
+  and remains alive before CI deliberately terminates only that launched process
+  tree. It proves bounded process lifetime, not visual or render correctness.
 
 ## 2026-09-14 — Release-readiness bugbash
 

@@ -26,15 +26,10 @@ the follow-up list below.
 
 ### Remaining pre-release verification
 
-- [ ] Rerun `.github/workflows/build.yml` remotely after the pending CI fixes.
-  The first remote run (`35006721326`) had six passing wheel jobs (all Windows
-  and macOS), while all three Ubuntu wheel jobs failed importing PyQt6 without
-  `libEGL.so.1`. The Windows PyInstaller build passed, but its frozen `--help`
-  smoke incorrectly required the intentional help dialog to exit. Both fixes
-  are pending rerun; this is not a green remote-validation result.
 - [ ] Manually launch and visually inspect the packaged windowed executable.
   The source GUI was visually audited (commit abd1ed4), but packaged-exe QA is
-  limited to a headless offscreen startup (process alive ~10s), not visual QA.
+  limited to a headless frozen-help process-lifetime check, not visual or render
+  QA.
 
 ## Deferred product work
 

@@ -57,9 +57,9 @@ if not exist assets\icon.ico (
     )
 )
 
-:: Convert splash_base.png to splash.png (Pyinstaller wants 640x480 from 800x600, may need to update this if base is changed)
-if not exist assets\splash.bmp (
-    echo [INFO] Converting splash_base.bmp to splash.bmp...
+:: Convert splash_base.bmp to splash.png (Pyinstaller wants 640x480 from 800x600, may need to update this if base is changed)
+if not exist assets\splash.png (
+    echo [INFO] Converting splash_base.bmp to splash.png...
     python assets\ResizeSplash.py assets\splash_base.bmp assets\splash.png 400 600
     if %ERRORLEVEL% neq 0 (
         echo [ERROR] Icon conversion failed.
@@ -91,6 +91,8 @@ pyi-makespec ^
     --version-file "version.txt" ^
     --icon "assets/icon.ico" ^
     --add-data "assets/icon.ico:assets" ^
+    --add-data "assets/logo.png:assets" ^
+    --add-data "assets/splashpy.png:assets" ^
     --add-data "assets/themes:assets/themes" ^
     --splash "assets/splash.png" ^
     src/gui.py

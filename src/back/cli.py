@@ -8,8 +8,10 @@ even when independent inspections run concurrently.
 
 import argparse
 import json
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Iterable
 
 from model_readers import (
@@ -66,6 +68,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "targets",
         nargs="+",
         help="File(s) or folder(s) to inspect",
+    )
+    parser.add_argument(
+        "-s",
+        "--settings",
+        metavar="PATH",
+        type=Path,
+        help=(
+            "Explicit settings JSONC location override (sets SMI_SETTINGS_PATH "
+            "before any settings load; overrides an existing environment value)"
+        ),
     )
     parser.add_argument(
         "-r",
@@ -129,6 +141,11 @@ def main(argv=None):
     _configure_stdio_encoding()
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
+
+    # CLI-explicit settings location is the strongest precedence: route it
+    # through the same app_paths seam the GUI uses, before any settings load.
+    if args.settings is not None:
+        os.environ["SMI_SETTINGS_PATH"] = str(args.settings)
 
     paths = _iter_model_paths(args.targets, args.recursive, args.checkpoint_safety)
     checkpoint_paths = iter_checkpoint_paths(args.targets, args.recursive)

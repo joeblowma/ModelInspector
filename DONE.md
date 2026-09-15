@@ -3,6 +3,114 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-09-14 — Release-readiness bugbash
+
+User-facing bug fixes and pre-release packaging from the day's bugbash. This
+milestone records what was fixed and validated that day; it is not a guarantee
+that the whole project is release-complete.
+
+### GUI and Data fixes
+
+- [x] Data-row context-menu `View Raw` respects the auto-load Raw setting and no
+  longer double-loads a different model: it routes through the RAW dropdown and
+  suppresses the refresh's own load.
+- [x] Cache loading reads persisted summaries directly instead of recomputing an
+  option-derived key, fixing an `allow_filename_alias_detection` cache-key
+  mismatch that could miss valid persisted summaries.
+- [x] Async cache load delivers bounded batches with backpressure, is
+  cancel/close safe, and preserves existing filters and selection for both
+  historic and refresh entries.
+- [x] Settings close no longer rebuilds every loaded card, removing the
+  multi-second freeze; only the changed projections are refreshed.
+- [x] The Data selection column is always the first, visible column with no
+  hide/reorder controls, and only its checkbox cells are centered. Canonical
+  labels and default widths now live in `front/data_columns.py`; hidden columns
+  retain their last valid width across smart masks and reloads.
+- [x] Quantization keeps real metadata labels and only infers `f32`/`f16`/`bf16`
+  for a uniform standard float dtype; mixed or unknown dtypes fall back to `-`.
+
+### Pre-release packaging and startup
+
+- [x] Settings is resizable and remembers its size, clamped to the current
+  screen; the default remains 900x640.
+- [x] Save/output dialogs default to `~/.local/ModelInspector` via
+  `ensure_output_dir()` (`SMI_OUTPUT_DIR` override). The legacy
+  `.model-inspector` settings/cache stay in place to avoid a destructive
+  migration, and `--settings`/`-s` selects an explicit settings file for the CLI
+  and GUI. Modelinfo dumps intentionally remain beside the source model.
+- [x] The GUI accepts optional file/folder startup targets, queued safely after
+  the window is shown; `--help` exits before Qt starts.
+- [x] Setuptools flat-layout wheel with `modelinspector`/`modelinspector-gui`
+  entry points and packaged assets that `app_paths` resolves in an installed
+  layout; `pyproject.toml` declares the setuptools build backend.
+- [x] `.github/workflows/build.yml` builds the wheel and a PyInstaller executable
+  on Windows, installs the wheel into a clean venv, validates CLI/GUI help,
+  assets, and a tiny safetensors inspection, and validates executable startup
+  with timeouts so Qt cannot hang CI.
+
+### Validation (2026-09-14)
+
+- [x] Full local pytest: 378 passed, 4 skipped.
+- [x] Wheel built locally and clean-installed: `--help`, imports, packaged
+  assets, and a tiny safetensors CLI inspection all passed.
+- [x] Windows PyInstaller 6.22.2 build passed; the windowed executable's
+  `--help` exited 0 and a bare offscreen startup stayed alive about 10 seconds.
+- [ ] Manual visual QA of the packaged window was not performed (headless
+  offscreen startup only).
+- [ ] GitHub Actions was not run remotely (nothing pushed).
+- [x] Pyright on all 21 changed production modules: 0 errors, 0 warnings.
+- [x] Typing-targeted rerun (`test_startup_arguments.py`,
+  `test_file_operations.py`): 21 passed, 1 skipped.
+
+The 4 skips are the unavailable symlink fixtures on the temp drive.
+
+## 2026-09-13 — Completed sidequests
+
+### Inspection and metadata enrichment
+
+Implemented and integrated; validation is complete:
+
+- [x] Architecture coverage: SeedVR2, SANA Video, RCAN, Anima, and Krea 2 key
+  signatures; explicit Mage Flow / Ideogram 4 trainer metadata; narrower Krea
+  merge-recipe false positives; conservative ZImage handling.
+- [x] GGUF same-parent bounded companion fallback for `config.json`,
+  `tokenizer_config.json`, and `processor_config.json`, plus
+  `chat_template.jinja` and `chat_template.json` only — ambiguous arbitrarily
+  named templates are ignored.
+- [x] Think/Tool structural evidence split into strong vs weak; the shared
+  `capability_evidence` projection filters weak evidence out of the GUI,
+  reports, and the estimator.
+- [x] Conservative processor-backed VLM and explicit audio/omni MMLM detection
+  with no mmproj filename guessing; GGUF reliable alias KV with labelled
+  vision/MLA/asymmetric heuristics and the `estimator_metadata` helper.
+
+Validation summary — Initial full run: 311 passed, 4 skipped, 4 failed. All
+four failures were corrected; affected-module rerun: 34 passed. Full suite was
+not rerun after those fixes:
+
+- [x] Original full suite: 319 tests — 311 passed, 4 skipped, 4 failed. All four
+  failures were stale assertions, since fixed: the current 900x640
+  settings-dialog default, 30-row overflow fixtures, and the generated spec
+  accepting the bundled directory; plus one new cache-sync-close regression
+  test.
+- [x] Final affected-module rerun: 34 passed. Earlier changed GUI/file-operation
+  group: 45 passed.
+- [x] Header-only real CLI smoke passed for SeedVR2 and EXAONE files, both
+  human-readable and `--json` output.
+- [x] Headless actual `py src/gui.py` startup smoke passed (no human visual
+  inspection).
+- [x] Lifecycle module `pyright` reports 0 errors.
+- [x] The 4 skips are symlink fixtures unavailable on the temp drive.
+
+### GUI startup, feedback, and file operations
+
+- [x] Native splash painted from the existing asset before `MainWindow`
+  construction; startup cache report computed once (not fully async); unknown
+  summary caption/value hidden while retaining zero/False; all six selected
+  actions give feedback; threaded modal move/dump with no-clobber failures
+  retained and cooperative cancel between files. Copy Files remains clipboard
+  file URLs — no actual disk copy.
+
 ## 2026-09-07 — Cache, Settings, Themes, and Smart Columns
 
 ### Cache actions and verification
@@ -211,8 +319,9 @@ discovered as separate records with compact primary identities and runtime paths
   expensive work out of the dialog close path.
 - [x] Load bundled themes correctly in packaged executables through extracted
   application assets.
-- [x] Keep the current Settings default at fixed 900x640 with screen clamping;
-  the later resizable, remembered-size proposal remains in `TODO.md`.
+- [x] Keep the Settings default at 900x640 with screen clamping; this fixed-size
+  behavior was later superseded by the resizable, remembered-size work recorded
+  in the 2026-09-14 milestone.
 - [x] Keep the Advanced Viewer above its main window without forcing it above
   unrelated applications.
 - [x] Propagate multimodal model classification as MLLM, including vision-tower

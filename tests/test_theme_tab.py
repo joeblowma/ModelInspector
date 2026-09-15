@@ -67,28 +67,35 @@ def test_theme_editor_is_dedicated_and_data_has_none(app, theme_data_dir):
         dialog.close()
 
 
-def test_settings_dialog_is_fixed_and_bottom_controls_are_visible(app, theme_data_dir):
-    dialog = SettingsDialog(data_columns=[ColumnDefinition("file", "File")])
+def test_settings_dialog_is_resizable_with_900x640_default(app, theme_data_dir):
+    class LargeScreenParent(QWidget):
+        def screen(self):
+            class LargeScreen:
+                @staticmethod
+                def availableGeometry():
+                    return QRect(0, 0, 2000, 1200)
+
+            return LargeScreen()
+
+    parent = LargeScreenParent()
+    dialog = SettingsDialog(parent=parent, data_columns=[ColumnDefinition("file", "File")])
     try:
         dialog.show()
         app.processEvents()
-        assert dialog.minimumSize() == dialog.maximumSize()
-        assert dialog.size() == dialog.minimumSize()
-        screen = dialog.screen()
-        assert screen is not None
-        available = screen.availableGeometry()
-        assert dialog.width() == min(900, max(1, available.width() - 48))
-        assert dialog.height() == min(640, max(1, available.height() - 48))
+        # Release feature: resizable, not fixed.
+        assert dialog.minimumSize() != dialog.maximumSize()
+        # The release default remains 900x640 when the screen has room.
+        assert (dialog.width(), dialog.height()) == (900, 640)
+        assert dialog.minimumSize().width() <= dialog.width()
+        assert dialog.minimumSize().height() <= dialog.height()
 
         buttons = dialog.findChild(QDialogButtonBox)
         assert buttons is not None
         assert buttons.isVisible()
         assert buttons.geometry().bottom() <= dialog.contentsRect().bottom()
-
-        assert dialog.width() <= available.width() - 48
-        assert dialog.height() <= available.height() - 48
     finally:
         dialog.close()
+        parent.close()
 
 
 def test_settings_data_tree_uses_available_dialog_height(app, theme_data_dir):
@@ -148,9 +155,15 @@ def test_settings_size_clamp_keeps_controls_usable_on_small_screen(app, theme_da
         dialog.show()
         app.processEvents()
 
+        # Clamped below the 900x640 default and within the small screen.
         assert dialog.width() == 752
         assert dialog.height() == 452
-        assert dialog.minimumSize() == dialog.maximumSize()
+        assert dialog.width() <= 800
+        assert dialog.height() <= 500
+        # Resizable, with a sane minimum that still fits the small screen.
+        assert dialog.minimumSize() != dialog.maximumSize()
+        assert dialog.minimumSize().width() <= 800
+        assert dialog.minimumSize().height() <= 500
         buttons = dialog.findChild(QDialogButtonBox)
         assert buttons is not None and buttons.isVisible()
         reset_button = dialog.data_settings_tab.findChild(QPushButton, "resetDataColumnsButton")

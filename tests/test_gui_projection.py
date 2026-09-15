@@ -10,7 +10,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from PyQt6.QtWidgets import QApplication, QLabel
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QLabel, QCheckBox, QStyle, QStyleOptionButton
 
 from front.scan_projection import ProjectionEvent, ScanProjectionBuffer
 from front.window_layout import SMART_COLUMN_GROUPS
@@ -196,9 +197,32 @@ def test_mllm_result_auto_enables_diffusion_group_only(monkeypatch, tmp_path: Pa
 # ---------------------------------------------------------------------------
 
 
+def test_selection_column_checkbox_is_centered_and_data_cells_are_not(monkeypatch, tmp_path: Path) -> None:
+    window = _window(monkeypatch, tmp_path)
+    try:
+        window._add_table_row(_row_data("R:/a.safetensors"))
+        cb = window.table.cellWidget(0, 0)
+        assert isinstance(cb, QCheckBox), "selection cell must stay a native QCheckBox"
+        assert "subcontrol-position: center" in cb.styleSheet()
+        # The indicator must actually paint centered in the cell.
+        option = QStyleOptionButton()
+        cb.initStyleOption(option)
+        rect = cb.style().subElementRect(QStyle.SubElement.SE_CheckBoxIndicator, option, cb)
+        assert rect.width() > 0
+        assert abs((rect.x() + rect.width() / 2) - cb.width() / 2) <= 1
+        # Only the selection column is centered; data cells keep native alignment.
+        for col in range(1, window.table.columnCount()):
+            item = window.table.item(0, col)
+            if item is not None:
+                assert not (item.textAlignment() & Qt.AlignmentFlag.AlignHCenter), col
+    finally:
+        window.close()
+        _app().processEvents()
+
+
 def test_smart_group_membership_is_exact() -> None:
     assert set(SMART_COLUMN_GROUPS) == {"llm", "diffusion", "adapter"}
-    assert set(SMART_COLUMN_GROUPS["llm"]["columns"]) == {"MoE", "Experts", "Active Experts"}
+    assert set(SMART_COLUMN_GROUPS["llm"]["columns"]) == {"MoE", "Experts", "Exp Act"}
     assert set(SMART_COLUMN_GROUPS["diffusion"]["columns"]) == {
         "UNet Precision", "VAE Precision", "Text Encoder Precision", "Transformer Precision",
     }
@@ -329,7 +353,7 @@ def test_baseline_hidden_column_stays_hidden_even_when_group_on(monkeypatch, tmp
         window._on_smart_group_toggled("llm", True)
         assert window.table.isColumnHidden(moe_index), "persisted hidden must win"
         assert not window.table.isColumnHidden(window._table_columns.index("Experts"))
-        assert not window.table.isColumnHidden(window._table_columns.index("Active Experts"))
+        assert not window.table.isColumnHidden(window._table_columns.index("Exp Act"))
         # Auto-enable in a fresh session honours the same precedence.
         second = _window(monkeypatch, tmp_path)
         try:

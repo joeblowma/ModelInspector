@@ -86,20 +86,10 @@ class MainWindow(
 
 
 def main() -> int:
-    """Launch the desktop application."""
-    application = QApplication(sys.argv)
-    configure_application(application)
-    splash = show_startup_splash()
-    try:
-        window = MainWindow()
-    except BaseException:
-        if splash is not None:
-            splash.close()
-        raise
-    window.show()
-    close_startup_splash()
-    finish_startup_splash(splash, window)
-    return application.exec()
+    """Launch the desktop application (thin delegation to front.application)."""
+    from front.application import run
+
+    return run()
 
 
 if __name__ == "__main__":

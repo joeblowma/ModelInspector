@@ -5,63 +5,32 @@ This is a prioritized plan, not a list of release gates. Completed work is in
 
 ## Pre-release checklist
 
-1. Make Settings resizable and remember its size, clamped to the current screen.
-   Start from the current fixed 900x640 default; do not change that default as
-   part of planning alone.
-2. Make GUI save/output default under a user-home subfolder, with a CLI override.
-   Default to `~/.local/ModelInspector`.
-   Override with `--cache <path>`.
-3. Accept an optional GUI file or folder startup argument and queue a safe scan
-   after the window is ready.
-4. Add GitHub Actions that produce a Windows executable package and wheels,
-   including packaging validation.
+Completed items are recorded in `DONE.md`; only open verification is tracked in
+the follow-up list below.
 
-## Completed sidequests
+- [x] **1. Settings** — resizable and remembers its size, clamped to the current
+  screen; the release default remains 900x640.
+- [x] **2. Output paths** — GUI save/output dialogs default to
+  `~/.local/ModelInspector` via `app_paths.ensure_output_dir()` (override
+  `SMI_OUTPUT_DIR`). Existing `.model-inspector` settings/cache stay in place to
+  avoid a destructive migration, and `--settings <path>` / `-s <path>` selects
+  an explicit settings file for both CLI and GUI. Modelinfo dumps intentionally
+  remain beside the source model and are not relocated by this change.
+- [x] **3. Startup argument** — the GUI accepts an optional file or folder and
+  queues a safe scan after the window is ready; `--help` exits before any Qt
+  application is created.
+- [x] **4. Packaging and CI** — setuptools builds a working top-level wheel with
+  `modelinspector` / `modelinspector-gui` console scripts and packaged, resolved
+  assets; the Windows GitHub Actions workflow builds the wheel and executable
+  with clean-install/package validation and timeouts.
 
-### Inspection and metadata enrichment
+### Remaining pre-release verification
 
-Implemented and integrated; validation is complete:
-
-- Architecture coverage: SeedVR2, SANA Video, RCAN, Anima, and Krea 2 key
-  signatures; explicit Mage Flow / Ideogram 4 trainer metadata; narrower Krea
-  merge-recipe false positives; conservative ZImage handling.
-- GGUF same-parent bounded companion fallback for `config.json`,
-  `tokenizer_config.json`, and `processor_config.json`, plus
-  `chat_template.jinja` and `chat_template.json` only — ambiguous arbitrarily
-  named templates are ignored.
-- Think/Tool structural evidence split into strong vs weak; the shared
-  `capability_evidence` projection filters weak evidence out of the GUI,
-  reports, and the estimator.
-- Conservative processor-backed VLM and explicit audio/omni MMLM detection
-  with no mmproj filename guessing; GGUF reliable alias KV with labelled
-  vision/MLA/asymmetric heuristics and the `estimator_metadata` helper.
-
-Validation summary — Initial full run: 311 passed, 4 skipped, 4 failed. All
-four failures were corrected; affected-module rerun: 34 passed. Full suite was
-not rerun after those fixes:
-
-- Original full suite: 319 tests — 311 passed, 4 skipped, 4 failed. All four
-  failures were stale assertions, since fixed: the current 900x640
-  settings-dialog default, 30-row overflow fixtures, and the generated spec
-  accepting the bundled directory; plus one new cache-sync-close regression
-  test.
-- Final affected-module rerun: 34 passed. Earlier changed GUI/file-operation
-  group: 45 passed.
-- Header-only real CLI smoke passed for SeedVR2 and EXAONE files, both
-  human-readable and `--json` output.
-- Headless actual `py src/gui.py` startup smoke passed (no human visual
-  inspection).
-- Lifecycle module `pyright` reports 0 errors.
-- The 4 skips are symlink fixtures unavailable on the temp drive.
-
-### GUI startup, feedback, and file operations
-
-- Native splash painted from the existing asset before `MainWindow`
-  construction; startup cache report computed once (not fully async); unknown
-  summary caption/value hidden while retaining zero/False; all six selected
-  actions give feedback; threaded modal move/dump with no-clobber failures
-  retained and cooperative cancel between files. Copy Files remains clipboard
-  file URLs — no actual disk copy.
+- [ ] Run `.github/workflows/build.yml` remotely; it has not been executed on
+  GitHub yet (nothing pushed).
+- [ ] Manually launch and visually inspect the packaged windowed executable;
+  validation so far is a headless offscreen startup (process alive ~10s), not
+  visual QA.
 
 ## Deferred product work
 
@@ -90,8 +59,9 @@ not rerun after those fixes:
 
 ### Explorer and Raw Dump
 
-- Keep target-specific context-menu View Raw behavior, Raw label refinement, and
-  selection-column pinning under review.
+- Keep target-specific context-menu View Raw behavior and Raw label refinement
+  under review; the Data selection column is now a locked first/always-visible
+  column, so selection-column pinning is no longer an open question.
 - Implement host-side extraction only for genuinely supported embedded tensors;
   Explorer currently emits host-handled requests only.
 - Consider safe text/template extraction, template validation and
@@ -109,7 +79,9 @@ not rerun after those fixes:
 
 - Keep legacy `-cli` executable passthrough optional and deferred; it is
   distinct from the GUI positional startup target in the pre-release checklist.
-- Verify wheel release metadata and artifact validation as part of the CI work.
+- Wheel release metadata and artifact validation are implemented and validated
+  locally; a remote GitHub Actions run and release upload remain optional
+  follow-on work.
 - Treat publishing and GitHub-release upload as optional follow-on work, not a
   prerequisite for the initial artifact-validation workflow.
 - Run a full Graphify rebuild and verify frontend/backend nodes and edges after

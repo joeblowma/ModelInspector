@@ -322,6 +322,37 @@ def test_move_uses_modal_progress_and_cleans_up(tmp_path, monkeypatch):
         window.close()
 
 
+def test_move_dialog_defaults_to_output_dir(tmp_path, monkeypatch):
+    """The move destination dialog opens in the default output directory,
+    not the process CWD."""
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    output = tmp_path / "out"
+    monkeypatch.setenv("SMI_OUTPUT_DIR", str(output))
+    app = QApplication.instance() or QApplication([])
+
+    captured = {}
+
+    def fake_dialog(*args, **kwargs):
+        captured["args"] = args
+        return ""  # cancel the dialog; no worker starts
+
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(fake_dialog))
+
+    window = MainWindow()
+    model = tmp_path / "model.safetensors"
+    model.write_bytes(b"x")
+    _populate(window, str(model))
+    try:
+        window._move_selected_files()
+        # getExistingDirectory(parent, caption, initial_dir)
+        assert captured["args"][2] == str(output)
+        assert output.is_dir()
+        assert window._file_op_worker is None
+    finally:
+        window.close()
+
+
 def test_move_reports_mixed_failures_and_keeps_failed_rows(tmp_path, monkeypatch):
     monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
     monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))

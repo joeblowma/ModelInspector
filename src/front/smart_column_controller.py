@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Runtime-only smart Data-column groups and their masking engine.
 
 Owns the LLM/Diffusion/Adapter column groups, the per-column baseline
@@ -11,6 +12,8 @@ truth.
 from __future__ import annotations
 
 from typing import Any
+
+from front.data_columns import LOCKED_COLUMN_KEYS, column_key, default_column_width
 
 
 _GROUP_COLUMNS = tuple[str, ...]
@@ -54,9 +57,9 @@ def _group_tooltip(summary: str) -> str:
 SMART_COLUMN_GROUPS: dict[str, dict[str, str | _GROUP_COLUMNS]] = {
     "llm": {
         "label": "LLM",
-        "columns": ("MoE", "Experts", "Active Experts"),
+        "columns": ("MoE", "Experts", "Exp Act"),
         "tooltip": _group_tooltip(
-            "Show LLM columns: MoE, Experts, Active Experts."
+            "Show LLM columns: MoE, Experts, Exp Act."
         ),
     },
     "diffusion": {
@@ -158,29 +161,56 @@ class SmartColumnControllerMixin:
         return not self.table.isColumnHidden(index)
 
     def _column_key(self, index: int) -> str:
-        return "selection" if index == 0 else f"column_{index}"
+        return column_key(index)
+
+    def _ensure_column_widths(self) -> None:
+        if not hasattr(self, "_column_widths"):
+            self._column_widths: dict[int, int] = {}
+
+    def _remember_column_width(self, logical: int, width: Any) -> int:
+        """Last valid width for a column.
+
+        Qt reports 0 for a hidden section, so a real width is only accepted
+        when positive; otherwise the previously remembered width or the
+        canonical default is used.  This keeps hidden columns from losing
+        their width across smart-group masks and model reloads.
+        """
+        self._ensure_column_widths()
+        try:
+            parsed = int(width)
+        except (TypeError, ValueError):
+            parsed = 0
+        if parsed <= 0:
+            parsed = int(self._column_widths.get(logical, 0))
+        if parsed <= 0:
+            parsed = default_column_width(self._column_key(logical))
+        self._column_widths[logical] = parsed
+        return parsed
 
     def _apply_data_layout(self, layout: dict[str, Any]) -> None:
         rows = layout.get("columns", ()) if isinstance(layout, dict) else ()
-        if not isinstance(rows, list):
-            return
         by_key = {str(row.get("key")): row for row in rows if isinstance(row, dict)}
         header = self.table.horizontalHeader()
         assert header is not None
+        self._ensure_column_widths()
         for logical in range(self.table.columnCount()):
-            entry = by_key.get(self._column_key(logical))
-            if not entry:
-                continue
-            visible = bool(entry.get("visible", logical == 0 or not self.table.isColumnHidden(logical)))
+            key = self._column_key(logical)
+            entry = by_key.get(key)
+            if entry is None:
+                visible = not self.table.isColumnHidden(logical)
+            else:
+                visible = True if key in LOCKED_COLUMN_KEYS else bool(entry.get("visible", True))
+                name = self._table_columns[logical] if logical < len(self._table_columns) else ""
+                if getattr(self, "_smart_group_owner", None) and name in self._smart_group_owner:
+                    # Only an explicit persisted entry refreshes the mask
+                    # baseline; absent columns keep the snapshot so a currently
+                    # masked column is not mistaken for a persisted hidden one.
+                    self._smart_group_baseline[name] = visible
             self.table.setColumnHidden(logical, not visible)
-            name = self._table_columns[logical] if logical < len(self._table_columns) else ""
-            if getattr(self, "_smart_group_owner", None) and name in self._smart_group_owner:
-                # Persisted per-column visibility refreshes the mask baseline.
-                self._smart_group_baseline[name] = visible
-            try:
-                self.table.setColumnWidth(logical, max(32, int(entry.get("width", self.table.columnWidth(logical)))))
-            except (TypeError, ValueError):
-                pass
+            self.table.setColumnWidth(
+                logical,
+                self._remember_column_width(logical, entry.get("width") if entry else None),
+            )
         for visual, row in enumerate(rows):
             if not isinstance(row, dict):
                 continue
@@ -189,19 +219,24 @@ class SmartColumnControllerMixin:
                 if key == self._column_key(logical) and header.visualIndex(logical) != visual:
                     header.moveSection(header.visualIndex(logical), visual)
                     break
+        # The locked selection column is always the first, visible column.
+        self.table.setColumnHidden(0, False)
+        if header.visualIndex(0) != 0:
+            header.moveSection(header.visualIndex(0), 0)
         if hasattr(self, "_smart_group_state"):
             self._apply_smart_group_masks()
 
     def _capture_data_layout(self) -> dict[str, Any]:
         header = self.table.horizontalHeader()
         assert header is not None
+        self._ensure_column_widths()
         columns = []
         for visual in range(self.table.columnCount()):
             logical = header.logicalIndex(visual)
             columns.append({
                 "key": self._column_key(logical),
                 "visible": self._persisted_column_visible(logical),
-                "width": self.table.columnWidth(logical),
+                "width": self._remember_column_width(logical, self.table.columnWidth(logical)),
             })
         self._data_layout = {"columns": columns, "theme": self._data_layout.get("theme", "default")}
         return self._data_layout

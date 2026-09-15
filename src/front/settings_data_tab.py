@@ -7,7 +7,7 @@ Theme editing lives in the dedicated Theme settings tab, not here.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, cast
+from typing import Any
 
 from PyQt6.QtCore import QEvent, QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -23,7 +23,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from front.settings_data_support import ColumnDefinition, ColumnState, ColumnTree
+from front.settings_data_support import (
+    ColumnDefinition,
+    ColumnState,
+    ColumnTree,
+    locked_keys,
+    normalise_columns,
+)
 
 
 class SettingsDataTab(QWidget):
@@ -65,7 +71,9 @@ class SettingsDataTab(QWidget):
         self._minimum_width = max(1, int(minimum_width))
         self._maximum_width = max(self._minimum_width, int(maximum_width))
         self._message_hook = validation_message_hook
-        self._defaults: list[ColumnDefinition] = self._normalise_columns(columns)
+        self._defaults: list[ColumnDefinition] = normalise_columns(
+            columns, self._minimum_width, self._report
+        )
         self._columns_by_key = {column.key: column for column in self._defaults}
         self._rows: dict[str, QTreeWidgetItem] = {}
         self._checks: dict[str, QCheckBox] = {}
@@ -172,10 +180,17 @@ class SettingsDataTab(QWidget):
         state = self._states[key]
 
         checkbox = QCheckBox()
-        checkbox.setAccessibleName(f"Show {column.label} column")
         checkbox.setChecked(state.visible)
-        checkbox.setToolTip(f"Show the {column.label} column in the Data table.")
-        checkbox.stateChanged.connect(lambda value, key=key: self._on_visibility_changed(key, value))
+        if column.hideable:
+            checkbox.setAccessibleName(f"Show {column.label} column")
+            checkbox.setToolTip(f"Show the {column.label} column in the Data table.")
+            checkbox.stateChanged.connect(lambda value, key=key: self._on_visibility_changed(key, value))
+        else:
+            # Locked columns stay visible: show a checked but disabled control
+            # so the invariant is visible and cannot be toggled off.
+            checkbox.setEnabled(False)
+            checkbox.setAccessibleName(f"{column.label or column.key} column is always visible")
+            checkbox.setToolTip(f"The {column.label or column.key} column is always visible.")
         self.column_tree.setItemWidget(item, 0, checkbox)
         self._install_selection_filter(checkbox, key)
         self._checks[column.key] = checkbox
@@ -216,57 +231,6 @@ class SettingsDataTab(QWidget):
                 self._select_key(str(key))
         return super().eventFilter(obj, event)
 
-    # ------------------------------------------------------------ normalise
-    def _normalise_columns(self, values: Iterable[Any]) -> list[ColumnDefinition]:
-        if isinstance(values, Mapping):
-            values = [
-                {"key": key, "label": value}
-                for key, value in values.items()
-            ]
-        result: list[ColumnDefinition] = []
-        seen: set[str] = set()
-        for index, value in enumerate(values):
-            try:
-                if isinstance(value, ColumnDefinition):
-                    column = value
-                elif isinstance(value, Mapping):
-                    key = str(value.get("key", "")).strip()
-                    label = str(value.get("label", key)).strip() or key
-                    column = ColumnDefinition(
-                        key,
-                        label,
-                        bool(value.get("visible", True)),
-                        int(value.get("width", 100)),
-                        int(value.get("minimum_width", self._minimum_width)),
-                    )
-                elif isinstance(value, str):
-                    key = value.strip()
-                    column = ColumnDefinition(key, key)
-                else:
-                    pair = list(cast(Sequence[Any], value))
-                    if not pair:
-                        raise ValueError("empty column description")
-                    key = str(pair[0]).strip()
-                    label = str(pair[1] if len(pair) > 1 else key).strip() or key
-                    column = ColumnDefinition(key, label)
-                if not column.key.strip() or column.key in seen:
-                    raise ValueError("column keys must be non-empty and unique")
-                seen.add(column.key)
-                result.append(
-                    ColumnDefinition(
-                        column.key.strip(),
-                        column.label.strip() or column.key.strip(),
-                        bool(column.visible),
-                        int(column.width),
-                        max(1, int(column.minimum_width)),
-                    )
-                )
-            except (TypeError, ValueError, AttributeError) as exc:
-                self._report(f"Ignored invalid column {index + 1}: {exc}")
-        if not result:
-            self._report("No valid Data columns were supplied.")
-        return result
-
     # --------------------------------------------------------------- helpers
     def _column_minimum(self, column: ColumnDefinition) -> int:
         return max(self._minimum_width, min(self._maximum_width, column.minimum_width))
@@ -276,6 +240,11 @@ class SettingsDataTab(QWidget):
             parsed = int(value)
         except (TypeError, ValueError):
             self._report(f"Invalid width for {column.label}; using {column.width} px.")
+            parsed = column.width
+        if parsed <= 0:
+            # Qt reports 0 for hidden sections and legacy configs may have
+            # persisted that; fall back to the canonical default instead.
+            self._report(f"Missing width for {column.label}; using {column.width} px.")
             parsed = column.width
         minimum = self._column_minimum(column)
         clamped = max(minimum, min(self._maximum_width, parsed))
@@ -334,10 +303,15 @@ class SettingsDataTab(QWidget):
 
     def _refresh_move_buttons(self) -> None:
         key = self._selected_key()
-        index = self.column_keys().index(key) if key is not None else -1
         count = self.column_tree.topLevelItemCount()
-        self.move_up_button.setEnabled(index > 0)
-        self.move_down_button.setEnabled(0 <= index < count - 1)
+        if key is None or not self._columns_by_key[key].reorderable:
+            self.move_up_button.setEnabled(False)
+            self.move_down_button.setEnabled(False)
+            return
+        index = self.column_keys().index(key)
+        pinned = len(locked_keys(self._columns_by_key))
+        self.move_up_button.setEnabled(index > pinned)
+        self.move_down_button.setEnabled(index < count - 1)
 
     def _on_current_item_changed(
         self, _current: QTreeWidgetItem | None, _previous: QTreeWidgetItem | None
@@ -387,10 +361,12 @@ class SettingsDataTab(QWidget):
         """Return a JSON-serializable snapshot of the current widget state."""
         columns = []
         for key in self.column_keys():
+            column = self._columns_by_key[key]
+            visible = True if not column.hideable else self._states[key].visible
             columns.append(
                 {
                     "key": key,
-                    "visible": self._states[key].visible,
+                    "visible": visible,
                     "width": self._states[key].width,
                 }
             )
@@ -425,7 +401,7 @@ class SettingsDataTab(QWidget):
             self._reorder_keys(ordered)
             for key, column in self._columns_by_key.items():
                 entry = by_key.get(key, {})
-                visible = bool(entry.get("visible", column.visible))
+                visible = True if not column.hideable else bool(entry.get("visible", column.visible))
                 width = self._clamp_width(entry.get("width", column.width), column)
                 self._states[key] = ColumnState(visible, width)
             self._rebuild_row_controls(widgets_detached=True)
@@ -442,14 +418,30 @@ class SettingsDataTab(QWidget):
             item = self.column_tree.takeTopLevelItem(current)
             if item is not None:
                 self.column_tree.insertTopLevelItem(target, item)
+        self._pin_locked_columns()
+
+    def _pin_locked_columns(self) -> None:
+        """Keep non-reorderable columns pinned at the front, in definition order."""
+        for target, key in enumerate(locked_keys(self._columns_by_key)):
+            current = self.column_keys().index(key)
+            if current == target:
+                continue
+            item = self.column_tree.takeTopLevelItem(current)
+            if item is not None:
+                self.column_tree.insertTopLevelItem(target, item)
 
     def move_column(self, key: str, target_index: int, *, emit: bool = True) -> bool:
         """Move a row by stable key; useful for keyboard actions and tests."""
         if key not in self._rows:
             self._report(f"Unknown Data column: {key}")
             return False
+        if not self._columns_by_key[key].reorderable:
+            self._report(f"{self._columns_by_key[key].label or key} cannot be reordered.")
+            self._select_key(key)
+            return False
         keys = self.column_keys()
-        target = max(0, min(len(keys) - 1, int(target_index)))
+        pinned = len(locked_keys(self._columns_by_key))
+        target = max(pinned, min(len(keys) - 1, int(target_index)))
         current = keys.index(key)
         if current != target:
             keys.insert(target, keys.pop(current))

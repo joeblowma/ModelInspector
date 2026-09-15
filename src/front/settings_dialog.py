@@ -23,9 +23,42 @@ from back.theme_loader import get_global_theme_colors
 
 __all__ = ["SettingsDialog"]
 
-_DIALOG_FIXED_WIDTH = 900
-_DIALOG_FIXED_HEIGHT = 640
+_DIALOG_DEFAULT_WIDTH = 900
+_DIALOG_DEFAULT_HEIGHT = 640
+_DIALOG_MINIMUM_WIDTH = 640
+_DIALOG_MINIMUM_HEIGHT = 480
 _DIALOG_SCREEN_MARGIN = 24
+_DIALOG_DEFAULT_SIZE = (_DIALOG_DEFAULT_WIDTH, _DIALOG_DEFAULT_HEIGHT)
+_DIALOG_MINIMUM_SIZE = (_DIALOG_MINIMUM_WIDTH, _DIALOG_MINIMUM_HEIGHT)
+
+
+def _normalise_size(value: object) -> tuple[int, int] | None:
+    """Parse a remembered dialog size from settings; None when unusable."""
+    if isinstance(value, dict):
+        first, second = value.get("width"), value.get("height")
+    elif isinstance(value, (list, tuple)) and len(value) == 2:
+        first, second = value[0], value[1]
+    else:
+        return None
+    if first is None or second is None:
+        return None
+    try:
+        width, height = int(first), int(second)
+    except (TypeError, ValueError):
+        return None
+    return (width, height) if width > 0 and height > 0 else None
+
+
+def _clamp_size_to_screen(size: tuple[int, int], screen) -> tuple[int, int]:
+    """Clamp a size to the current screen's available geometry."""
+    width, height = size
+    if screen is not None:
+        available = screen.availableGeometry()
+        horizontal_margin = min(_DIALOG_SCREEN_MARGIN, available.width() // 12)
+        vertical_margin = min(_DIALOG_SCREEN_MARGIN, available.height() // 12)
+        width = min(width, max(1, available.width() - 2 * horizontal_margin))
+        height = min(height, max(1, available.height() - 2 * vertical_margin))
+    return (width, height)
 
 
 class SettingsDialog(QDialog):
@@ -49,6 +82,7 @@ class SettingsDialog(QDialog):
         data_columns=None,
         data_configuration=None,
         theme_id=None,
+        dialog_size=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -249,7 +283,7 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
-        self._set_fixed_initial_size()
+        self._apply_initial_size(dialog_size)
         self.refresh_theme()
 
         initial_result = self.theme_tab.last_load_result
@@ -261,11 +295,8 @@ class SettingsDialog(QDialog):
                 ),
             )
 
-    def _set_fixed_initial_size(self) -> None:
-        """Set the compact target, reducing it only for a small screen."""
-        width = _DIALOG_FIXED_WIDTH
-        height = _DIALOG_FIXED_HEIGHT
-
+    def _resolve_screen(self):
+        """Parent's screen, else this dialog's, else the primary screen."""
         parent = self.parentWidget()
         screen = parent.screen() if parent is not None else None
         if screen is None:
@@ -274,14 +305,26 @@ class SettingsDialog(QDialog):
             application = QApplication.instance()
             if isinstance(application, QApplication):
                 screen = application.primaryScreen()
-        if screen is not None:
-            available = screen.availableGeometry()
-            horizontal_margin = min(_DIALOG_SCREEN_MARGIN, available.width() // 12)
-            vertical_margin = min(_DIALOG_SCREEN_MARGIN, available.height() // 12)
-            width = min(width, max(1, available.width() - 2 * horizontal_margin))
-            height = min(height, max(1, available.height() - 2 * vertical_margin))
+        return screen
 
-        self.setFixedSize(QSize(width, height))
+    def _apply_initial_size(self, remembered=None) -> None:
+        """Resize to the remembered/default size, clamped to the current screen.
+
+        The dialog is resizable; the 900x640 default is kept when no valid
+        remembered size exists, and the minimum is reduced on small screens.
+        """
+        screen = self._resolve_screen()
+        minimum = _clamp_size_to_screen(_DIALOG_MINIMUM_SIZE, screen)
+        minimum = (max(1, minimum[0]), max(1, minimum[1]))
+        self.setMinimumSize(QSize(*minimum))
+        width, height = _normalise_size(remembered) or _DIALOG_DEFAULT_SIZE
+        width, height = _clamp_size_to_screen((width, height), screen)
+        self.resize(QSize(max(width, minimum[0]), max(height, minimum[1])))
+
+    def dialog_size(self) -> tuple[int, int]:
+        """Current dialog size, persisted by the caller on close."""
+        size = self.size()
+        return (size.width(), size.height())
 
     # ----------------------------------------------------------- theme bridge
 

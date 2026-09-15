@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
     QTextEdit,
 )
 
+from front.data_columns import DATA_COLUMN_LABELS, DATA_COLUMNS
 from front.filter_widgets import CheckFilterButton
 from front.smart_column_controller import SMART_COLUMN_GROUPS
 from back.theme_loader import get_global_theme_colors
@@ -212,64 +213,18 @@ class WindowLayoutMixin:
         assert horizontal_header is not None
         horizontal_header.sortIndicatorChanged.connect(self._on_table_sort_changed)
 
-        self._table_columns = [
-            "",
-            "File",
-            "Format",
-            "File Size",
-            "Architecture",
-            "Model Type",
-            "Adapter",
-            "Quantization",
-            "Precision",
-            "UNet Precision",
-            "VAE Precision",
-            "Text Encoder Precision",
-            "Transformer Precision",
-            "Parameters",
-            "Tensors",
-            "LoRA Rank",
-            "MoE",
-            "Experts",
-            "Active Experts",
-            "Software",
-            "Images",
-            "Resolution",
-            "Epochs",
-            "Steps",
-        ]
+        self._table_columns = list(DATA_COLUMN_LABELS)
         self.table.setColumnCount(len(self._table_columns))
         self.table.setHorizontalHeaderLabels(self._table_columns)
 
         header = self.table.horizontalHeader()
         assert header is not None
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(0, 34)
         for i in range(1, len(self._table_columns)):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-        self.table.setColumnWidth(1, 530)  # File
-        self.table.setColumnWidth(2, 100)  # Format
-        self.table.setColumnWidth(3, 80)  # File Size
-        self.table.setColumnWidth(4, 100)  # Architecture
-        self.table.setColumnWidth(5, 90)  # Model Type
-        self.table.setColumnWidth(6, 70)  # Adapter
-        self.table.setColumnWidth(7, 100)  # Quantization
-        self.table.setColumnWidth(8, 280)  # Precision
-        self.table.setColumnWidth(9, 280)  # UNet
-        self.table.setColumnWidth(10, 280)  # VAE
-        self.table.setColumnWidth(11, 175)  # Text Encoder
-        self.table.setColumnWidth(12, 280)  # Transformer
-        self.table.setColumnWidth(13, 95)  # Parameters
-        self.table.setColumnWidth(14, 65)  # Tensors
-        self.table.setColumnWidth(15, 85)  # LoRA Rank
-        self.table.setColumnWidth(16, 65)  # MoE
-        self.table.setColumnWidth(17, 65)  # Experts
-        self.table.setColumnWidth(18, 105)  # Active Experts
-        self.table.setColumnWidth(19, 115)  # Software
-        self.table.setColumnWidth(20, 70)  # Images
-        self.table.setColumnWidth(21, 100)  # Resolution
-        self.table.setColumnWidth(22, 70)  # Epochs
-        self.table.setColumnWidth(23, 60)  # Steps
+        # One canonical source for default widths, shared with Settings reset.
+        for index, column in enumerate(DATA_COLUMNS):
+            self.table.setColumnWidth(index, column.width)
         self._apply_table_column_visibility()
         data_tab_layout.addWidget(self.table)
         self.tabs.addTab(data_tab, "Data")

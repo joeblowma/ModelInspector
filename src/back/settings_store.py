@@ -22,6 +22,8 @@ DEFAULTS: dict[str, Any] = {
     "default_tab": "cards",
     "table_columns": {},
     "data_layout": {"columns": [], "theme": "default"},
+    # Remembered Settings dialog size; 900x640 is the release default.
+    "settings_size": {"width": 900, "height": 640},
 }
 
 _TEMPLATE = (

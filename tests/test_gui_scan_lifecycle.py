@@ -299,6 +299,48 @@ def test_raw_full_dump_prefixes_cached_and_generated_output(tmp_path, monkeypatc
         window.close()
 
 
+def test_view_raw_context_menu_honors_auto_load_setting(tmp_path, monkeypatch):
+    from front import window_lifecycle
+
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    QApplication.instance() or QApplication([])
+    window = MainWindow()
+    filepath = "R:/synthetic/current-model.safetensors"
+    window._results.append(_summary(filepath))
+    window._add_table_row(_summary(filepath))
+    loads = []
+    monkeypatch.setattr(
+        window_lifecycle, "generate_modelinfo_dump", lambda _path, **_kw: "generated tensor keys"
+    )
+    monkeypatch.setattr(
+        window_lifecycle, "store_raw_dump", lambda path, dump: loads.append(path)
+    )
+    try:
+        # Auto-load OFF: context menu and dropdown both show the summary only.
+        window._auto_load_raw_dump = False
+        window._show_raw_for_filepath(filepath)
+        assert window.tabs.currentIndex() == 2
+        assert loads == []
+        assert "Click Load Full Dump" in window.raw_text.toPlainText()
+        window._on_raw_selection_changed(window.raw_combo.findData(filepath))
+        assert loads == []
+
+        # Auto-load ON: context menu now loads the full dump like the dropdown.
+        window._auto_load_raw_dump = True
+        window._show_raw_for_filepath(filepath)
+        assert loads == [filepath]
+        assert window.raw_text.toPlainText().endswith("generated tensor keys")
+
+        # Same selected file again: no duplicate expensive load.
+        window._show_raw_for_filepath(filepath)
+        assert loads == [filepath]
+        window._on_raw_selection_changed(window.raw_combo.findData(filepath))
+        assert loads == [filepath]
+    finally:
+        window.close()
+
+
 def test_modelinfo_dump_omits_top_key_prefixes(monkeypatch):
     from modelinfo import generate_modelinfo_dump
     import modelinfo

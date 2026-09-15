@@ -429,6 +429,9 @@ class WindowCoreMixin:
             self._discovery_worker.cancel()
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
+        cache_load = getattr(self, "_cache_load_worker", None)
+        if cache_load is not None and cache_load.isRunning():
+            cache_load.cancel()
         file_op = getattr(self, "_file_op_worker", None)
         if file_op is not None and file_op.isRunning():
             file_op.cancel()

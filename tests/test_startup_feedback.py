@@ -78,7 +78,7 @@ def test_show_startup_splash_returns_none_without_asset(monkeypatch, tmp_path):
     assert application.show_startup_splash() is None
 
 
-def test_main_shows_splash_before_window_and_finishes_after_show(monkeypatch):
+def test_run_shows_splash_before_window_and_finishes_after_show(monkeypatch):
     _app()
     splash = FakeSplash()
 
@@ -90,18 +90,18 @@ def test_main_shows_splash_before_window_and_finishes_after_show(monkeypatch):
             splash.events.append("window-show")
 
     def fake_show_startup_splash():
-        # ``gui.main`` delegates to ``show_startup_splash``, which shows and
-        # paints before returning; record that ordering on the fake.
+        # ``application.run`` delegates to ``show_startup_splash``, which shows
+        # and paints before returning; record that ordering on the fake.
         splash.events.append("show")
         splash.events.append("repaint")
         return splash
 
-    monkeypatch.setattr(gui, "QApplication", FakeApp)
-    monkeypatch.setattr(gui, "configure_application", lambda app: None)
-    monkeypatch.setattr(gui, "show_startup_splash", fake_show_startup_splash)
-    monkeypatch.setattr(gui, "MainWindow", FakeWindow)
-    monkeypatch.setattr(gui, "close_startup_splash", lambda: splash.events.append("pyi-close"))
-    assert gui.main() == 0
+    monkeypatch.setattr(application, "QApplication", FakeApp)
+    monkeypatch.setattr(application, "configure_application", lambda app: None)
+    monkeypatch.setattr(application, "show_startup_splash", fake_show_startup_splash)
+    monkeypatch.setattr(application, "close_startup_splash", lambda: splash.events.append("pyi-close"))
+    monkeypatch.setattr("gui.MainWindow", FakeWindow)
+    assert application.run([]) == 0
     events = splash.events
     # Splash is on screen before expensive construction...
     assert events.index("show") < events.index("repaint") < events.index("construct")
@@ -110,19 +110,19 @@ def test_main_shows_splash_before_window_and_finishes_after_show(monkeypatch):
     assert events[-1] == "finish:FakeWindow"
 
 
-def test_main_closes_splash_when_window_construction_fails(monkeypatch):
+def test_run_closes_splash_when_window_construction_fails(monkeypatch):
     _app()
     splash = FakeSplash()
 
     def boom() -> None:
         raise RuntimeError("construction failed")
 
-    monkeypatch.setattr(gui, "QApplication", FakeApp)
-    monkeypatch.setattr(gui, "configure_application", lambda app: None)
-    monkeypatch.setattr(gui, "show_startup_splash", lambda: splash)
-    monkeypatch.setattr(gui, "MainWindow", boom)
+    monkeypatch.setattr(application, "QApplication", FakeApp)
+    monkeypatch.setattr(application, "configure_application", lambda app: None)
+    monkeypatch.setattr(application, "show_startup_splash", lambda: splash)
+    monkeypatch.setattr("gui.MainWindow", boom)
     try:
-        gui.main()
+        application.run([])
     except RuntimeError:
         pass
     else:

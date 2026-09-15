@@ -1,0 +1,125 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows wheel + executable
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install build and runtime requirements
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Generate generated assets
+        shell: pwsh
+        run: |
+          python -c "from PIL import Image; img = Image.open('assets/icon.png'); img.save('assets/icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
+          python assets/ResizeSplash.py assets/splash_base.bmp assets/splash.png 400 600
+          python assets/GetVersion.py
+
+      - name: Validate packaging metadata
+        run: python -m pytest tests/test_packaging.py -q
+
+      - name: Build wheel
+        run: python -m build --wheel
+
+      - name: Install wheel into a clean virtual environment
+        shell: pwsh
+        run: |
+          python -m venv .ci-venv
+          .\.ci-venv\Scripts\python.exe -m pip install --upgrade pip
+          $wheel = (Get-ChildItem dist\*.whl | Select-Object -First 1).FullName
+          .\.ci-venv\Scripts\python.exe -m pip install "$wheel"
+
+      - name: Validate CLI entry point
+        shell: pwsh
+        run: |
+          .\.ci-venv\Scripts\modelinspector.exe --help
+          if ($LASTEXITCODE -ne 0) { throw "modelinspector --help exited $LASTEXITCODE" }
+
+      - name: Validate GUI entry point help without hanging Qt
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $exe = ".\.ci-venv\Scripts\modelinspector-gui.exe"
+          $process = Start-Process -FilePath $exe -ArgumentList "--help" -PassThru -NoNewWindow
+          if (-not $process.WaitForExit(60000)) {
+            $process.Kill()
+            throw "modelinspector-gui --help did not exit; GUI help validation is required"
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "modelinspector-gui --help exited $($process.ExitCode)"
+          }
+
+      - name: Validate bundled assets in the installed wheel
+        shell: pwsh
+        run: |
+          .\.ci-venv\Scripts\python.exe -c "import pathlib, app_paths; site = pathlib.Path(app_paths.__file__).resolve().parent; assets = site / 'assets'; themes = assets / 'themes'; assert assets.is_dir(), assets; assert (assets / 'icon.ico').is_file(), assets; assert (themes / 'default.jsonc').is_file(), themes; print('bundled assets ok:', assets)"
+
+      - name: Functional tiny model inspection
+        shell: pwsh
+        run: |
+          .\.ci-venv\Scripts\python.exe -c "import json, struct, pathlib; raw = json.dumps({'weight': {'dtype': 'F32', 'shape': [1], 'data_offsets': [0, 4]}}).encode(); pathlib.Path('tiny.safetensors').write_bytes(struct.pack('<Q', len(raw)) + raw + b'\x00' * 4)"
+          .\.ci-venv\Scripts\modelinspector.exe tiny.safetensors --json | Out-File tiny.json -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw "tiny inspection exited $LASTEXITCODE" }
+          $data = Get-Content tiny.json -Raw | ConvertFrom-Json
+          if (-not $data.filepath) { throw "tiny inspection produced no filepath" }
+
+      - name: Build Windows executable
+        shell: pwsh
+        run: |
+          $pyiArgs = @("--onefile", "--windowed", "--argv-emulation", "--optimize", "2", "--name", "ModelInspector", "--version-file", "version.txt", "--icon", "assets/icon.ico", "--add-data", "assets/icon.ico:assets", "--add-data", "assets/themes:assets/themes")
+          if (Test-Path assets/logo.png) { $pyiArgs += @("--add-data", "assets/logo.png:assets") }
+          if (Test-Path assets/splashpy.png) { $pyiArgs += @("--add-data", "assets/splashpy.png:assets") }
+          if (Test-Path assets/splash.png) { $pyiArgs += @("--splash", "assets/splash.png") }
+          $pyiArgs += "src/gui.py"
+          pyi-makespec @pyiArgs
+          if ($LASTEXITCODE -ne 0) { throw "pyi-makespec exited $LASTEXITCODE" }
+          pyinstaller --noconfirm ModelInspector.spec
+          if ($LASTEXITCODE -ne 0) { throw "pyinstaller exited $LASTEXITCODE" }
+
+      - name: Validate executable startup without hanging Qt
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $exe = "dist\ModelInspector.exe"
+          if (-not (Test-Path $exe)) { throw "missing $exe" }
+          $process = Start-Process -FilePath $exe -ArgumentList "--help" -PassThru
+          if (-not $process.WaitForExit(60000)) {
+            # --help must terminate.  A hang (e.g. a modal error dialog or a
+            # broken startup) is a failure and must never be accepted as a
+            # successful launch.
+            $process.Kill()
+            throw "ModelInspector.exe --help did not exit within 60s"
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "ModelInspector.exe --help exited $($process.ExitCode)"
+          }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: modelinspector-windows
+          path: |
+            dist/*.whl
+            dist/ModelInspector.exe
+          if-no-files-found: error

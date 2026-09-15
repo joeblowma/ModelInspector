@@ -19,6 +19,11 @@ from back.cache_verifier import CacheAvailability, CacheVerificationReport
 from conftest import _summary
 
 
+class _IdleWorker:
+    def isRunning(self) -> bool:
+        return False
+
+
 def _availability(**overrides) -> CacheAvailability:
     values = {
         "total": 0,
@@ -204,7 +209,7 @@ def test_verify_summary_marks_already_syncing_when_worker_exists(
 ) -> None:
     window = _window(monkeypatch, tmp_path)
     try:
-        window._cache_sync_worker = object()  # a running sync worker sentinel
+        window._cache_sync_worker = _IdleWorker()  # already-scheduled sync sentinel
         availability = _availability(total=1, active=1)
         monkeypatch.setattr(
             window, "_cache_report",

@@ -146,6 +146,8 @@ class AnalysisControllerMixin:
     def _project_scan_event(self, kind: str, payload: object):
         if kind == "result":
             self._project_result(payload)
+        elif kind == "cache_result":
+            self._project_cache_result(payload)
         else:
             filepath, error = payload
             self._project_error(str(filepath), str(error))
@@ -222,6 +224,9 @@ class AnalysisControllerMixin:
         self.tag_filter_btn.replace_items(
             tag for data in self._results for tag in self._filter_tags_for_data(data)
         )
+        self.format_filter_btn.replace_items(
+            self._format_filter_for_data(data) for data in self._results
+        )
         self._apply_arch_filter(
             refresh_raw=False,
             refresh_geometry=False,
@@ -247,6 +252,9 @@ class AnalysisControllerMixin:
 
     def _finish_analysis_projection(self, terminal: object):
         worker = terminal
+        if worker is getattr(self, "_cache_load_worker", None):
+            self._finish_cache_load_projection(worker)
+            return
         if worker is not self._worker:
             return
         self._restore_table_sorting()

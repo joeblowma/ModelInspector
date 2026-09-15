@@ -33,13 +33,15 @@ def test_settings_rebuild_is_zero_delay_deferred_and_coalesced(monkeypatch):
             self._close_pending = False
             self._lifecycle_closed = False
             self._data_layout = {}
-            self.rebuilds = 0
+            self.applied = 0
+            self.saved = 0
+            self.card_rebuilds = 0
 
         def _apply_data_layout(self, layout):
-            pass
+            self.applied += 1
 
         def _save_accepted_settings(self):
-            pass
+            self.saved += 1
 
         def _update_raw_controls(self):
             pass
@@ -51,18 +53,21 @@ def test_settings_rebuild_is_zero_delay_deferred_and_coalesced(monkeypatch):
             pass
 
         def _rebuild_active_cards_time_sliced(self):
-            self.rebuilds += 1
+            self.card_rebuilds += 1
 
     target = RebuildTarget()
     target._schedule_settings_rebuild()
     target._schedule_settings_rebuild()
 
-    assert target.rebuilds == 0
+    assert target.applied == 0
     assert [delay for delay, _callback in callbacks] == [0, 0]
+    # Only the newest generation runs; the superseded one is dropped.
     callbacks[0][1]()
-    assert target.rebuilds == 0
+    assert (target.applied, target.saved) == (0, 0)
     callbacks[1][1]()
-    assert target.rebuilds == 1
+    assert (target.applied, target.saved) == (1, 1)
+    # Settings never rebuild the loaded cards (the old multi-second freeze).
+    assert target.card_rebuilds == 0
 
 
 def test_settings_rebuild_is_ignored_after_shutdown(monkeypatch):
@@ -78,10 +83,13 @@ def test_settings_rebuild_is_ignored_after_shutdown(monkeypatch):
             self._settings_rebuild_generation = 0
             self._close_pending = False
             self._lifecycle_closed = False
-            self.rebuilds = 0
+            self.applied = 0
 
-        def _rebuild_views_from_results(self):
-            self.rebuilds += 1
+        def _apply_data_layout(self, layout):
+            self.applied += 1
+
+        def _save_accepted_settings(self):
+            self.applied += 1
 
     target = RebuildTarget()
     target._schedule_settings_rebuild()
@@ -89,7 +97,7 @@ def test_settings_rebuild_is_ignored_after_shutdown(monkeypatch):
 
     callbacks[0][1]()
 
-    assert target.rebuilds == 0
+    assert target.applied == 0
 
 
 def test_deferred_settings_rebuild_does_not_keep_deleted_wrapper_alive(monkeypatch):
@@ -139,8 +147,8 @@ def _synthetic_result(index):
     }
 
 
-def test_settings_close_rebuild_keeps_600_loaded_results_event_responsive(tmp_path):
-    """Trace the queued close path with real widgets and a progress heartbeat."""
+def test_settings_close_keeps_600_loaded_results_and_event_loop_responsive(tmp_path):
+    """The deferred close path persists settings without rebuilding 600 cards."""
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
     try:
@@ -161,15 +169,18 @@ def test_settings_close_rebuild_keeps_600_loaded_results_event_responsive(tmp_pa
 
         QTimer.singleShot(0, heartbeat)
         window._schedule_settings_rebuild()
-        for _ in range(1_000):
+        # Drain the queued close work; the heartbeat proves the loop stayed live.
+        for _ in range(50):
             app.processEvents()
-            if len(window._cards) == 600 and any(0 < count < 600 for count in heartbeats):
-                break
 
+        settings_file = tmp_path / "settings.jsonc"
+        assert settings_file.exists()
+        # Cards are untouched by a Settings close: no full rebuild churn.
         assert len(window._cards) == 600
         assert window.table.rowCount() == 600
-        assert any(0 < count < 600 for count in heartbeats)
+        assert heartbeats
+        assert all(count == 600 for count in heartbeats)
         assert window._cards[0].filepath in window._selected_paths
-        assert open_settings(tmp_path / "settings.jsonc").value("default_tab") == "cards"
+        assert open_settings(settings_file).value("default_tab") == "cards"
     finally:
         window.close()

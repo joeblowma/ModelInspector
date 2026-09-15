@@ -5,32 +5,41 @@
 This is a small Python desktop/CLI utility for inspecting various language and diffusion model files.
 
 - `src/` contains .py source code
-  - `app_paths.py` Application data paths, including JSONC settings and legacy INI migration location
+  - `app_paths.py` Application data paths: JSONC settings and legacy INI migration location; user data/cache in `.model-inspector`; default save/output under `~/.local/ModelInspector` via `ensure_output_dir()` (override `SMI_OUTPUT_DIR`); and `resource_base_dir()` resolution for checkout, installed-wheel (assets beside `app_paths.py`), and PyInstaller (`sys._MEIPASS`) layouts.
   - `gui.py` Thin compatibility/bootstrap wrapper that composes and re-exports `MainWindow`, while delegating application startup to `front.application`.
   - `inspect_model.py` Minimal CLI bootstrap that invokes `back.cli`.
   - `model_cache.py` Persistent inspection-result cache
   - `model_readers.py` Read-only model file readers and discovery helpers
   - `modelinfo.py` Model-info dump helpers for Model Inspector
-  - `front/` GUI presentation and application layer: `application` bootstraps Qt and applies themes; `window_core`, `window_layout`, and `window_lifecycle` compose `MainWindow`; `analysis_controller`, `discovery_controller`, `selection_controller`, `startup_cache_controller`, `view_controller`, and `integration_controller` manage UI workflows; `explorer_tab`/`explorer_data` provide header-only inspection exploration; `advanced_viewer` provides live resource projections and delegates construction to `advanced_viewer_layout`; `tensor_root_summary` formats compact tensor-root facts; `settings_data_tab` owns Data-column editing and single-row side-button reordering, with `settings_data_support` holding its durable row state and cleanup helpers; `theme_tab` provides live theme editing, with `theme_editor_support` holding palette labels and Qt color conversion; `smart_column_controller` applies runtime smart-column masks; `cache_identity` is the read-only bridge projecting persisted cache identity metadata for cache verification and background sync; `file_operation_controller` (`FileOperationControllerMixin`) owns long file operations (move, dump) with modal progress, no-clobber failure retention, and cooperative cancel between files, backed by `file_operation_worker` (`FileOperationWorker` thread plus safe move helpers); `model_card`, `filter_widgets`, `settings_dialog`, and `scan_projection` provide reusable widgets, dialogs, and scan-event delivery.
+  - `front/` GUI presentation and application layer: `application` bootstraps Qt and applies themes; `window_core`, `window_layout`, and `window_lifecycle` compose `MainWindow`; `analysis_controller`, `discovery_controller`, `selection_controller`, `startup_cache_controller`, `view_controller`, and `integration_controller` manage UI workflows; `explorer_tab`/`explorer_data` provide header-only inspection exploration; `advanced_viewer` provides live resource projections and delegates construction to `advanced_viewer_layout`; `tensor_root_summary` formats compact tensor-root facts; `settings_data_tab` owns Data-column editing and single-row side-button reordering, with `settings_data_support` holding its durable row state and cleanup helpers; `theme_tab` provides live theme editing, with `theme_editor_support` holding palette labels and Qt color conversion; `smart_column_controller` applies runtime smart-column masks; `data_columns` holds the canonical ordered Data-column labels/default widths and locked-column keys shared by table construction, Settings reset, and width fallback; `cache_load_controller`/`cache_load_worker` project persisted cache summaries off the GUI thread in bounded, cancel/close-safe batches; `startup_arguments` parses GUI startup arguments before Qt starts; `cache_identity` is the read-only bridge projecting persisted cache identity metadata for cache verification and background sync; `file_operation_controller` (`FileOperationControllerMixin`) owns long file operations (move, dump) with modal progress, no-clobber failure retention, and cooperative cancel between files, backed by `file_operation_worker` (`FileOperationWorker` thread plus safe move helpers); `model_card`, `filter_widgets`, `settings_dialog`, and `scan_projection` provide reusable widgets, dialogs, and scan-event delivery.
   - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `companion_discovery` performs bounded resolved-parent JSON/Jinja discovery and normalized architecture facts, while `capability_facts` derives conservative domain/chat evidence and `capability_evidence` projects evidence-backed capabilities (filtering weak evidence) shared by the GUI, reports, and estimator; `reader_registry`, `checkpoint_reader`, and `onnx_reader` provide safe format-reader dispatch; `shard_discovery` and `sidecar_discovery` discover associated files; `cache_storage` persists cache records; `estimator`, `estimator_metadata` (labelled KV/runtime metadata projection helper), `theme_loader`, `theme_store`, `settings_store`, and `cache_verifier` provide UI-safe backend services; `reporting` writes reports; `inspection_summary` supplies compact GUI-facing result state.
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
 - `win_compile.bat`, `win_clean.bat`, `ModelInspector.spec`, `build/`, and `dist/` support PyInstaller packaging.
   - Treat `ModelInspector.spec`, `version.txt`, `build/` and `dist/` as generated output.
+- `pyproject.toml` declares the setuptools flat-layout wheel: top-level modules plus `front`/`back`/`assets` packages, with `modelinspector` and `modelinspector-gui` console scripts.
+- `.github/workflows/build.yml` builds and validates the wheel and the Windows PyInstaller executable.
 - `README.md` github front page, extremely out of date, ignore for now
 - `graphify-out/` contains the repository knowledge graph used by agents for architecture navigation.
 
 ## Build, Test, and Development Commands
 
 - `py src/gui.py` launches the desktop UI.
+- `py src/gui.py path\to\model.safetensors` (or a folder) queues a safe startup scan after the window is shown; `py src/gui.py --help` exits before Qt starts.
+- `py src/gui.py -s path\to\settings.jsonc` selects an explicit settings file for the GUI.
 - `py src/inspect_model.py --help` checks CLI argument wiring.
 - `py src/inspect_model.py path\to\model.safetensors` inspects one file from the CLI.
 - `py src/inspect_model.py path\to\folder --recursive --json` runs a recursive CLI smoke test with JSON output.
+- `py src/inspect_model.py -s path\to\settings.jsonc path\to\model.safetensors` selects an explicit settings file for the CLI.
+- `python -m pytest` runs the suite; `python -m pytest tests/test_packaging.py -q` checks only the packaging contract.
+- `python -m build --wheel` builds the distributable wheel from `pyproject.toml`.
+- `pip install dist\modelinspector-*.whl` installs the wheel; `modelinspector` and `modelinspector-gui` console scripts are then available.
 - `venv_create.bat` creates the local virtual environment and installs dependencies.
 - `venv_activate.bat` activates the environment for manual work.
 - `win_compile.bat` builds a distributable with PyInstaller.
 - `win_clean.bat` cleans up stray bits from compile and direct python execution
+- `.github/workflows/build.yml` builds the wheel and Windows executable and validates a clean wheel install.
 
 ## Coding Style & Naming Conventions
 
@@ -39,7 +48,7 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 ## Testing Guidelines
 
 - Settings data tests cover single-row selection, side-button reordering, persistence, and embedded-control cleanup.
-- Settings dialog tests cover the current fixed 900x640 default with screen clamping, dedicated Theme-tab selection, and bounded Data-list/scrollbar geometry; a resizable remembered-size proposal remains in `TODO.md`. Theme owns its color-editor scroll area.
+- Settings dialog tests cover the resizable, remembered 900x640 default with screen clamping, dedicated Theme-tab selection, and bounded Data-list/scrollbar geometry. Theme owns its color-editor scroll area. Canonical Data-column labels and default widths live in `front/data_columns.py`; the selection column is locked first/always-visible and hidden columns retain their last valid width.
 
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
@@ -72,6 +81,11 @@ Existing tests:
 - `.\tests\test_theme_live_updates.py` — QSS inactive-tab hover and cached live-theme refresh linkage.
 - `.\tests\test_theme_paths.py` — bundled default asset resolution and safe new-theme storage.
 - `.\tests\test_settings_geometry.py`
+- `.\tests\test_settings_close.py` - Settings close skips the full card rebuild and persists the remembered size.
+- `.\tests\test_cache_load.py` - bounded async cache-load projection, cancel/close safety, and filter/selection preservation.
+- `.\tests\test_app_paths.py` - output-dir defaults/override and installed-wheel resource resolution.
+- `.\tests\test_startup_arguments.py` - GUI `--settings`/`-s` and optional startup targets; `--help` before Qt.
+- `.\tests\test_packaging.py` - static packaging contract (setuptools backend, flat layout, entry points, packaged assets).
 - `.\tests\test_tooltip_audit.py`
 - `.\tests\test_companion_metadata.py` — bounded companion facts and companion-cache identity regressions.
 - `.\tests\test_unknown_reduction.py` — header-only architecture and domain fallbacks.
@@ -88,6 +102,7 @@ Existing tests:
 - When spawning subagents use `fork_turns = "none"`. Provide specific scoped tasks and their context for subagents.
 - ModelInspector implementation files live under `src/`; start with `rg --files src` and read `src/model_cache.py` or `src/modelinfo.py`, never root-level names.
 - Establish session environment state once in a reusable command or wrapper: package-cache variables, `PYTHONPATH`, and Qt headless variables. Reuse that canonical invocation rather than prepending environment setup to every command.
+- Canonical Data-column labels and widths are defined once in `front/data_columns.py`; reference that module instead of duplicating the width table in docs or tests.
 
 
 ### Guardrails & Limits

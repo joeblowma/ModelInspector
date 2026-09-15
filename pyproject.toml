@@ -1,10 +1,6 @@
 [build-system]
-requires = [
-    "wheel",
-    "setuptools",
-    "build",
-]
-build-backend = "uv_build"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "modelinspector"
@@ -26,8 +22,29 @@ classifiers = [
 repository = "https://github.com/ggml-org/llama.cpp"
 
 [project.scripts]
-modelinspector-gui = "src.gui:main"
-modelinspector = "src.inspect_model:main"
+modelinspector-gui = "gui:main"
+modelinspector = "inspect_model:main"
 
 [project.optional-dependencies]
-winbuild = ['pyinstaller>=6.0.0', 'setuptools', 'pillow', ]
+winbuild = ['pyinstaller>=6.0.0', 'pillow', ]
+
+[tool.setuptools]
+# Explicit flat layout.  The top-level modules and the ``front``/``back``
+# packages are installed at the site-packages root so the existing top-level
+# imports (``import gui``, ``from front... import ...``, ``from back... import``)
+# work unchanged -- no relative-import rewrite.  ``assets`` is mapped beside
+# them so the bundled resources keep the same relative layout as the checkout.
+package-dir = {"" = "src", "assets" = "assets"}
+py-modules = [
+    "app_paths",
+    "background_tasks",
+    "gui",
+    "inspect_model",
+    "model_cache",
+    "model_readers",
+    "modelinfo",
+]
+packages = ["front", "back", "assets"]
+
+[tool.setuptools.package-data]
+assets = ["*.ico", "*.png", "themes/*.jsonc"]

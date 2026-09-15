@@ -34,6 +34,9 @@ class WindowLifecycleMixin:
         self._show_raw_for_current_setting(filepath)
 
     def _show_raw_for_current_setting(self, filepath: str):
+        if filepath == self._raw_loaded_filepath:
+            # Full dump for this file is already displayed; avoid reloading.
+            return
         analysis_running = bool(self._worker and self._worker.isRunning())
         if self._auto_load_raw_dump and not analysis_running:
             self._load_raw_dump(filepath)
@@ -165,6 +168,7 @@ class WindowLifecycleMixin:
                 self._discovery_worker,
                 self._file_op_worker,
                 getattr(self, "_cache_sync_worker", None),
+                getattr(self, "_cache_load_worker", None),
             )
             if worker is not None and worker.isRunning()
         }

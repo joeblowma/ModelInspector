@@ -144,7 +144,13 @@ def test_theme_application_and_mainwindow_explorer_wiring(monkeypatch, tmp_path:
         assert window.table.isColumnHidden(2)
         window.table.setColumnHidden(2, False)
         assert window.table.columnWidth(2) == 123
-        assert window.table.horizontalHeader().visualIndex(2) == 0
+        header = window.table.horizontalHeader()
+        # Selection is a locked invariant: always the first, visible column.
+        # The requested order is otherwise honored (column_2 moves to index 1).
+        assert header.visualIndex(0) == 0
+        assert not window.table.isColumnHidden(0)
+        assert header.visualIndex(2) == 1
+        assert window.table.columnWidth(0) == 34
     finally:
         window.close()
 

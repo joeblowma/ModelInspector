@@ -7,7 +7,7 @@ import hashlib
 import shutil
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app_paths import cache_dir
 from back.cache_storage import (
@@ -301,16 +301,19 @@ def get_cached_inspection_summary_snapshot(filepath: str) -> dict | None:
 def get_cached_inspection_summary_snapshots(
     filepaths: list[str],
 ) -> dict[str, dict]:
-    """Stream matching cache entries directly into compact GUI snapshots."""
-    snapshots = {}
+    """Return compact persisted snapshots without recomputing an option-derived key."""
+    return dict(iter_cached_inspection_summary_snapshots(filepaths))
+
+def iter_cached_inspection_summary_snapshots(
+    filepaths: list[str], should_cancel: Callable[[], bool] | None = None
+):
+    """Yield compact persisted snapshots, stopping between records when cancelled."""
     for filepath, data in _iter_cached_inspection_matches(filepaths):
-        current = get_cached_inspection(filepath) if Path(filepath).exists() else data
-        if current is None:
-            continue
-        summary_source = dict(current)
+        if should_cancel is not None and should_cancel():
+            return
+        summary_source = dict(data)
         summary_source.setdefault("cache_status", "snapshot")
-        snapshots[filepath] = compact_inspection_summary(summary_source)
-    return snapshots
+        yield filepath, compact_inspection_summary(summary_source)
 
 
 def list_cached_inspection_paths() -> list[str]:

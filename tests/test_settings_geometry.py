@@ -10,7 +10,12 @@ import pytest
 from PyQt6.QtWidgets import QApplication, QAbstractScrollArea, QTabWidget
 
 from front.settings_data_support import ColumnDefinition
-from front.settings_dialog import SettingsDialog
+from front.settings_dialog import (
+    _DIALOG_DEFAULT_SIZE,
+    _DIALOG_MINIMUM_SIZE,
+    SettingsDialog,
+    _clamp_size_to_screen,
+)
 
 
 @pytest.fixture(scope="module")
@@ -51,17 +56,19 @@ def test_data_tree_ignores_row_content_when_reporting_its_size_hint(app):
         dialog.close()
 
 
-def test_large_data_settings_remain_fixed_across_tabs_move_and_reopen(app):
+def test_large_data_settings_stay_resizable_across_tabs_move_and_reopen(app):
     dialog = SettingsDialog(data_columns=_large_column_set())
     dialog.setStyleSheet("QTreeWidget { font-size: 16px; }")
     try:
         tabs = dialog.findChild(QTabWidget)
         assert tabs is not None
+        # Release feature: the dialog is resizable, not fixed.
+        assert dialog.minimumSize() != dialog.maximumSize()
 
         dialog.show()
         _process_events(app)
         expected_size = dialog.size()
-        assert expected_size == dialog.minimumSize() == dialog.maximumSize()
+        assert expected_size.width() > 0 and expected_size.height() > 0
 
         for index in range(tabs.count()):
             tabs.setCurrentIndex(index)
@@ -77,6 +84,49 @@ def test_large_data_settings_remain_fixed_across_tabs_move_and_reopen(app):
         dialog.show()
         _process_events(app)
         assert dialog.size() == expected_size
+    finally:
+        dialog.close()
+
+
+def test_settings_dialog_defaults_to_900x640_clamped_to_screen(app):
+    dialog = SettingsDialog(data_columns=_large_column_set())
+    try:
+        screen = QApplication.primaryScreen()
+        expected = _clamp_size_to_screen(_DIALOG_DEFAULT_SIZE, screen)
+        minimum = _clamp_size_to_screen(_DIALOG_MINIMUM_SIZE, screen)
+        assert (dialog.size().width(), dialog.size().height()) == (
+            max(expected[0], minimum[0]),
+            max(expected[1], minimum[1]),
+        )
+        assert (dialog.minimumSize().width(), dialog.minimumSize().height()) == minimum
+    finally:
+        dialog.close()
+
+
+def test_remembered_settings_size_is_used_and_clamped(app):
+    dialog = SettingsDialog(
+        data_columns=_large_column_set(), dialog_size={"width": 700, "height": 500}
+    )
+    try:
+        screen = QApplication.primaryScreen()
+        expected = _clamp_size_to_screen((700, 500), screen)
+        minimum = _clamp_size_to_screen(_DIALOG_MINIMUM_SIZE, screen)
+        assert (dialog.size().width(), dialog.size().height()) == (
+            max(expected[0], minimum[0]),
+            max(expected[1], minimum[1]),
+        )
+    finally:
+        dialog.close()
+
+
+def test_remembered_settings_size_above_screen_is_clamped(app):
+    dialog = SettingsDialog(
+        data_columns=_large_column_set(), dialog_size={"width": 100000, "height": 100000}
+    )
+    try:
+        available = QApplication.primaryScreen().availableGeometry()
+        assert dialog.size().width() <= available.width()
+        assert dialog.size().height() <= available.height()
     finally:
         dialog.close()
 

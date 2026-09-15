@@ -12,12 +12,15 @@ from PyQt6 import sip
 from PyQt6.QtCore import QObject, QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
+from app_paths import ensure_output_dir
 from back.checkpoint_reader import CHECKPOINT_SAFETY_METADATA
 from back.cache_verifier import verify_cache_entries
 from back.settings_store import open_settings
 from background_tasks import AnalysisWorker
 from front.advanced_viewer import AdvancedViewerDialog
 from front.cache_identity import get_cached_inspection_identity_snapshots
+from front.cache_load_controller import CacheLoadControllerMixin
+from front.data_columns import DATA_COLUMNS
 from front.settings_data_tab import ColumnDefinition
 from model_cache import get_cached_inspection_snapshots
 
@@ -29,7 +32,7 @@ def _run_deferred_settings_rebuild(window_ref, generation: int) -> None:
         window._run_settings_rebuild(generation)
 
 
-class IntegrationMixin:
+class IntegrationMixin(CacheLoadControllerMixin):
     """Keep optional Phase 2/3 features out of the near-limit core mixins."""
 
     def _configure_extended_ui(self) -> None:
@@ -62,6 +65,7 @@ class IntegrationMixin:
             data_columns=self._column_definitions(),
             data_configuration=self._capture_data_layout(),
             theme_id=self._data_layout.get("theme", "default"),
+            dialog_size=self._remembered_settings_size(),
         )
         # Track the live dialog so background cache sync can refresh its counts
         # while it is open, without holding a dangling reference after close.
@@ -75,6 +79,8 @@ class IntegrationMixin:
         self._refresh_cache_dialog(dialog)
         accepted = dialog.exec()
         self._settings_dialog = None
+        # Remember the window size for both OK and X/close dismissal.
+        self._save_settings_size(dialog)
         if not accepted:
             return
         self._allow_filename_alias_detection = dialog.alias_checkbox.isChecked()
@@ -124,7 +130,10 @@ class IntegrationMixin:
             self._update_raw_controls()
             self._update_analyze_slot()
             self._apply_default_tab()
-            self._rebuild_active_cards_time_sliced()
+            # Cards are rendered from result data only; Settings never changes
+            # them.  Rebuilding every card here was the multi-second close
+            # freeze, so only the changed projections (columns, persistence,
+            # controls, default tab) are refreshed.
 
     def _save_accepted_settings(self) -> None:
         """Persist one accepted dialog as a single crash-safe settings update."""
@@ -219,6 +228,33 @@ class IntegrationMixin:
         raw = store.value("data_layout", {})
         return dict(raw) if isinstance(raw, dict) else {}
 
+    def _remembered_settings_size(self):
+        """Previously accepted Settings size, or the canonical default."""
+        from back.settings_store import DEFAULTS
+        store = open_settings(
+            self._settings_path(), self._legacy_settings_path(), defer_initial_save=True
+        )
+        return store.value("settings_size", DEFAULTS.get("settings_size"))
+
+    def _save_settings_size(self, dialog) -> None:
+        """Persist the Settings size on both OK and X/close dismissal."""
+        getter = getattr(dialog, "dialog_size", None)
+        if not callable(getter):
+            return
+        size = getter()
+        if not isinstance(size, (list, tuple)) or len(size) != 2:
+            return
+        try:
+            width, height = int(size[0]), int(size[1])
+        except (TypeError, ValueError):
+            return
+        if width <= 0 or height <= 0:
+            return
+        store = open_settings(
+            self._settings_path(), self._legacy_settings_path(), defer_initial_save=True
+        )
+        store.setValue("settings_size", {"width": width, "height": height})
+
     def _settings_path(self):
         from app_paths import settings_path
         return settings_path()
@@ -228,10 +264,8 @@ class IntegrationMixin:
         return legacy_settings_path()
 
     def _column_definitions(self) -> list[ColumnDefinition]:
-        return [
-            ColumnDefinition(self._column_key(index), label, index != 0, self.table.columnWidth(index), 32)
-            for index, label in enumerate(self._table_columns)
-        ]
+        """Canonical column definitions seeded into Settings and reset."""
+        return list(DATA_COLUMNS)
 
     def _save_data_layout(self) -> None:
         store = open_settings(self._settings_path(), self._legacy_settings_path())
@@ -268,7 +302,9 @@ class IntegrationMixin:
             QMessageBox.information(self, "Explorer", "The cached header is historic or unavailable; no file inspection was started.")
 
     def _save_explorer_request(self, request: dict[str, Any], title: str) -> None:
-        destination, _ = QFileDialog.getSaveFileName(self, title, "", "JSON files (*.json)")
+        destination, _ = QFileDialog.getSaveFileName(
+            self, title, str(ensure_output_dir()), "JSON files (*.json)"
+        )
         if not destination:
             return
         payload = {"candidate": request.get("candidate", {}), "inspection": request.get("inspection", {}), "header_only": True}
@@ -299,11 +335,12 @@ class IntegrationMixin:
         label = getattr(self, "cache_counts_label", None)
         if label is not None:
             label.setText(f"Total: {availability.total}  Active: {availability.active}  Historic: {availability.historic}")
-        self._refresh_cache_menu_actions()
+        self._refresh_cache_menu_actions(availability)
 
-    def _refresh_cache_menu_actions(self) -> None:
+    def _refresh_cache_menu_actions(self, availability=None) -> None:
         """Show/hide cache-load actions based on cache population and view state."""
-        availability = getattr(self._cache_report(), "availability", None)
+        if availability is None:
+            availability = getattr(self._cache_report(), "availability", None)
         view_nonempty = bool(self._results)
         if availability is None:
             # Minimal test mocks may only expose entries; still honor the
@@ -371,53 +408,6 @@ class IntegrationMixin:
         worker.error_occurred.connect(lambda _path, _error, w=worker: w.acknowledge_event())
         worker.all_done.connect(self._on_cache_sync_completed)
         worker.start()
-
-    def _load_cache_status(self, wanted: str | None) -> None:
-        report = self._cache_report()
-        paths = [entry.path for entry in report.entries if wanted is None or entry.classification == wanted]
-        snapshots = self._get_cached_inspection_summary_snapshots(paths)
-        loaded_count = 0
-        for path in paths:
-            data = snapshots.get(path)
-            if not data or self._result_for_filepath(path):
-                continue
-            data.update({"filepath": path, "filename": Path(path).name, "cache_status": "historic" if wanted == "historic" else "snapshot"})
-            self._normalize_result_data(data)
-            if path not in self._queued_files:
-                self._queued_files.append(path)
-            self._results.append(data)
-            self._add_card(data)
-            self._add_table_row(data)
-            loaded_count += 1
-        if loaded_count:
-            self.arch_filter_btn.replace_items(
-                data.get("architecture", "Unknown") for data in self._results
-            )
-            self.tag_filter_btn.replace_items(
-                tag for data in self._results for tag in self._filter_tags_for_data(data)
-            )
-            self.format_filter_btn.replace_items(
-                self._format_filter_for_data(data) for data in self._results
-            )
-            self._apply_arch_filter(
-                refresh_raw=False,
-                refresh_geometry=False,
-                update_selection=False,
-            )
-        self._refresh_raw_combo_filtered()
-        self._sync_selection_visuals()
-        self._refresh_card_layout_geometry()
-        self._refresh_cache_menu_actions()
-        self._set_progress_status(f"Loaded {loaded_count} cached {'historic ' if wanted == 'historic' else ''}summaries")
-
-    def _load_cache(self) -> None:
-        self._load_cache_status("active")
-
-    def _load_cache_all(self) -> None:
-        self._load_cache_status(None)
-
-    def _load_cache_archived(self) -> None:
-        self._load_cache_status("historic")
 
     def _verify_cached_file_paths(self) -> None:
         """Verify cached file paths and surface a completion summary.

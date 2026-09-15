@@ -1,6 +1,14 @@
 """Application-wide Qt configuration used by the thin :mod:`gui` launcher."""
 
+from __future__ import annotations
+
 import os
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from gui import MainWindow
 
 # Set before Qt is imported so packaged Windows launches stay quiet.
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
@@ -11,6 +19,7 @@ from PyQt6.QtWidgets import QApplication, QSplashScreen, QMessageBox, QWidget
 
 from app_paths import asset_path
 from back.theme_loader import BUILTIN_THEME, Theme, ThemeLoadResult, load_theme
+from front.startup_arguments import parse_startup_arguments
 
 try:
     import pyi_splash  # type: ignore[import-not-found]
@@ -259,7 +268,7 @@ def show_startup_splash() -> QSplashScreen | None:
     the splash is shown and repainted synchronously here.  Returns the splash
     for :func:`finish_startup_splash`, or ``None`` when the asset is missing.
     """
-    splash_file = asset_path("splash.png")
+    splash_file = asset_path("splashpy.png")
     if not splash_file.is_file():
         return None
     splash = QSplashScreen(QPixmap(str(splash_file)))
@@ -278,3 +287,85 @@ def finish_startup_splash(splash: QSplashScreen | None, window: QWidget) -> None
     """
     if splash is not None:
         splash.finish(window)
+
+
+def _apply_settings_override(settings: Path | None) -> None:
+    """Make an explicit CLI settings location win over ``SMI_SETTINGS_PATH``.
+
+    Must run before any settings load: :func:`app_paths.settings_path` and
+    :func:`app_paths.legacy_settings_path` read the environment variable, so
+    writing it here routes the JSONC settings file (and legacy INI migration)
+    to the requested location.
+    """
+    if settings is not None:
+        os.environ["SMI_SETTINGS_PATH"] = str(settings)
+
+
+def _queue_when_window_ready(window: QWidget, action) -> None:
+    """Run ``action`` on the event loop unless the window already closed."""
+
+    def run_action() -> None:
+        if getattr(window, "_lifecycle_closed", False):
+            return
+        action()
+
+    QTimer.singleShot(0, run_action)
+
+
+def _queue_startup_targets(window: MainWindow, targets: list[str]) -> None:
+    """Queue positional startup targets through the normal drop/add paths.
+
+    Files reuse ``_add_files`` (honouring auto-analyze and add-mode settings);
+    folders reuse ``_start_discovery`` with the same metadata-only checkpoint
+    policy as drag-and-drop. Invalid paths warn instead of aborting startup.
+    """
+    from model_readers import is_checkpoint_model_path, is_supported_model_path
+
+    for raw in targets:
+        path = Path(raw)
+        if not path.exists():
+            QMessageBox.warning(
+                window, "Model Inspector", f"Startup path not found:\n{path}"
+            )
+            continue
+        if path.is_dir():
+            _queue_when_window_ready(
+                window,
+                lambda p=str(path): window._start_discovery([p]),
+            )
+        elif is_supported_model_path(str(path)) or is_checkpoint_model_path(str(path)):
+            _queue_when_window_ready(
+                window,
+                lambda p=str(path): window._add_files([p]),
+            )
+        else:
+            QMessageBox.warning(
+                window,
+                "Model Inspector",
+                f"Startup path is not a supported model file or folder:\n{path}",
+            )
+
+
+def run(argv: list[str] | None = None) -> int:
+    """Parse startup arguments and launch the desktop application.
+
+    ``--help`` exits before any ``QApplication`` is created.
+    """
+    args = parse_startup_arguments(sys.argv[1:] if argv is None else argv)
+    _apply_settings_override(args.settings)
+    application = QApplication(sys.argv)
+    configure_application(application)
+    splash = show_startup_splash()
+    try:
+        from gui import MainWindow
+
+        window = MainWindow()
+    except BaseException:
+        if splash is not None:
+            splash.close()
+        raise
+    window.show()
+    close_startup_splash()
+    finish_startup_splash(splash, window)
+    _queue_startup_targets(window, args.targets)
+    return application.exec()

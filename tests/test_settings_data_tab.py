@@ -347,3 +347,79 @@ def test_empty_data_column_tree_keeps_usable_space_without_scrollbar(app):
 
     assert widget.column_tree.height() >= 120
     assert not widget.column_tree.verticalScrollBar().isVisible()
+
+
+def _locked_columns() -> list[ColumnDefinition]:
+    return [
+        ColumnDefinition("selection", "", width=32, hideable=False, reorderable=False),
+        ColumnDefinition("file", "File", width=530),
+        ColumnDefinition("size", "Size", width=90),
+    ]
+
+
+def test_locked_selection_column_is_always_visible_and_first(app):
+    widget = SettingsDataTab(_locked_columns())
+    assert widget.column_keys()[0] == "selection"
+    selection_check = widget._checks["selection"]
+    assert selection_check.isChecked()
+    assert not selection_check.isEnabled()
+
+    # A legacy configuration cannot hide or move the locked column.
+    widget.load_configuration(
+        {
+            "columns": [
+                {"key": "file", "visible": True, "width": 500},
+                {"key": "selection", "visible": False, "width": 0},
+            ]
+        }
+    )
+    assert widget.export_configuration()["columns"][0] == {
+        "key": "selection",
+        "visible": True,
+        "width": 32,
+    }
+    assert widget.move_column("selection", 2) is False
+    assert widget.column_keys()[0] == "selection"
+    assert widget.move_column("file", 0) is True
+    assert widget.column_keys()[:2] == ["selection", "file"]
+
+
+def test_locked_selection_disables_move_buttons(app):
+    widget = SettingsDataTab(_locked_columns())
+    widget._select_key("selection")
+    assert not widget.move_up_button.isEnabled()
+    assert not widget.move_down_button.isEnabled()
+    widget._select_key("file")
+    assert not widget.move_up_button.isEnabled()  # cannot move above selection
+    assert widget.move_down_button.isEnabled()
+
+
+def test_zero_or_missing_width_falls_back_to_canonical_default(app):
+    messages: list[str] = []
+    widget = SettingsDataTab(
+        [ColumnDefinition("file", "File", width=530), ColumnDefinition("size", "Size", width=90)],
+        validation_message_hook=messages.append,
+    )
+    widget.load_configuration(
+        {
+            "columns": [
+                {"key": "file", "visible": True, "width": 0},
+                {"key": "size", "visible": False, "width": "bad"},
+            ]
+        }
+    )
+    widths = {entry["key"]: entry["width"] for entry in widget.export_configuration()["columns"]}
+    assert widths == {"file": 530, "size": 90}
+    assert any("Missing width" in message or "Invalid width" in message for message in messages)
+
+
+def test_reset_restores_locked_selection_visible_and_first(app):
+    widget = SettingsDataTab(_locked_columns())
+    widget.move_column("file", 0)
+    widget.load_configuration({"columns": [{"key": "size", "visible": False, "width": 0}]})
+    widget.reset_to_default()
+    assert widget.export_configuration()["columns"][0] == {
+        "key": "selection",
+        "visible": True,
+        "width": 32,
+    }

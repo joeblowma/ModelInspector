@@ -6,10 +6,23 @@ from PyQt6.QtWidgets import QCheckBox, QLabel
 from front.filter_widgets import SortableTableWidgetItem; from front.model_card import ModelCard
 from back.theme_loader import get_global_theme_colors
 def _combo_data_str(value): return str(value) if value else None
+_QUANT_DTYPE_CANON = {
+    "F32": "f32", "F16": "f16", "BF16": "bf16",
+    "float32": "f32", "float16": "f16", "bfloat16": "bf16",
+    "blfloat16": "bf16",  # historical typo tolerated
+}
 def _data_quantization_display(data):
     label = str(data.get("quantization") or "").strip()
-    dtypes = {str(item.get("dtype")) for item in data.get("dtypes") or [{"dtype": data.get("precision_summary")}] if item.get("dtype")}
-    return label or (next(iter(dtypes)) if len(dtypes) == 1 and dtypes <= {"F32", "F16", "BF16"} else "Unavailable")
+    if label:
+        return label
+    items = data.get("dtypes") or [{"dtype": data.get("precision_summary")}]
+    dtypes = {
+        str(item.get("dtype")).strip()
+        for item in items
+        if isinstance(item, dict) and item.get("dtype")
+    }
+    # Only a uniform standard float dtype is trustworthy; mixed/unknown -> "-".
+    return _QUANT_DTYPE_CANON.get(dtypes.pop(), "-") if len(dtypes) == 1 else "-"
 
 class ViewControllerMixin:
     """Render and rebuild result views using ``WindowCoreMixin`` state."""
@@ -173,6 +186,10 @@ class ViewControllerMixin:
             training_meta.get("epochs", "-"), training_meta.get("steps", "-"),
         ]
         cb = QCheckBox()
+        # Center only the selection cell; keep a native QCheckBox so
+        # isinstance(cellWidget(...), QCheckBox) checks and accessibility hold.
+        # ponytail: QSS indicator positioning, switch to a delegate if themes fight it.
+        cb.setStyleSheet("QCheckBox::indicator { subcontrol-position: center; }")
         cb.clicked.connect(
             lambda checked, fp=filepath: self._on_table_checkbox_toggled(fp, checked)
         )
@@ -200,7 +217,7 @@ class ViewControllerMixin:
                 item.setData(Qt.ItemDataRole.UserRole, 1 if is_moe else 0)
             elif column_name == "Experts":
                 item.setData(Qt.ItemDataRole.UserRole, int(expert_count or 0))
-            elif column_name == "Active Experts":
+            elif column_name == "Exp Act":
                 item.setData(Qt.ItemDataRole.UserRole, int(expert_used_count or 0))
             elif column_name in ("Images", "Epochs", "Steps"):
                 try:
@@ -326,7 +343,7 @@ class ViewControllerMixin:
         if file_format.startswith("."):
             return file_format
         return "." + file_format
-    def _refresh_raw_combo_filtered(self):
+    def _refresh_raw_combo_filtered(self, *, load_current: bool = True):
         prev_fp = _combo_data_str(self.raw_combo.currentData())
         self.raw_combo.blockSignals(True)
         self.raw_combo.clear()
@@ -342,23 +359,28 @@ class ViewControllerMixin:
         self.raw_combo.blockSignals(False)
         if self.raw_combo.count() == 0:
             self.raw_text.clear()
+            self._raw_loaded_filepath = None
         elif self.raw_combo.currentIndex() < 0:
             self.raw_combo.setCurrentIndex(0)
         else:
             current_fp = _combo_data_str(self.raw_combo.currentData())
-            if current_fp != self._raw_loaded_filepath:
+            if load_current and current_fp != self._raw_loaded_filepath:
                 if current_fp is not None:
                     self._show_raw_for_current_setting(current_fp)
         self._update_raw_controls()
     def _show_raw_for_filepath(self, filepath: str):
         if not filepath:
             return
-        self._refresh_raw_combo_filtered()
+        # Same routing as the RAW dropdown so the auto-load setting is honored;
+        # suppress the refresh's own load to avoid loading a non-target file.
+        self._refresh_raw_combo_filtered(load_current=False)
         idx = self.raw_combo.findData(filepath)
         if idx >= 0:
+            self.raw_combo.blockSignals(True)
             self.raw_combo.setCurrentIndex(idx)
+            self.raw_combo.blockSignals(False)
         self.tabs.setCurrentIndex(2)
-        self._show_raw_summary(filepath)
+        self._show_raw_for_current_setting(filepath)
     def _step_raw_selection(self, delta: int):
         count = self.raw_combo.count()
         if count <= 0:

@@ -34,6 +34,9 @@ class _CacheSyncWorker:
     def start(self) -> None:
         self.started_paths.append(self.paths)
 
+    def isRunning(self) -> bool:
+        return False
+
 
 class _CacheHost(IntegrationMixin):
     def __init__(self, paths: list[str]) -> None:

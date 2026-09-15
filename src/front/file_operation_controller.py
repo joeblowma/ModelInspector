@@ -17,6 +17,7 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 
+from app_paths import ensure_output_dir
 from front.file_operation_worker import FileOperationWorker
 
 
@@ -25,6 +26,7 @@ class FileOperationControllerMixin:
 
     _file_op_worker: FileOperationWorker | None
     _file_op_dialog: QProgressDialog | None
+    _selected_paths: set[str]
 
     def _file_operation_running(self) -> bool:
         worker = getattr(self, "_file_op_worker", None)
@@ -130,7 +132,9 @@ class FileOperationControllerMixin:
             self._set_progress_status("Select one or more models to move.")
             self._clear_progress_status(delay_ms=3500)
             return
-        target = QFileDialog.getExistingDirectory(self, "Select destination folder")
+        target = QFileDialog.getExistingDirectory(
+            self, "Select destination folder", str(ensure_output_dir())
+        )
         if not target:
             return
         specs: list[tuple[str, str]] = []

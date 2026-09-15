@@ -15,15 +15,54 @@ def app_base_dir() -> Path:
 def resource_base_dir() -> Path:
     """Return the root containing read-only application resources.
 
-    PyInstaller extracts one-file resources below ``sys._MEIPASS``.  During
-    normal Python execution the repository root contains the bundled assets
-    beside ``src``.  Keeping this distinction here prevents each GUI/backend
-    caller from growing its own packaging-specific path calculation.
+    PyInstaller extracts one-file resources below ``sys._MEIPASS``.  A wheel
+    install places ``app_paths.py`` in site-packages with ``assets`` beside
+    it, while a source checkout keeps the bundled assets at the repository
+    root beside ``src``.  Keeping this distinction here prevents each
+    GUI/backend caller from growing its own packaging-specific path
+    calculation.
     """
     extracted_dir = getattr(sys, "_MEIPASS", None)
     if extracted_dir:
         return Path(extracted_dir)
-    return app_base_dir() if getattr(sys, "frozen", False) else app_base_dir().parent
+    base = app_base_dir()
+    if getattr(sys, "frozen", False):
+        return base
+    # Installed layout: assets sit beside app_paths.py in site-packages.
+    # Checkout layout: assets live at the repository root above ``src``.
+    if (base / "assets").is_dir():
+        return base
+    return base.parent
+
+
+def default_output_dir() -> Path:
+    """Default user-visible save/output location (reports, moved files).
+
+    Deliberately independent from :func:`app_data_dir`: existing installs
+    keep their legacy settings/cache in place while save dialogs still
+    default to the per-user home folder.  ``SMI_OUTPUT_DIR`` overrides
+    explicitly.
+    """
+    override = os.environ.get("SMI_OUTPUT_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".local" / "ModelInspector"
+
+
+def ensure_output_dir() -> Path:
+    """Return the writable default output directory, creating it if needed.
+
+    Save dialogs must never silently open in the process CWD when the default
+    output directory does not exist yet, so a missing directory is created
+    here.  When creation fails (e.g. a permission error), the user home
+    directory is the fallback so the dialog still opens somewhere sensible.
+    """
+    target = default_output_dir()
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+    except OSError:
+        return Path.home()
 
 
 def resource_path(*parts: str | os.PathLike[str]) -> Path:
@@ -50,7 +89,12 @@ def app_data_dir() -> Path:
     override = os.environ.get("SMI_DATA_DIR")
     if override:
         return Path(override)
-    return app_base_dir() / ".model-inspector"
+    # Existing installs keep their in-place data; fresh installs default to
+    # the per-user ~/.local/ModelInspector location.
+    legacy = app_base_dir() / ".model-inspector"
+    if legacy.is_dir():
+        return legacy
+    return Path.home() / ".local" / "ModelInspector"
 
 
 def cache_dir() -> Path:

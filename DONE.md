@@ -65,6 +65,15 @@ plus the packaging/reporting milestone and a full-suite/type baseline.
   local PyQt font-directory warning on stderr); not visual QA.
 - [x] Module ceiling audit: no source or test module exceeds 500 lines.
 
+### Remote CI follow-up (pending rerun)
+
+- [ ] First remote build run `35006721326`: all six Windows/macOS wheel jobs
+  passed; all three Ubuntu wheel jobs failed before packaging assertions because
+  PyQt6 could not load `libEGL.so.1`. The Windows PyInstaller build completed,
+  but the frozen `--help` smoke timed out waiting for its intentional modal help
+  dialog. The Linux runtime and frozen-help process-tree smoke fixes await a
+  rerun; this is not a completed remote-validation result.
+
 ## 2026-09-14 — Release-readiness bugbash
 
 User-facing bug fixes and pre-release packaging from the day's bugbash. This

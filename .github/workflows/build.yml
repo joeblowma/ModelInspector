@@ -27,6 +27,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install Linux Qt runtime
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1
+
       - name: Install build and runtime requirements
         run: |
           python -m pip install --upgrade pip
@@ -40,6 +44,8 @@ jobs:
           python assets/GetVersion.py
 
       - name: Validate packaging metadata
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: python -m pytest tests/test_packaging.py -q
 
       - name: Build wheel
@@ -131,23 +137,51 @@ jobs:
           pyinstaller --noconfirm ModelInspector.spec
           if ($LASTEXITCODE -ne 0) { throw "pyinstaller exited $LASTEXITCODE" }
 
-      - name: Validate executable startup without hanging Qt
+      - name: Validate frozen help startup
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           $exe = "dist\ModelInspector.exe"
           if (-not (Test-Path $exe)) { throw "missing $exe" }
-          $process = Start-Process -FilePath $exe -ArgumentList "--help" -PassThru
-          if (-not $process.WaitForExit(60000)) {
-            # --help must terminate.  A hang (e.g. a modal error dialog or a
-            # broken startup) is a failure and must never be accepted as a
-            # successful launch.
-            $process.Kill()
-            throw "ModelInspector.exe --help did not exit within 60s"
+
+          function Stop-DescendantProcesses([int] $parentId) {
+            $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $parentId" -ErrorAction SilentlyContinue)
+            foreach ($child in $children) {
+              Stop-DescendantProcesses $child.ProcessId
+              Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+            }
           }
-          if ($process.ExitCode -ne 0) {
-            throw "ModelInspector.exe --help exited $($process.ExitCode)"
+
+          $process = Start-Process -FilePath $exe -ArgumentList "--help" -PassThru
+          try {
+            $deadline = (Get-Date).AddSeconds(10)
+            $helpProcess = $null
+            while ((Get-Date) -lt $deadline -and $null -eq $helpProcess) {
+              Start-Sleep -Milliseconds 250
+              $process.Refresh()
+              if ($process.HasExited) {
+                throw "ModelInspector.exe --help exited $($process.ExitCode) before opening help"
+              }
+              $helpProcess = @(
+                Get-CimInstance Win32_Process -Filter "ParentProcessId = $($process.Id)" -ErrorAction SilentlyContinue |
+                  Where-Object { $_.Name -ieq "ModelInspector.exe" }
+              ) | Select-Object -First 1
+            }
+            if ($null -eq $helpProcess) {
+              throw "ModelInspector.exe --help did not start its PyInstaller child within 10 seconds"
+            }
+            Start-Sleep -Seconds 2
+            if (-not (Get-Process -Id $helpProcess.ProcessId -ErrorAction SilentlyContinue)) {
+              throw "ModelInspector.exe --help child exited before the help dialog stayed open"
+            }
+          }
+          finally {
+            Stop-DescendantProcesses $process.Id
+            if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              $process.WaitForExit()
+            }
           }
 
       - name: Upload artifacts

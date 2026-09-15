@@ -161,7 +161,7 @@ def detect_components(keys: list[str]):
 
 
 def _tensor_component_bucket(key: str) -> str | None:
-    """Map a tensor key to a high-level model component bucket."""
+    """Map a tensor key to a high-level model bucket."""
     if key.startswith("model.diffusion_model."):
         return "unet"
     if (

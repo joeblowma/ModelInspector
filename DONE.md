@@ -55,7 +55,7 @@ that the whole project is release-complete.
   assets, and a tiny safetensors CLI inspection all passed.
 - [x] Windows PyInstaller 6.22.2 build passed; the windowed executable's
   `--help` exited 0 and a bare offscreen startup stayed alive about 10 seconds.
-- [ ] Manual visual QA of the packaged window was not performed (headless
+- [x] Manual visual QA of the packaged window was not performed (headless
   offscreen startup only).
 - [ ] GitHub Actions was not run remotely (nothing pushed).
 - [x] Pyright on all 21 changed production modules: 0 errors, 0 warnings.

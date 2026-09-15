@@ -41,7 +41,7 @@ from .tensor_root_summary import TensorRootSummary
 
 __all__ = ["ExplorerTab", "TENSOR_COLUMNS", "normalize_tensor_descriptors", "detect_embedded_content"]
 
-TENSOR_COLUMNS = ("Name", "Shape", "Dtype", "Component Bucket", "Shard", "Size", "Parameter Count")
+TENSOR_COLUMNS = ("Name", "Shape", "Dtype", "Bucket", "Shard", "Size", "Parameters")
 _MAX_DETAIL_TEXT = 8000
 
 
@@ -76,7 +76,7 @@ def _friendly_bytes(value: int | None) -> str:
 
 
 def _display_shard(shard_id: int) -> str:
-    return "Single file (0)" if shard_id == 0 else f"Shard {shard_id}"
+    return "None" if shard_id == 0 else f"Shard {shard_id}"
 
 
 class _TensorProxy(QSortFilterProxyModel):
@@ -187,14 +187,15 @@ class ExplorerTab(QWidget):
         self.tensor_search.textChanged.connect(self._filter_tensors)
         tensor_controls.addWidget(self.tensor_search, 1)
         self.tensor_bucket_filter = QComboBox()
-        self.tensor_bucket_filter.addItem("All component buckets", "")
-        self.tensor_bucket_filter.setToolTip("Limit tensor rows to one detected component bucket.")
+        self.tensor_bucket_filter.addItem("All buckets", "")
+        self.tensor_bucket_filter.setToolTip("Limit tensor rows to one detected bucket.")
         self.tensor_bucket_filter.currentIndexChanged.connect(self._filter_tensor_bucket)
         tensor_controls.addWidget(self.tensor_bucket_filter)
         self.tensor_order_combo = QComboBox()
         self.tensor_order_combo.addItem("Sorted", "sorted")
-        self.tensor_order_combo.addItem("Original file order", "original")
+        self.tensor_order_combo.addItem("Original order", "original")
         self.tensor_order_combo.setToolTip("Sorted mode remains sortable; original mode preserves header order and shades shard groups.")
+        self.tensor_order_combo.setMinimumWidth(130)
         self.tensor_order_combo.currentIndexChanged.connect(self._render_tensors)
         tensor_controls.addWidget(self.tensor_order_combo)
         tensor_layout.addLayout(tensor_controls)
@@ -205,7 +206,18 @@ class ExplorerTab(QWidget):
         self.tensor_table = QTableView()
         self.tensor_table.setModel(self.tensor_proxy)
         self.tensor_table.setSortingEnabled(True)
+        tensor_vert_header = self.tensor_table.verticalHeader()
+        if tensor_vert_header is not None:
+            tensor_vert_header.hide()
+        self.tensor_table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         self.tensor_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tensor_table.setColumnWidth(0, 325) # name
+        self.tensor_table.setColumnWidth(1, 120) # shape
+        self.tensor_table.setColumnWidth(2, 60) # dtype
+        self.tensor_table.setColumnWidth(3, 75) # bucket
+        self.tensor_table.setColumnWidth(4, 60) # shard
+        self.tensor_table.setColumnWidth(5, 75) # size
+        self.tensor_table.setColumnWidth(6, 120) # parameters
         self.tensor_table.setToolTip("Sortable, filterable tensor headers; selecting a row shows a bounded preview.")
         tensor_selection = self.tensor_table.selectionModel()
         if tensor_selection is not None:
@@ -227,12 +239,15 @@ class ExplorerTab(QWidget):
         self.embedded_table.setHorizontalHeaderLabels(("Type", "Name", "Summary"))
         self.embedded_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.embedded_table.setToolTip("Select a candidate to inspect it or emit a host-handled request.")
+        self.embedded_table.setColumnWidth(0, 150)
+        self.embedded_table.setColumnWidth(1, 250)
+        self.embedded_table.setColumnWidth(2, 500)
         self.embedded_table.itemSelectionChanged.connect(self._embedded_selection_changed)
         embedded_layout.addWidget(self.embedded_table, 2)
         self.embedded_detail = QTextEdit()
         self.embedded_detail.setReadOnly(True)
         self.embedded_detail.setPlaceholderText("No embedded candidates detected.")
-        self.embedded_detail.setToolTip("Read-only details for the selected embedded-content candidate.")
+        self.embedded_detail.setToolTip("Details for the selected embedded-content candidate.")
         embedded_layout.addWidget(self.embedded_detail, 1)
         actions = QHBoxLayout()
         self.inspect_button = QPushButton("Inspect candidate")
@@ -329,7 +344,7 @@ class ExplorerTab(QWidget):
         buckets = sorted({str(record["component_bucket"]) for record in self._all_records if record.get("component_bucket")})
         self.tensor_bucket_filter.blockSignals(True)
         self.tensor_bucket_filter.clear()
-        self.tensor_bucket_filter.addItem("All component buckets", "")
+        self.tensor_bucket_filter.addItem("All buckets", "")
         for bucket in buckets:
             self.tensor_bucket_filter.addItem(bucket, bucket)
         self.tensor_bucket_filter.blockSignals(False)
@@ -390,7 +405,7 @@ class ExplorerTab(QWidget):
         self.tensor_model.removeRows(0, self.tensor_model.rowCount())
         self.tensor_bucket_filter.blockSignals(True)
         self.tensor_bucket_filter.clear()
-        self.tensor_bucket_filter.addItem("All component buckets", "")
+        self.tensor_bucket_filter.addItem("All buckets", "")
         self.tensor_bucket_filter.blockSignals(False)
         self.tensor_proxy.set_bucket("")
         self.tensor_root_summary.clear()

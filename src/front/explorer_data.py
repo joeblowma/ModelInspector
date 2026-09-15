@@ -102,18 +102,26 @@ def _dtype_text(value: Any) -> str:
 def _bucket_for_name(name: str) -> str:
     lower = name.lower()
     if any(marker in lower for marker in ("lora", "lycoris", "lokr_", "loha_", "hada_", "dora_")):
-        return "lora"
+        return "LoRA"
     if lower.startswith("first_stage_model.") or lower.startswith(("vae.", "encoder.", "decoder.")):
-        return "vae"
+        return "VAE"
     if lower.startswith("text_encoder_2."):
         return "text_encoder_2"
     if lower.startswith(("text_encoder.", "cond_stage_model.", "conditioner.embedders.", "text_encoders.")):
         return "text_encoder"
+    if lower.startswith(("model.visual.")):
+        return "Vision"
+    if lower.startswith(("mtp.*")):
+        return "Draft"
+    if lower.startswith(("text_model.*")):
+        return "Text"
+    if lower.startswith(("blk.*")):
+        return "Weights"
     if any(marker in lower for marker in ("double_blocks.", "single_blocks.", "transformer.")):
         return "transformer"
     if lower.startswith(("unet.", "model.diffusion_model.")):
         return "unet"
-    return "unknown"
+    return "??"
 
 
 def _looks_like_descriptor(value: Any) -> bool:

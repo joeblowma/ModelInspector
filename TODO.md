@@ -28,7 +28,7 @@ the follow-up list below.
 
 - [ ] Run `.github/workflows/build.yml` remotely; it has not been executed on
   GitHub yet (nothing pushed).
-- [ ] Manually launch and visually inspect the packaged windowed executable;
+- [x] Manually launch and visually inspect the packaged windowed executable;
   validation so far is a headless offscreen startup (process alive ~10s), not
   visual QA.
 

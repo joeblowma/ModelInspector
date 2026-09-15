@@ -120,7 +120,7 @@ def test_tensor_order_shards_and_sizes_are_visible_with_safe_fallbacks(app):
     assert [widget.tensor_model.item(row, 0).text() for row in range(3)] == ["first", "second", "single"]
     assert widget.tensor_model.item(0, 5).text() == "16 B"
     assert "Raw bytes: 16 bytes; display: 16 B" in widget.tensor_model.item(0, 5).toolTip()
-    assert widget.tensor_model.item(2, 4).text() == "Single file (0)"
+    assert widget.tensor_model.item(2, 4).text() == "None"
     assert widget.tensor_model.item(2, 4).data(Qt.ItemDataRole.UserRole + 1) == 0
 
     widget.tensor_order_combo.setCurrentIndex(1)

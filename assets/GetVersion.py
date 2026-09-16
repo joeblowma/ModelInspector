@@ -56,11 +56,11 @@ VSVersionInfo(
       [
       StringTable(
         '040904b0',
-        [StringStruct('CompanyName', 'My Organization'),
+        [StringStruct('CompanyName', 'joeb lowman tools'),
         StringStruct('FileDescription', 'Tool for inspecting and classifying model files'),
         StringStruct('FileVersion', '{version_str}'),
         StringStruct('InternalName', 'ModelInspector'),
-        StringStruct('LegalCopyright', 'Copyright © {current_year} All rights reserved.'),
+        StringStruct('LegalCopyright', 'MIT Copyright © {current_year}.'),
         StringStruct('OriginalFilename', 'ModelInspector.exe'),
         StringStruct('ProductName', 'ModelInspector'),
         StringStruct('ProductVersion', '{git_raw}')])

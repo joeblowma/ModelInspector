@@ -1,0 +1,12 @@
+Version: ../_setVersionHere.txt
+CompanyName: joeb.lowman-tools, imaginary since 2025
+FileDescription: Tool for inspecting and classifying model files
+InternalName: ModelInspector
+LegalCopyright: MIT Copyright © {current_year}.
+OriginalFilename: ModelInspector.exe
+ProductName: ModelInspector
+Translation:
+  - langID: 0
+    charsetID: 1200
+  - langID: 1033
+    charsetID: 1252

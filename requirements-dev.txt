@@ -1,5 +1,6 @@
 # necissary for exe package
 pyinstaller>=6.0.0
+pyinstaller-versionfile
 pillow
 # necissary for wheel building/direct install
 setuptools

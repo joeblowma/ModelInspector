@@ -1,41 +1,24 @@
-# Safetensors Model Inspector
+# ModelInspector
 
-Inspect `.safetensors` and `.gguf` models from a desktop GUI and CLI.
+<p align="center">
+  <img height="300" src="assets/splashpy.png">
+</p>
+
+Inspect `.safetensors`, `.gguf`, `onnx` and index various other model files from a desktop GUI and CLI.
 
 ## What It Does
 
 - Detects architecture families and variants (Flux, SDXL/SD3, Wan, Hunyuan, Qwen, HiDream, LTX, Z-Image, Chroma, and more)
 - Detects adapter type (`LoRA`, `LyCORIS`, `LoHa`, `LoKr`, `DoRA`, `GLoRA`)
 - Extracts training metadata when present (steps, epochs, images, resolution, software, and related fields)
-- Supports file or folder workflows (including recursive folder scanning)
-- Supports `.modelinfo` key dumps for debugging and sharing
-- Supports read-only `.gguf` metadata/tensor inspection
+- File or folder workflows (including recursive folder scanning)
+- `.modelinfo` and `.modelinfo.json` key dumps
+- Read-only metadata/tensor inspection
 
 ## Setup
 
-1. Create the virtual environment:
-
-```bat
-venv_create.bat
-```
-
-2. Activate:
-
-```bat
-venv_activate.bat
-```
-
-3. Run GUI:
-
-```bat
-python src/gui.py
-```
-
-4. Run CLI help:
-
-```bat
-python src/inspect_model.py --help
-```
+- install the wheel, run `python -m modelinspector-gui` for the GUI or `python -m modelinspector` to use the CLI
+- Windows .exe provided by github's action runner, run the executeable for GUI
 
 ## CLI Usage
 
@@ -86,38 +69,41 @@ python src/inspect_model.py path/to/folder --recursive --allow-filename-alias-de
 
 ## GUI Walkthrough
 
-### Top Area (Input + Controls)
+### Main Window
 
-- Drag and drop files or folders into the drop zone
-- Use `Browse...` or `Browse Folder...`
-- `Analyze` processes queued inputs
-- `Settings` controls visibility and behavior
-- `Minimize` / `Restore` collapses or expands the top area for more workspace
+- Drag and drop files or folders onto the window
+- Use `Open` menu to open a file/folder or load previously cached model data
+   - `Load Cache`: loads only cached models that still exists at their paths
+   - `Load Cache All`: loads cached data for all models stored
+   - `Load Cache Archived`: loads only cached model data for missing model files
+- `Settings` control visibility and behavior
+- Filters based on architecture, tags and file format
+- Dropdown to select action button effect, action button affects only selected model/models
+- `Clear All` button to empty the list
 
-<img width="2547" height="373" alt="image" src="https://github.com/user-attachments/assets/419e5d42-e3f2-469e-8850-633720ac7782" />
+#### Tab: Cards
 
-### Tab: Cards
+- Simple model Cards.
+- Click on checkbox to select model.
+- Click on model card to open advanced model View
+- Right click for advanced view/raw view/copy info for selected model
 
-- Detailed model cards with a `Simple View` toggle for lightweight cards
-- Supports card selection, multi-select, and context menu actions
-- Card order follows the current Data table sort order
-
-<img width="1708" height="1076" alt="image" src="https://github.com/user-attachments/assets/a146a5a7-3a9f-422f-8eee-64efb36af715" />
-
-- Supports specific LoRA formats like LoHa, LoKr, GLoRa
-- Some fail sometimes (lycoris)
-
-<img width="2526" height="953" alt="image" src="https://github.com/user-attachments/assets/1ef32b95-868a-4407-8569-8207d68eac3a" />
+<img height="373" alt="image" src="./assets/ss/main1_cards.png" />
 
 ### Tab: Data
 
 - Sortable/resizable table
-- Multi-select cells and copy via `Ctrl+C`
-- Right-click actions (`View Raw`, `Copy Selected Entries`)
-- Column visibility can be configured in settings
+- Multi-select cells and copy via `Ctrl+C` or via right click
+- Right-click actions
+   - Advanced View (on model right clicked on)
+   - View Raw (on model right clicked on)
+   - Copy Folder Path (on model right clicked on)
+   - Copy Selected Entries (all selected cells in the grid get copied tab delimited)
+- Column visibility, order and width can be configured in settings
+   - Widths can also be adjusted by dragging, when done enter settings and press OK to save dragged sizes
 - Sorting the table also reorders the Cards tab and Raw model dropdown
 
-<img width="2385" height="257" alt="image" src="https://github.com/user-attachments/assets/1dcd1a23-ca36-433e-8e77-9252cfcc0208" />
+<img height="373" alt="image" src="./assets/ss/main2_data.png" />
 
 ### Tab: Raw
 
@@ -126,44 +112,44 @@ python src/inspect_model.py path/to/folder --recursive --allow-filename-alias-de
 - `Load Full Dump` explicitly generates and caches the full tensor key dump for the current model
 - `Ctrl+C` copies the selected text, or the full raw content when no selection exists
 
-<img width="2442" height="726" alt="image" src="https://github.com/user-attachments/assets/4c2f9d4d-1476-4348-b872-06c282a80007" />
+<img height="373" alt="image" src="./assets/ss/main3_raw.png" />
+
+### More app images:
+
+**Settings**
+
+<table>
+  <tr>
+    <td><img src="./assets/ss/set1_gen.png" width="200" alt="Image r1.1"></td>
+    <td><img src="./assets/ss/set2_data.png" width="200" alt="Image r1.2"></td>
+    <td><img src="./assets/ss/set3_themedk.png" width="200" alt="Image r1.3"></td>
+    <td><img src="./assets/ss/set3_themelt.png" width="200" alt="Image r1.4"></td>
+  </tr>
+</table>
+
+**Advanced View**
+
+<table>
+  <tr>
+    <td><img src="./assets/ss/adv1_overview.png" width="200" alt="Image r2.1"></td>
+    <td><img src="./assets/ss/adv2_card.png" width="200" alt="Image r2.2"></td>
+    <td><img src="./assets/ss/adv3_meta.png" width="200" alt="Image r2.3"></td>
+    <td><img src="./assets/ss/adv4_tensor.png" width="200" alt="Image r2.4"></td>
+    <td><img src="./assets/ss/adv5_embed.png" width="200" alt="Image r2.5"></td>
+  </tr>
+</table>
 
 ## Notes
 
-- Folder drag/drop and folder browse both support recursive discovery of `.safetensors` and `.gguf`.
-- `.onnx`, `.ckpt`, `.pt`, and `.pth` are treated as unsafe/unsupported for now because PyTorch checkpoint loading may require pickle deserialization. The app warns and ignores them until an explicit safe-loading mode exists.
+- Folder drag/drop and folder browse both support recursive discovery of `.safetensors`, `.gguf`, `.onnx`, `.ckpt`, `.pt`, and `.pth`.
 - Parsed model summaries are cached by resolved path, file size, and modified time to speed up repeat inspections.
 - If `Cache full tensor data during analysis` is enabled, compact tensor descriptors are stored under `cache/data/` beside the summary cache and can be used for Raw/modelinfo output even when the model file is unavailable.
-- Successful folder scans are cached immediately. The `Load default libraries on startup` setting restores cached scan results on launch and keeps cached summaries even when files are missing or temporarily unreachable.
-- App settings and cache default to `.model-inspector` beside the app for portable use. Override with `SMI_DATA_DIR`, `SMI_CACHE_DIR`, or `SMI_SETTINGS_PATH`.
-- Filtering in the UI affects visibility and copy behavior (hidden rows are excluded from table copy).
-- `.modelinfo` output is generated by shared backend logic in `inspect_model.py`.
-- The GUI dump button writes selected models; from the Raw tab, with nothing selected, it writes only the current Raw model.
-- The `.safetensors` reader intentionally uses the custom header parser as the primary path because it is dependency-free and preserves tensor data offsets. The official `safetensors.safe_open(..., framework="numpy")` API can provide metadata, keys, shapes, and dtypes without Torch, but it does not expose per-tensor data offsets.
+- Successful folder scans are cached immediately. The `Load default libraries on startup` setting restores cached scan results on launch.
+- App settings and cache default to `~/.local/share/ModelInspector` (`%USERPROFILE%\.local\share\ModelInspector` on Windows). Override with `SMI_DATA_DIR`, `SMI_CACHE_DIR`, or `SMI_SETTINGS_PATH` or command line options.
+- The GUI dump button setting writes only selected models; from the Raw tab, with nothing selected, it writes only the current Raw model.
 - Filename alias detection is opt-in in Settings and can map filename tokens to fallback labels.
 - `Pony7` is treated as distinct from `PDXL`. The alias tokens `pony7`, `ponyv7`, and `pony v7` map to `Pony7`.
 
-## Settings (Current)
+See [LICENSE](./LICENSE) for MIT license info.
 
-### General
-
-- `Filename Alias Detection`: optional filename-token fallback for special labels
-- `Auto-minimize top section on Analyze`
-- `Auto-analyze when files are added`
-- `Load default libraries on startup`: restores files from cached folder scans
-- `Analysis threads`: bounded worker count for independent file inspection, default `2`
-- `Cache full tensor data during analysis`: stores compact tensor descriptors for offline Raw/modelinfo use
-- `Also dump JSON .modelinfo`: writes `.modelinfo.json` files with the dump action
-- `File add behavior`:
-  - `Replace current input list`
-  - `Append to current input list`
-- `Default tab`: `Cards`, `Data`, or `Raw`
-
-### Cards
-
-- `Simple Cards`: choose which data fields are shown
-- `Detailed Cards`: choose which data fields are shown
-
-### Data Columns
-
-- `Data Columns`: choose visible columns in the Data tab
+:)

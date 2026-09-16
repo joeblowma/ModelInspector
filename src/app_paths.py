@@ -46,7 +46,7 @@ def default_output_dir() -> Path:
     override = os.environ.get("SMI_OUTPUT_DIR")
     if override:
         return Path(override)
-    return Path.home() / ".local" / "ModelInspector"
+    return Path.home() / ".local" / "share" / "ModelInspector"
 
 
 def ensure_output_dir() -> Path:
@@ -94,7 +94,7 @@ def app_data_dir() -> Path:
     legacy = app_base_dir() / ".model-inspector"
     if legacy.is_dir():
         return legacy
-    return Path.home() / ".local" / "ModelInspector"
+    return Path.home() / ".local" / "share"  / "ModelInspector"
 
 
 def cache_dir() -> Path:

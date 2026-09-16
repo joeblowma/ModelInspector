@@ -19,7 +19,7 @@ def test_default_app_data_dir_is_home_local_model_inspector(monkeypatch, tmp_pat
     monkeypatch.delenv("SMI_DATA_DIR", raising=False)
     monkeypatch.setattr(app_paths, "app_base_dir", lambda: tmp_path)
     home = _patch_home(monkeypatch, tmp_path)
-    assert app_paths.app_data_dir() == home / ".local" / "ModelInspector"
+    assert app_paths.app_data_dir() == home / ".local" / "share"  / "ModelInspector"
 
 
 def test_existing_legacy_data_dir_stays_in_place(monkeypatch, tmp_path):
@@ -66,7 +66,7 @@ def test_ensure_output_dir_creates_missing_directory(monkeypatch, tmp_path):
     monkeypatch.delenv("SMI_OUTPUT_DIR", raising=False)
     monkeypatch.setattr(app_paths, "app_base_dir", lambda: tmp_path)
     home = _patch_home(monkeypatch, tmp_path)
-    target = home / ".local" / "ModelInspector"
+    target = home / ".local" / "share"  / "ModelInspector"
     assert not target.exists()
     assert app_paths.ensure_output_dir() == target
     assert target.is_dir()
@@ -137,7 +137,7 @@ def test_resource_base_dir_frozen_uses_meipass_then_exe_dir(monkeypatch, tmp_pat
 def test_default_output_dir_is_home_local_model_inspector(monkeypatch, tmp_path):
     monkeypatch.delenv("SMI_OUTPUT_DIR", raising=False)
     home = _patch_home(monkeypatch, tmp_path)
-    assert app_paths.default_output_dir() == home / ".local" / "ModelInspector"
+    assert app_paths.default_output_dir() == home / ".local" / "share"  / "ModelInspector"
 
 
 def test_default_output_dir_override_and_independence_from_legacy_data(
@@ -152,4 +152,4 @@ def test_default_output_dir_override_and_independence_from_legacy_data(
     (tmp_path / ".model-inspector").mkdir()
     home = _patch_home(monkeypatch, tmp_path)
     assert app_paths.app_data_dir() == tmp_path / ".model-inspector"
-    assert app_paths.default_output_dir() == home / ".local" / "ModelInspector"
+    assert app_paths.default_output_dir() == home / ".local" / "share"  / "ModelInspector"

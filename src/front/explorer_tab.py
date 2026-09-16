@@ -149,6 +149,7 @@ class ExplorerTab(QWidget):
         self.tensor_bucket_filter = QComboBox()
         self.tensor_bucket_filter.addItem("All buckets", "")
         self.tensor_bucket_filter.setToolTip("Limit tensor rows to one detected bucket.")
+        self.tensor_bucket_filter.setMinimumWidth(130)
         self.tensor_bucket_filter.currentIndexChanged.connect(self._filter_tensor_bucket)
         tensor_controls.addWidget(self.tensor_bucket_filter)
         self.tensor_order_combo = QComboBox()
@@ -241,7 +242,7 @@ class ExplorerTab(QWidget):
         self.status_label.setVisible(False)
         self.work_area.setVisible(False)
         return pages
-        
+
     def set_inspection(self, inspection: Mapping[str, Any] | None, tensor_data: Any = None, *, payload_available: bool | None = None) -> None:
         """Display an inspection result and optional header tensor descriptors."""
         self._loading = False

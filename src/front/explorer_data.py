@@ -142,12 +142,12 @@ def _bucket_for_name(name: str) -> str:
         return "draft"
     if lower.startswith("text_model."):
         return "text"
-    if lower.startswith("blk."):
-        return "weights"
     if any(marker in lower for marker in ("double_blocks.", "single_blocks.", "transformer.")):
         return "transformer"
     if lower.startswith(("unet.", "model.diffusion_model.")):
         return "unet"
+    if lower.endswith(".weight"):
+        return "weights"
     return "unknown"
 
 

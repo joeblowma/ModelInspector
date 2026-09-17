@@ -152,4 +152,11 @@ python src/inspect_model.py path/to/folder --recursive --allow-filename-alias-de
 
 See [LICENSE](./LICENSE) for MIT license info.
 
-:)
+
+
+
+
+
+<p align="center">
+  <img width="150" src="./assets/ss/badge.png">
+</p>

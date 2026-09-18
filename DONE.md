@@ -3,6 +3,33 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-09-18 — Near-release bug bash
+
+### Completed fixes and focused coverage
+
+- [x] Advanced metadata actions provide bounded UI Inspect plus full-source
+  Save/Extract where supported, with filename/full-path labels and an Advanced
+  card tooltip; Inspect preserves the model list in replace mode.
+- [x] Theme changes refresh existing cards and style `QToolButton` controls;
+  Settings visibility controls are right-aligned.
+- [x] Rescan Selected evicts the selected model, full, sidecar, and raw-cache
+  artifacts while guarding active cache loads and other running operations.
+- [x] Actual PTQ142/PTQ143 mappings are corrected, with real-example,
+  header-only CLI smoke coverage for human-readable and JSON output.
+- [x] Focused regression contracts cover PTQ precision, selected-model rescan,
+  and release workflow/artifact wiring.
+
+### Local validation
+
+- [x] Full suite: 441 passed, 4 skipped before the final packaging/typed-attr
+  corrections; affected final tests: 25 passed after those corrections.
+- [x] Rebuilt wheel and sdist, isolated roundtrip, clean installed-wheel CLI/
+  GUI help/assets/tiny-model/modelinfo smokes, source bounded GUI smoke, and
+  source/wheel/sdist version `1.0.0` agreement all passed.
+- [x] Actual PTQ header-only CLI smokes passed in human-readable and JSON modes.
+- [ ] Hosted GitHub artifact/release validation and packaged visual/render QA
+  remain pending; `actionlint` was unavailable locally.
+
 ## 2026-09-15 — Integration review and release hardening
 
 Integration review of the release-readiness diff with targeted defect fixes,

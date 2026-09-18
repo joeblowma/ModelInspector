@@ -19,17 +19,26 @@ the follow-up list below.
 - [x] **3. Startup argument** — the GUI accepts an optional file or folder and
   queues a safe scan after the window is ready; `--help` exits before any Qt
   application is created.
-- [x] **4. Packaging and CI** — setuptools builds a working top-level wheel with
+- [x] **4. Packaging and CI foundation** — setuptools builds a working top-level wheel with
   `modelinspector` / `modelinspector-gui` console scripts and packaged, resolved
   assets; the Windows GitHub Actions workflow builds the wheel and executable
   with clean-install/package validation and timeouts.
 
 ### Remaining pre-release verification
 
-- [x] Manually launch and visually inspect the packaged windowed executable.
-  The source GUI was visually audited (commit abd1ed4), but packaged-exe QA is
-  limited to a headless frozen-help process-lifetime check, not visual or render
-  QA.
+- [ ] Manually launch and visually inspect the packaged windowed executable.
+  The source GUI was visually audited (commit abd1ed4), but packaged-exe visual
+  and render QA remains pending; the current frozen-help check is headless.
+
+### Release validation still open
+
+- [x] Local full-suite, rebuild, clean-install, wheel/sdist roundtrip, version,
+  CLI/GUI help/assets/tiny-model/modelinfo, source bounded-GUI, and PTQ header
+  smokes passed. The final focused correction run passed 25 tests.
+- [ ] Verify hosted CI Windows executable checks and actual revision-named
+  artifacts.
+- [ ] Validate the tagged GitHub release: tag/source/wheel version agreement
+  and both release asset types.
 
 ## Deferred product work
 
@@ -80,9 +89,8 @@ the follow-up list below.
 
 - Keep legacy `-cli` executable passthrough optional and deferred; it is
   distinct from the GUI positional startup target in the pre-release checklist.
-- Wheel release metadata and artifact validation are implemented and validated
-  locally; a remote GitHub Actions run and release upload remain optional
-  follow-on work.
+- Wheel release metadata and artifact validation are under repair; local,
+  hosted, and release-upload validation remain open in the checklist above.
 - Treat publishing and GitHub-release upload as optional follow-on work, not a
   prerequisite for the initial artifact-validation workflow.
 - Run a full Graphify rebuild and verify frontend/backend nodes and edges after

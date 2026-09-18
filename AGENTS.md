@@ -5,6 +5,8 @@
 This is a small Python desktop/CLI utility for inspecting various language and diffusion model files.
 
 - `src/` contains .py source code
+  - `back/cache_invalidation.py` holds the shared raw-cache invalidation helper used by targeted rescan guards.
+  - `build_version.py` derives the wheel/sdist package version from the Windows resource-version source, with installed-distribution fallbacks.
   - `app_paths.py` Application data paths: JSONC settings and legacy INI migration location; user data/cache in `.model-inspector`; default save/output under `~/.local/ModelInspector` via `ensure_output_dir()` (override `SMI_OUTPUT_DIR`); `cache_dir()` is the cache root (`SMI_CACHE_DIR`) holding the inspection cache plus sidecars/raw dumps/directory scans, and `model_cache_dir()` (`SMI_MODEL_CACHE_DIR`, falling back to the root) holds only the primary inspection cache; and `resource_base_dir()` resolution for checkout, installed-wheel (assets beside `app_paths.py`), and PyInstaller (`sys._MEIPASS`) layouts.
   - `gui.py` Thin compatibility/bootstrap wrapper that composes and re-exports `MainWindow`, while delegating application startup to `front.application`.
   - `inspect_model.py` Minimal CLI bootstrap that invokes `back.cli`.
@@ -20,6 +22,7 @@ This is a small Python desktop/CLI utility for inspecting various language and d
   - Treat `ModelInspector.spec`, `version.txt`, `build/` and `dist/` as generated output.
 - `pyproject.toml` declares the setuptools flat-layout wheel: top-level modules plus `front`/`back`/`assets` packages, with `modelinspector` and `modelinspector-gui` console scripts.
 - `.github/workflows/build.yml` builds and validates the wheel and the Windows PyInstaller executable.
+- `.github/workflows/release.yml` runs the tag-triggered release workflow; `.github/scripts/prepare_release.py` validates the tag/version and stages the wheel plus versioned Windows zip. Hosted end-to-end release validation remains open.
 - `README.md` github front page, extremely out of date, ignore for now
 - `graphify-out/` contains the repository knowledge graph used by agents for architecture navigation.
 
@@ -54,6 +57,9 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
 Existing tests:
+- `tests/test_ptq_precision.py` — actual PTQ142/PTQ143 header mapping and precision preservation.
+- `tests/test_rescan_selected.py` — selected-model invalidation, selection preservation, and busy-operation guards.
+- `tests/test_release_workflow.py` — static revision-artifact, release-zip, and tag-release workflow contracts; hosted validation is still required.
 - `.\tests\conftest.py` — shared test helpers, including the session-scoped `_qapp_holder` fixture that holds one `QApplication` reference for the whole session (PyQt6 crashes with 0xC0000409 if the QApplication is garbage-collected); tests obtain the same instance via `QApplication.instance()`.
 - `.\tests\test_gui_scan_lifecycle.py` — compact card mode, asynchronous discovery with queued terminal paths, terminal projection waiting, redundant selection-style suppression, close deferred until analysis and cache-sync workers finish, raw-dump cached/generated prefixing, and modelinfo dump content.
 - `.\tests\test_checkpoint_no_prompt.py` — GUI checkpoint metadata-only routing without consent prompts.
@@ -104,15 +110,19 @@ Existing tests:
 ## Agent-Specific Instructions
 
 - When project structure changes or tests are added, update this file.
-- When spawning subagents use `fork_turns = "none"`. Provide specific scoped tasks and their context for subagents.
+- Subagents do not spawn subagents. Every task must honor exact file/scope ownership, preserve unrelated working-tree changes, and never revert another agent's or user's edits.
+- Restart OpenCode after changing agent guidance; the allowed-model list is maintained separately.
 - ModelInspector implementation files live under `src/`; start with `rg --files src` and read `src/model_cache.py` or `src/modelinfo.py`, never root-level names.
+- Use CodeGraph of Graphify first for source/flow questions; use direct reads only for documentation, configuration, or details CodeGraph cannot provide.
 - Establish session environment state once in a reusable command or wrapper: package-cache variables, `PYTHONPATH`, and Qt headless variables. Reuse that canonical invocation rather than prepending environment setup to every command.
 - Canonical validation is `python -m pytest tests` with `PYTHONPATH=src` and `QT_QPA_PLATFORM=offscreen` set (PowerShell: `$env:PYTHONPATH="src"; $env:QT_QPA_PLATFORM="offscreen"; python -m pytest tests`). Always pass the `tests` directory explicitly so pytest does not collect vendored test modules in site-packages.
 - Canonical Data-column labels and widths are defined once in `front/data_columns.py`; reference that module instead of duplicating the width table in docs or tests.
+- Run relevant tests after each coherent change batch and report the exact command, result, and any tool error. Verify real flows and returned evidence rather than inferring success from static wiring.
+- Do not guess dtype widths or precision from unsupported metadata; preserve unknown values and state the evidence boundary.
 
 
 ### Guardrails & Limits
 
 - **Hard Module Ceiling (500 Lines)**: Any generated or extracted file exceeding 500 lines is automatically flagged as an invalid God Node. It must immediately be queued for a second split by a worker before progressing to linkage repair. No "cohesive file exceptions" without explicit Lead Architect approval.
-- **Model Type Enforcement**: Before spawning subagents, verify that requested subagent models map strictly to  `gpt-5.6-sol`, `gpt-5.6-luna`, `gpt-5.6-terra`,`glm-5.3-flash`, `deepseek-v4.1-flash`, or `deepseek-v4-pro` . If a model alias resolves incorrectly or defaults to `gpt-6-astra`, halt execution immediately.
+- **Model Type Enforcement**: Before spawning subagents, verify that requested subagent models map strictly to models documented in `.opencode/agents/*.md`. If a model alias resolves incorrectly or defaults to `gpt-6-astra`, halt execution immediately.
 - **Wrapper Boundary Policy**: Entry-point wrappers (`gui.py`, `inspect_model.py`) may contain thin re-exports, MRO composition, and compatibility hooks, but zero domain logic.

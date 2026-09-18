@@ -7,11 +7,18 @@ offline-friendly while still catching metadata regressions.
 
 from __future__ import annotations
 
+import re
 import tomllib
+import importlib.util
+from importlib import metadata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"
+VERSION_SOURCE = ROOT / "_setVersionHere.txt"
+VERSION_TEMPLATE = ROOT / "assets" / "versionTemplate.yml"
+VERSION_GENERATOR = ROOT / "assets" / "GetVersion.py"
+BUILD_VERSION = ROOT / "src" / "build_version.py"
 
 
 def _project() -> dict:
@@ -60,6 +67,7 @@ def test_assets_are_mapped_and_included() -> None:
 def test_project_metadata_and_runtime_dependencies() -> None:
     project = _project()["project"]
     assert project["name"] == "modelinspector"
+    assert project["dynamic"] == ["version"]
     assert project["requires-python"] == ">=3.12"
     classifiers = set(project["classifiers"])
     assert {
@@ -68,3 +76,34 @@ def test_project_metadata_and_runtime_dependencies() -> None:
         "Programming Language :: Python :: 3.14",
     } <= classifiers
     assert {"PyQt6", "gguf", "numpy"} <= set(project["dependencies"])
+
+
+def test_windows_resource_version_is_derived_from_the_single_version_source() -> None:
+    assert re.fullmatch(r"\d+(?:\.\d+){3}", VERSION_SOURCE.read_text(encoding="utf-8"))
+    assert "Version: ../_setVersionHere.txt" in VERSION_TEMPLATE.read_text(encoding="utf-8")
+    generator = VERSION_GENERATOR.read_text(encoding="utf-8")
+    assert 'output_file="version.txt"' in generator
+    assert 'input_file="./assets/versionTemplate.yml"' in generator
+
+
+def test_wheel_version_is_derived_from_the_windows_version_source() -> None:
+    spec = importlib.util.spec_from_file_location("build_version", BUILD_VERSION)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.__version__ == "1.0.0"
+    assert _project()["tool"]["setuptools"]["dynamic"]["version"] == {
+        "attr": "build_version.__version__"
+    }
+
+
+def test_installed_build_version_uses_distribution_metadata(tmp_path, monkeypatch) -> None:
+    helper = tmp_path / "site-packages" / "build_version.py"
+    helper.parent.mkdir()
+    helper.write_text(BUILD_VERSION.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(metadata, "version", lambda name: "1.2.3")
+    spec = importlib.util.spec_from_file_location("installed_build_version", helper)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.__version__ == "1.2.3"

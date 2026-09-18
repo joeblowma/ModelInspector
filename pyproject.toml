@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "modelinspector"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Index, explore, and organize LLM/Diffusion models"
 keywords = ["safetensors", "gguf", "onnx"]
 
@@ -41,6 +41,7 @@ package-dir = {"" = "src", "assets" = "assets"}
 py-modules = [
     "app_paths",
     "background_tasks",
+    "build_version",
     "gui",
     "inspect_model",
     "model_cache",
@@ -48,6 +49,9 @@ py-modules = [
     "modelinfo",
 ]
 packages = ["front", "back", "assets", "assets.themes"]
+
+[tool.setuptools.dynamic]
+version = {attr = "build_version.__version__"}
 
 [tool.setuptools.package-data]
 assets = ["*.ico", "*.png", "themes/*.jsonc"]

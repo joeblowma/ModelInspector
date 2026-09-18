@@ -2,8 +2,11 @@ name: build
 
 on:
   push:
+    branches-ignore:
+      - "v*"
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -102,8 +105,9 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: release-dists
+          name: modelinspector-wheel-${{ matrix.os }}-${{ matrix.python-version }}-${{ github.sha }}
           path: dist/
+          if-no-files-found: error
 
   pyinstaller:
     name: Windows executable
@@ -199,7 +203,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: modelinspector-windows
+          name: modelinspector-windows-${{ github.sha }}
           path: |
             dist/ModelInspector.exe
           if-no-files-found: error

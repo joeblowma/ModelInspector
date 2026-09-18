@@ -54,6 +54,8 @@ LLAMA_FILE_TYPE_NAMES = {
     39: "NVFP4",
     40: "Q1_0",
     41: "Q2_0",
+    144: "PTQ2_0",
+    143: "PTQ1_0",
     1024: "GUESSED",
 }
 GGML_QUANT_NAMES = {

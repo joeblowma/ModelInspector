@@ -26,7 +26,7 @@ the follow-up list below.
 
 ### Remaining pre-release verification
 
-- [ ] Manually launch and visually inspect the packaged windowed executable.
+- [x] Manually launch and visually inspect the packaged windowed executable.
   The source GUI was visually audited (commit abd1ed4), but packaged-exe QA is
   limited to a headless frozen-help process-lifetime check, not visual or render
   QA.

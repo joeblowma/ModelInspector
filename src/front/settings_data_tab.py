@@ -191,8 +191,16 @@ class SettingsDataTab(QWidget):
             checkbox.setEnabled(False)
             checkbox.setAccessibleName(f"{column.label or column.key} column is always visible")
             checkbox.setToolTip(f"The {column.label or column.key} column is always visible.")
-        self.column_tree.setItemWidget(item, 0, checkbox)
-        self._install_selection_filter(checkbox, key)
+        visibility_cell = QWidget()
+        visibility_layout = QHBoxLayout(visibility_cell)
+        visibility_layout.setContentsMargins(0, 0, 0, 0)
+        visibility_layout.addWidget(
+            checkbox,
+            0,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )
+        self.column_tree.setItemWidget(item, 0, visibility_cell)
+        self._install_selection_filter(visibility_cell, key)
         self._checks[column.key] = checkbox
 
         width = QSpinBox()

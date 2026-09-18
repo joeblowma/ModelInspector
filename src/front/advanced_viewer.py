@@ -11,6 +11,7 @@ usable in the existing application.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -139,6 +140,9 @@ _BADGE_COLORS = {
 class AdvancedViewerDialog(QDialog):
     """Parent-owned, window-modal viewer for model facts and exploration."""
 
+    filename_label: QLabel
+    filepath_label: QLabel
+
     def __init__(
         self,
         parent: QWidget | Mapping[str, Any] | None = None,
@@ -177,6 +181,7 @@ class AdvancedViewerDialog(QDialog):
         self._inspection = dict(inspection) if isinstance(inspection, Mapping) else {}
         self._header_controller.replace_inspection()
         self._facts = facts_from_inspection(self._inspection)
+        self._update_source_location()
         self._update_card_details()
         tensors = self._tensor_data_from_inspection(self._inspection)
         self.explorer_tab.set_inspection(
@@ -196,6 +201,16 @@ class AdvancedViewerDialog(QDialog):
         self.batch_spin.blockSignals(False)
         self._set_initial_quantization()
         self._recalculate()
+
+    def _update_source_location(self) -> None:
+        filepath = str(self._inspection.get("filepath") or "")
+        resolved = str(self._inspection.get("resolved_filepath") or "")
+        display_path = filepath or resolved or _UNKNOWN
+        if filepath and not Path(filepath).is_absolute() and resolved:
+            display_path = resolved
+        filename = Path(filepath).name if filepath else ""
+        self.filename_label.setText(filename or str(self._inspection.get("filename") or _UNKNOWN))
+        self.filepath_label.setText(display_path)
 
     @staticmethod
     def _tensor_data_from_inspection(inspection: Mapping[str, Any]) -> Any:
@@ -222,6 +237,7 @@ class AdvancedViewerDialog(QDialog):
         data.setdefault("training_meta", {})
         data.setdefault("extra", {})
         self._card_details_card = ModelCard(data, vertical_stats=True)
+        self._card_details_card.setToolTip("")
         self._card_details_card.select_cb.hide()
         self._card_details_content_layout.addWidget(cast(Any, self._card_details_card))
 

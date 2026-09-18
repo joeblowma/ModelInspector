@@ -1,7 +1,9 @@
 """Read-only embedded-metadata and raw-source regression checks."""
 
+import json
 import struct
 
+import pytest
 from PyQt6.QtWidgets import QApplication, QTextEdit
 
 from front.explorer_data import detect_embedded_content
@@ -59,6 +61,70 @@ def test_gguf_embedded_metadata_extracts_header_bytes_without_tensor_reads(tmp_p
 
     assert readable_metadata(candidate) == template
     assert raw_metadata_bytes(inspection, candidate) == raw_value
+    available, message = raw_metadata_status(inspection, candidate)
+    assert available
+    assert message == "Extract exact GGUF-encoded metadata value bytes; tensor payloads are never read."
+
+
+def test_metadata_actions_stop_at_gguf_metadata_boundary(monkeypatch, tmp_path):
+    template = "{{ user }}"
+    template_bytes = template.encode("utf-8")
+    key = b"tokenizer.chat_template"
+    raw_value = struct.pack("<Q", len(template_bytes)) + template_bytes
+    header = (
+        b"GGUF"
+        + struct.pack("<IQQ", 3, 1, 1)
+        + struct.pack("<Q", len(key))
+        + key
+        + struct.pack("<I", 8)
+        + raw_value
+    )
+    source = tmp_path / "bounded.gguf"
+    source.write_bytes(header + b"TENSOR_PAYLOAD_MUST_NOT_BE_READ")
+    inspection = {"filepath": str(source), "metadata": {key.decode(): template}}
+    candidate = detect_embedded_content(inspection)[0]
+    saved: list[bytes] = []
+    monkeypatch.setattr(explorer_metadata, "_save", lambda *args: saved.append(args[3]) or "saved")
+
+    real_open = explorer_metadata.Path.open
+
+    class HeaderBoundedFile:
+        def __init__(self, wrapped):
+            self._wrapped = wrapped
+
+        def read(self, size=-1):
+            position = self._wrapped.tell()
+            if size < 0 or position + size > len(header):
+                raise AssertionError("metadata action read into tensor payload")
+            return self._wrapped.read(size)
+
+        def seek(self, offset, whence=0):
+            position = self._wrapped.seek(offset, whence)
+            if position > len(header):
+                raise AssertionError("metadata action sought into tensor payload")
+            return position
+
+        def tell(self):
+            return self._wrapped.tell()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self._wrapped.close()
+
+        def __getattr__(self, name):
+            return getattr(self._wrapped, name)
+
+    def guarded_open(path, *args, **kwargs):
+        opened = real_open(path, *args, **kwargs)
+        return HeaderBoundedFile(opened) if path == source else opened
+
+    monkeypatch.setattr(explorer_metadata.Path, "open", guarded_open)
+
+    assert perform_metadata_action(None, inspection, candidate, "save") == "saved"
+    assert perform_metadata_action(None, inspection, candidate, "extract") == "saved"
+    assert saved == [template_bytes, raw_value]
 
 
 def test_inspect_opens_readable_popup_without_transforming_template_text(monkeypatch):
@@ -75,3 +141,90 @@ def test_inspect_opens_readable_popup_without_transforming_template_text(monkeyp
     monkeypatch.setattr(explorer_metadata.QDialog, "exec", capture)
     assert perform_metadata_action(None, {}, {"name": "tokenizer.chat_template", "value": template}, "inspect") == ""
     assert displayed == [template]
+
+
+def test_inspect_labels_cached_preview_when_source_is_unavailable(monkeypatch, tmp_path):
+    QApplication.instance() or QApplication([])
+    inspection = {
+        "filepath": str(tmp_path / "missing.safetensors"),
+        "metadata": {"tokenizer.chat_template": "cached preview"},
+    }
+    candidate = detect_embedded_content(inspection)[0]
+    titles: list[str] = []
+    monkeypatch.setattr(explorer_metadata.QDialog, "exec", lambda dialog: titles.append(dialog.windowTitle()) or 0)
+
+    assert perform_metadata_action(None, inspection, candidate, "inspect") == ""
+    assert titles == ["tokenizer.chat_template (cached preview; source unavailable)"]
+
+
+def test_actions_reload_full_safetensors_metadata_instead_of_reader_preview(monkeypatch, tmp_path):
+    QApplication.instance() or QApplication([])
+    values = [f"token-{index}" for index in range(60)]
+    metadata = {"tokenizer": {"tokens": values}}
+    header = json.dumps({"__metadata__": metadata, "weight": {"dtype": "F16", "shape": [1], "data_offsets": [0, 2]}}).encode()
+    source = tmp_path / "preview.safetensors"
+    source.write_bytes(struct.pack("<Q", len(header)) + header + b"\0\0")
+    preview = {"count": len(values), "preview": values[:50], "truncated": True}
+    inspection = {"filepath": str(source), "metadata": {"tokenizer": {"tokens": preview}}}
+    candidate = detect_embedded_content(inspection)[0]
+    displayed: list[str] = []
+    saved: list[bytes] = []
+
+    monkeypatch.setattr(explorer_metadata.QDialog, "exec", lambda dialog: displayed.append(dialog.findChild(QTextEdit).toPlainText()))
+    monkeypatch.setattr(explorer_metadata, "_save", lambda *args: saved.append(args[3]) or "saved")
+
+    assert perform_metadata_action(None, inspection, candidate, "inspect") == ""
+    assert perform_metadata_action(None, inspection, candidate, "save") == "saved"
+    assert "token-59" in displayed[0] and '"preview"' not in displayed[0]
+    assert b"token-59" in saved[0] and b'"preview"' not in saved[0]
+
+
+def test_actions_decode_full_gguf_array_metadata_instead_of_preview(monkeypatch, tmp_path):
+    QApplication.instance() or QApplication([])
+    values = [f"token-{index}" for index in range(60)]
+    key = b"tokenizer.tokens"
+    encoded = struct.pack("<IQ", 8, len(values)) + b"".join(
+        struct.pack("<Q", len(value.encode())) + value.encode() for value in values
+    )
+    source = tmp_path / "preview.gguf"
+    source.write_bytes(
+        b"GGUF" + struct.pack("<IQQ", 3, 0, 1) + struct.pack("<Q", len(key)) + key
+        + struct.pack("<I", 9) + encoded
+    )
+    preview = {"count": len(values), "preview": values[:50], "truncated": True}
+    inspection = {"filepath": str(source), "metadata": {"tokenizer.tokens": preview}}
+    candidate = detect_embedded_content(inspection)[0]
+    saved: list[bytes] = []
+    monkeypatch.setattr(explorer_metadata, "_save", lambda *args: saved.append(args[3]) or "saved")
+
+    assert perform_metadata_action(None, inspection, candidate, "save") == "saved"
+    assert b"token-59" in saved[0] and b'"preview"' not in saved[0]
+
+
+def test_actions_decode_full_gguf_scalar_metadata(monkeypatch, tmp_path):
+    key = b"tokenizer.count"
+    source = tmp_path / "scalar.gguf"
+    source.write_bytes(
+        b"GGUF"
+        + struct.pack("<IQQ", 3, 0, 1)
+        + struct.pack("<Q", len(key))
+        + key
+        + struct.pack("<I", 10)
+        + struct.pack("<Q", 60)
+    )
+    inspection = {"filepath": str(source), "metadata": {key.decode(): 0}}
+    candidate = detect_embedded_content(inspection)[0]
+    saved: list[bytes] = []
+    monkeypatch.setattr(explorer_metadata, "_save", lambda *args: saved.append(args[3]) or "saved")
+
+    assert perform_metadata_action(None, inspection, candidate, "save") == "saved"
+    assert saved == [b"60"]
+
+
+def test_save_refuses_truncated_preview_when_source_is_unavailable(monkeypatch, tmp_path):
+    preview = {"count": 60, "preview": ["token-0"], "truncated": True}
+    inspection = {"filepath": str(tmp_path / "missing.safetensors"), "metadata": {"tokenizer": {"tokens": preview}}}
+    candidate = detect_embedded_content(inspection)[0]
+    monkeypatch.setattr(explorer_metadata, "_save", lambda *_args: pytest.fail("preview must not be saved"))
+
+    assert perform_metadata_action(None, inspection, candidate, "save") == "Readable metadata source unavailable; nothing was saved."

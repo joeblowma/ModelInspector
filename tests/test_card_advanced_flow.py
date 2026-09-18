@@ -93,3 +93,34 @@ def test_card_actions_open_exact_model_while_checkbox_owns_selection(tmp_path, m
         assert window.selected_count_label.text() == window.table_selected_count_label.text() == "0 selected"
     finally:
         window.close()
+
+
+def test_explorer_inspect_preserves_loaded_models_in_replace_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    existing = str(tmp_path / "existing.safetensors")
+    inspected = tmp_path / "inspected.safetensors"
+    inspected.touch()
+    started = []
+    monkeypatch.setattr(
+        window,
+        "_analyze_all",
+        lambda paths=None, *, clear_existing=True: started.append((paths, clear_existing)),
+    )
+    try:
+        data = _summary(existing)
+        window._queued_files = [existing]
+        window._results.append(data)
+        window._add_card(data)
+        window._add_table_row(data)
+
+        window._handle_explorer_inspect({"inspection": {"filepath": str(inspected)}})
+
+        assert window._queued_files == [existing, str(inspected)]
+        assert [result["filepath"] for result in window._results] == [existing]
+        assert started == [([str(inspected)], False)]
+    finally:
+        window.close()
+        app.processEvents()

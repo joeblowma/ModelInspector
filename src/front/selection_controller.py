@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QApplication, QCheckBox, QMenu
 
 from front.file_operation_controller import FileOperationControllerMixin
 from front.model_card import card_stat_items
+from model_cache import invalidate_cached_inspection
 
 
 def _clipboard():
@@ -270,6 +271,29 @@ class SelectionControllerMixin(FileOperationControllerMixin):
         noun = "entry" if len(selected) == 1 else "entries"
         self._set_progress_status(f"Removed {len(selected)} selected {noun}.")
         self._clear_progress_status(delay_ms=3500)
+
+    def _rescan_selected_results(self):
+        paths = self._visible_selected_paths()
+        if not paths:
+            return
+        if (
+            (self._worker and self._worker.isRunning())
+            or (self._discovery_worker and self._discovery_worker.isRunning())
+            or (
+                getattr(self, "_cache_load_worker", None)
+                and self._cache_load_worker.isRunning()
+            )
+            or self._file_operation_running()
+        ):
+            self._set_progress_status("Cannot rescan while another operation is running.")
+            self._clear_progress_status(delay_ms=4000)
+            return
+        options = {
+            "allow_filename_alias_detection": self._allow_filename_alias_detection
+        }
+        for path in paths:
+            invalidate_cached_inspection(path, options)
+        self._start_analysis(paths, clear_existing=False, replace_existing=True)
 
     def _copy_selected_names(self):
         selected = self._visible_selected_paths()

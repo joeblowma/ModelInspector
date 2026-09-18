@@ -50,6 +50,24 @@ def build_advanced_viewer_ui(dialog: Any) -> None:
     root.setSpacing(10)
     colors = get_global_theme_colors()
 
+    source_group = QGroupBox("Current model")
+    source_form = QFormLayout(source_group)
+    source_form.setHorizontalSpacing(14)
+    source_form.setVerticalSpacing(6)
+    dialog.filename_label = QLabel("Unknown")
+    dialog.filename_label.setStyleSheet(_value_style(colors))
+    dialog.filename_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    dialog.filename_label.setToolTip("Original filename for the currently inspected model.")
+    source_form.addRow("Filename", dialog.filename_label)
+    dialog.filepath_label = QLabel("Unknown")
+    dialog.filepath_label.setWordWrap(True)
+    dialog.filepath_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+    dialog.filepath_label.setStyleSheet(_value_style(colors))
+    dialog.filepath_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    dialog.filepath_label.setToolTip("Full path for the currently inspected model.")
+    source_form.addRow("Full path", dialog.filepath_label)
+    root.addWidget(source_group)
+
     dialog.work_area = QTabWidget()
     dialog.work_area.setToolTip(
         "Browse Overview, Card Details, Metadata, Tensors, and Embedded Content pages."

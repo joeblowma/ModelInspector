@@ -278,6 +278,15 @@ def flatten_metadata(value: Any) -> list[dict[str, Any]]:
     return _flatten_metadata(value)
 
 
+def _is_truncated_metadata_preview(value: Any) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and value.get("truncated") is True
+        and "preview" in value
+        and "count" in value
+    )
+
+
 def detect_embedded_content(inspection: Mapping[str, Any] | None, records: Sequence[Mapping[str, Any]] = ()) -> list[dict[str, Any]]:
     """Identify embedded metadata sections without representing tensor groups as data."""
     del records
@@ -288,6 +297,9 @@ def detect_embedded_content(inspection: Mapping[str, Any] | None, records: Seque
 
     def collect(value: Any, path: tuple[str, ...] = (), embedded: bool = False) -> None:
         if isinstance(value, Mapping):
+            if embedded and _is_truncated_metadata_preview(value):
+                candidates.append({"kind": "Embedded metadata", "name": ".".join(path), "summary": _safe_text(value, 300), "source": "metadata", "value": value, "raw_path": path})
+                return
             for key, item in value.items():
                 key_text = str(key)
                 key_lower = key_text.casefold()

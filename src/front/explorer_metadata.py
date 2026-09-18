@@ -12,7 +12,25 @@ from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QFileDialog, QTextEdit, Q
 
 _MAX_HEADER_BYTES = 200_000_000
 _MAX_INSPECT_TEXT = 8_000
-_GGUF_SCALAR_SIZES = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8}
+_MAX_GGUF_METADATA_BYTES = _MAX_HEADER_BYTES
+_MAX_GGUF_METADATA_DEPTH = 32
+_GGUF_SCALAR_FORMATS = {
+    0: "<B",
+    1: "<b",
+    2: "<H",
+    3: "<h",
+    4: "<I",
+    5: "<i",
+    6: "<f",
+    7: "<?",
+    10: "<Q",
+    11: "<q",
+    12: "<d",
+}
+_GGUF_SCALAR_SIZES = {
+    value_type: struct.calcsize(format_string)
+    for value_type, format_string in _GGUF_SCALAR_FORMATS.items()
+}
 _MAX_GGUF_METADATA_ITEMS = 200_000
 
 
@@ -135,7 +153,11 @@ def _object_members(data: bytes, start: int, end: int) -> dict[str, tuple[int, i
 
 
 def _gguf_exact(source, size: int, file_size: int) -> bytes:
-    if size < 0 or source.tell() + size > file_size:
+    if (
+        size < 0
+        or source.tell() + size > file_size
+        or source.tell() + size > _MAX_GGUF_METADATA_BYTES
+    ):
         raise RawMetadataUnavailable("truncated GGUF metadata")
     value = source.read(size)
     if len(value) != size:
@@ -151,7 +173,9 @@ def _gguf_string(source, file_size: int) -> str:
         raise RawMetadataUnavailable(f"invalid GGUF metadata text: {error}") from error
 
 
-def _gguf_value_end(source, value_type: int, file_size: int) -> int:
+def _gguf_value_end(source, value_type: int, file_size: int, depth: int = 0) -> int:
+    if depth > _MAX_GGUF_METADATA_DEPTH:
+        raise RawMetadataUnavailable("GGUF metadata array nesting exceeds the safe scan limit")
     if value_type == 8:
         _gguf_string(source, file_size)
     elif value_type == 9:
@@ -160,12 +184,37 @@ def _gguf_value_end(source, value_type: int, file_size: int) -> int:
         if count > _MAX_GGUF_METADATA_ITEMS:
             raise RawMetadataUnavailable("GGUF metadata array exceeds the safe scan limit")
         for _ in range(count):
-            _gguf_value_end(source, item_type, file_size)
+            _gguf_value_end(source, item_type, file_size, depth + 1)
     elif value_type in _GGUF_SCALAR_SIZES:
         _gguf_exact(source, _GGUF_SCALAR_SIZES[value_type], file_size)
     else:
         raise RawMetadataUnavailable(f"unsupported GGUF metadata type {value_type}")
     return source.tell()
+
+
+def _gguf_read_value(source, value_type: int, file_size: int, depth: int = 0) -> Any:
+    """Decode one bounded GGUF metadata value; tensor payloads are never reached."""
+    if depth > _MAX_GGUF_METADATA_DEPTH:
+        raise RawMetadataUnavailable("GGUF metadata array nesting exceeds the safe read limit")
+    if value_type == 8:
+        return _gguf_string(source, file_size)
+    if value_type == 9:
+        item_type = struct.unpack("<I", _gguf_exact(source, 4, file_size))[0]
+        count = struct.unpack("<Q", _gguf_exact(source, 8, file_size))[0]
+        if count > _MAX_GGUF_METADATA_ITEMS:
+            raise RawMetadataUnavailable("GGUF metadata array exceeds the safe read limit")
+        return [
+            _gguf_read_value(source, item_type, file_size, depth + 1)
+            for _ in range(count)
+        ]
+    format_string = _GGUF_SCALAR_FORMATS.get(value_type)
+    if format_string is None:
+        raise RawMetadataUnavailable(f"unsupported GGUF metadata type {value_type}")
+    size = struct.calcsize(format_string)
+    try:
+        return struct.unpack(format_string, _gguf_exact(source, size, file_size))[0]
+    except struct.error as error:
+        raise RawMetadataUnavailable(f"invalid GGUF metadata value: {error}") from error
 
 
 def _gguf_metadata_bytes(path: Path, raw_path: Sequence[Any]) -> bytes:
@@ -191,6 +240,31 @@ def _gguf_metadata_bytes(path: Path, raw_path: Sequence[Any]) -> bytes:
             if key == target_key:
                 source.seek(value_start)
                 return _gguf_exact(source, value_end - value_start, file_size)
+    raise RawMetadataUnavailable("metadata value is not present in the GGUF header")
+
+
+def _gguf_metadata_value(path: Path, raw_path: Sequence[Any]) -> Any:
+    """Read the complete source value for display without touching tensor data."""
+    if len(raw_path) != 1:
+        raise RawMetadataUnavailable("GGUF metadata keys are not nested source locations")
+    target_key = str(raw_path[0])
+    file_size = path.stat().st_size
+    with path.open("rb") as source:
+        if _gguf_exact(source, 4, file_size) != b"GGUF":
+            raise RawMetadataUnavailable("invalid GGUF magic")
+        version = struct.unpack("<I", _gguf_exact(source, 4, file_size))[0]
+        if version not in (2, 3):
+            raise RawMetadataUnavailable(f"unsupported GGUF version {version}")
+        _gguf_exact(source, 8, file_size)
+        key_count = struct.unpack("<Q", _gguf_exact(source, 8, file_size))[0]
+        if key_count > _MAX_GGUF_METADATA_ITEMS:
+            raise RawMetadataUnavailable("GGUF metadata count exceeds the safe scan limit")
+        for _ in range(key_count):
+            key = _gguf_string(source, file_size)
+            value_type = struct.unpack("<I", _gguf_exact(source, 4, file_size))[0]
+            if key == target_key:
+                return _gguf_read_value(source, value_type, file_size)
+            _gguf_value_end(source, value_type, file_size)
     raise RawMetadataUnavailable("metadata value is not present in the GGUF header")
 
 
@@ -221,10 +295,54 @@ def raw_metadata_bytes(inspection: Mapping[str, Any], candidate: Mapping[str, An
 
 def raw_metadata_status(inspection: Mapping[str, Any], candidate: Mapping[str, Any]) -> tuple[bool, str]:
     try:
+        path = _candidate_path(inspection, candidate)
         raw_metadata_bytes(inspection, candidate)
     except (OSError, RawMetadataUnavailable) as error:
         return False, f"Raw original bytes unavailable: {error}"
+    if path.suffix.lower() == ".gguf":
+        return True, "Extract exact GGUF-encoded metadata value bytes; tensor payloads are never read."
     return True, "Extract exact JSON source bytes; tensor payloads are never read."
+
+
+def _metadata_value_at_path(metadata: Any, raw_path: Sequence[Any]) -> Any:
+    value = metadata
+    for key in raw_path:
+        if not isinstance(value, Mapping) or str(key) not in value:
+            raise RawMetadataUnavailable("metadata value is not present in the source header")
+        value = value[str(key)]
+    return value
+
+
+def _source_metadata_value(inspection: Mapping[str, Any], candidate: Mapping[str, Any]) -> Any:
+    """Recover a complete display value from the original header when possible."""
+    raw_path = candidate.get("raw_path")
+    if not isinstance(raw_path, Sequence) or isinstance(raw_path, (str, bytes, bytearray)):
+        raise RawMetadataUnavailable("metadata source location is unknown")
+    path = _candidate_path(inspection, candidate)
+    suffix = path.suffix.lower()
+    if suffix == ".safetensors":
+        return json.loads(raw_metadata_bytes(inspection, candidate))
+    if suffix == ".gguf":
+        return _gguf_metadata_value(path, raw_path)
+    try:
+        from model_readers import read_model_header
+
+        metadata, _, _ = read_model_header(
+            str(path), options={"checkpoint_safety": "metadata"}
+        )
+    except ImportError as error:
+        raise RawMetadataUnavailable(f"source reader is unavailable: {error}") from error
+    return _metadata_value_at_path(metadata, raw_path)
+
+
+def _source_candidate(inspection: Mapping[str, Any], candidate: Mapping[str, Any]) -> dict[str, Any] | None:
+    try:
+        value = _source_metadata_value(inspection, candidate)
+    except (OSError, RawMetadataUnavailable, TypeError, ValueError, RecursionError):
+        return None
+    resolved = dict(candidate)
+    resolved["value"] = value
+    return resolved
 
 
 def _save(parent: QWidget, title: str, default_name: str, data: bytes, file_filter: str) -> str:
@@ -240,13 +358,22 @@ def _save(parent: QWidget, title: str, default_name: str, data: bytes, file_filt
 
 def perform_metadata_action(parent: QWidget, inspection: Mapping[str, Any], candidate: Mapping[str, Any], action: str) -> str:
     """Run the approved UI action for metadata only; return feedback when needed."""
+    source_candidate = (
+        _source_candidate(inspection, candidate)
+        if action in {"inspect", "save"}
+        else None
+    )
     if action == "inspect":
+        display_candidate = source_candidate or dict(candidate)
         dialog = QDialog(parent)
-        dialog.setWindowTitle(str(candidate.get("name") or "Embedded metadata"))
+        title = str(display_candidate.get("name") or "Embedded metadata")
+        if source_candidate is None and candidate.get("raw_path") is not None:
+            title += " (cached preview; source unavailable)"
+        dialog.setWindowTitle(title)
         layout = QVBoxLayout(dialog)
         detail = QTextEdit()
         detail.setReadOnly(True)
-        detail.setPlainText(_inspect_text(candidate))
+        detail.setPlainText(_inspect_text(display_candidate))
         layout.addWidget(detail)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(dialog.reject)
@@ -256,8 +383,11 @@ def perform_metadata_action(parent: QWidget, inspection: Mapping[str, Any], cand
         dialog.exec()
         return ""
     if action == "save":
-        text = readable_metadata(candidate)
-        suffix = ".txt" if isinstance(candidate.get("value"), str) else ".json"
+        if source_candidate is None:
+            return "Readable metadata source unavailable; nothing was saved."
+        display_candidate = source_candidate
+        text = readable_metadata(display_candidate)
+        suffix = ".txt" if isinstance(display_candidate.get("value"), str) else ".json"
         return _save(parent, "Save readable metadata", f"embedded_metadata{suffix}", text.encode("utf-8"), "Text or JSON files (*.txt *.json);;All files (*)")
     try:
         raw = raw_metadata_bytes(inspection, candidate)

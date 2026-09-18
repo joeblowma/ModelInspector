@@ -154,11 +154,13 @@ class DiscoveryControllerMixin:
                 return
         self._clear_progress_status(delay_ms=3000)
 
-    def _queue_files(self, paths: list[str]) -> list[str]:
+    def _queue_files(
+        self, paths: list[str], *, preserve_existing: bool = False
+    ) -> list[str]:
         if not paths:
             return []
         added = []
-        if self._add_mode == "replace":
+        if self._add_mode == "replace" and not preserve_existing:
             self._queued_files.clear()
 
         for p in paths:
@@ -168,12 +170,12 @@ class DiscoveryControllerMixin:
         self._update_file_count()
         return added
 
-    def _add_files(self, paths: list[str]):
-        added = self._queue_files(paths)
+    def _add_files(self, paths: list[str], *, preserve_existing: bool = False):
+        added = self._queue_files(paths, preserve_existing=preserve_existing)
         if not added:
             return
         if self._auto_analyze_on_add:
-            self._analyze_all()
+            self._analyze_all(paths=added, clear_existing=not preserve_existing)
 
     def _update_file_count(self):
         if not self.progress.isVisible():

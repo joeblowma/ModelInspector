@@ -1,6 +1,7 @@
 """Portable cache integration coverage for shards and associated sidecars."""
 
 import json
+import os
 from pathlib import Path
 import struct
 import sys
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from back.inspection_pipeline import inspect_file
 from back.cache_verifier import verify_cache_entries
+from model_cache import get_cached_raw_dump, invalidate_cached_inspection, store_raw_dump
 
 
 def _write_safetensors(path: Path, name: str, size: int = 4) -> None:
@@ -73,6 +75,45 @@ def test_sidecar_change_and_removal_invalidate_primary_cache(
     removed = inspect_file(str(primary))
     assert removed["sidecars"] == []
     assert removed["sidecar_roles"] == []
+
+
+def test_explicit_invalidation_forces_fresh_metadata_and_new_sidecars(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.delenv("SMI_CACHE_PATH", raising=False)
+    primary = tmp_path / "model.safetensors"
+    sidecar = tmp_path / "model-mmproj.safetensors"
+    _write_safetensors(primary, "old")
+    first = inspect_file(str(primary))
+    original_stat = primary.stat()
+
+    _write_safetensors(primary, "new")
+    os.utime(primary, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    cached = inspect_file(str(primary))
+    assert first["tensor_order"] == cached["tensor_order"] == ["old"]
+
+    _write_safetensors(sidecar, "projection", 6)
+    assert invalidate_cached_inspection(str(primary))
+    refreshed = inspect_file(str(primary))
+
+    assert refreshed["tensor_order"] == ["new"]
+    assert [record["filepath"] for record in refreshed["sidecars"]] == [
+        str(sidecar.resolve())
+    ]
+
+
+def test_explicit_invalidation_removes_raw_dump_without_inspection_entry(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    primary = tmp_path / "raw-only.safetensors"
+    _write_safetensors(primary, "main")
+    store_raw_dump(str(primary), "stale raw dump")
+
+    assert get_cached_raw_dump(str(primary)) == "stale raw dump"
+    assert invalidate_cached_inspection(str(primary))
+    assert get_cached_raw_dump(str(primary)) is None
 
 
 def test_changed_non_primary_shard_invalidates_full_shard_identity(

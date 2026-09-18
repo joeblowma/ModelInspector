@@ -190,6 +190,7 @@ class WindowCoreMixin:
             "copy_names": ("Copy Names", self._copy_selected_names),
             "copy_paths": ("Copy Paths", self._copy_selected_paths),
             "dump_modelinfo": ("Dump .modelinfo", self._dump_all),
+            "rescan_selected": ("Rescan selected", self._rescan_selected_results),
             "remove_selected": ("Remove Selected", self._remove_selected_results),
         }
 
@@ -221,7 +222,11 @@ class WindowCoreMixin:
         )
 
     def _run_selected_action(self):
-        if self._file_op_worker is not None and self._file_op_worker.isRunning():
+        if (
+            self._file_op_worker is not None
+            and self._file_op_worker.isRunning()
+            and self._selected_action != "rescan_selected"
+        ):
             return
         _, callback = self._selected_actions().get(
             self._selected_action, self._selected_actions()["copy_files"]

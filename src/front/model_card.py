@@ -272,6 +272,7 @@ class ModelCard(QFrame):
         self._refresh_style()
 
     def _refresh_style(self):
+        self._theme_colors = get_global_theme_colors()
         if self._selected:
             self.setStyleSheet("""
                 ModelCard {

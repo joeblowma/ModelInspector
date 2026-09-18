@@ -384,6 +384,28 @@ def test_locked_selection_column_is_always_visible_and_first(app):
     assert widget.column_keys()[:2] == ["selection", "file"]
 
 
+def test_visibility_checks_are_right_aligned_and_locked_check_survives_reload(app):
+    widget = SettingsDataTab(_locked_columns())
+    widget.resize(700, 400)
+    widget.show()
+    app.processEvents()
+
+    for key in widget.column_keys():
+        item = widget._rows[key]
+        cell = widget.column_tree.itemWidget(item, 0)
+        assert cell is not None
+        checkbox = widget._checks[key]
+        assert checkbox.geometry().center().x() > cell.width() // 2
+
+    widget.load_configuration(
+        {"columns": [{"key": "file", "visible": False}, {"key": "selection", "visible": False}]}
+    )
+    selection_check = widget._checks["selection"]
+    assert selection_check.isChecked()
+    assert not selection_check.isEnabled()
+    assert widget.column_keys()[0] == "selection"
+
+
 def test_locked_selection_disables_move_buttons(app):
     widget = SettingsDataTab(_locked_columns())
     widget._select_key("selection")

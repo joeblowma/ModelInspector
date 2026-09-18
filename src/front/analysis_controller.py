@@ -16,12 +16,17 @@ MODEL_FORMAT_FILTERS = (".safetensors", ".gguf", ".ckpt", ".onnx", ".pt", ".pth"
 class AnalysisControllerMixin:
     """Cooperative mixin for asynchronous analysis and result projection."""
 
-    def _analyze_all(self):
-        if not self._queued_files:
+    def _analyze_all(
+        self, paths: list[str] | None = None, *, clear_existing: bool = True
+    ):
+        paths = list(self._queued_files) if paths is None else paths
+        if not paths:
             return
-        self._start_analysis(list(self._queued_files), clear_existing=True)
+        self._start_analysis(paths, clear_existing=clear_existing)
 
-    def _start_analysis(self, paths: list[str], clear_existing: bool):
+    def _start_analysis(
+        self, paths: list[str], clear_existing: bool, *, replace_existing: bool = False
+    ):
         if not paths:
             return
         if self._worker and self._worker.isRunning():
@@ -33,6 +38,12 @@ class AnalysisControllerMixin:
             )
             self._clear_progress_status(delay_ms=4000)
             return
+        if replace_existing:
+            path_set = set(paths)
+            self._results = [
+                data for data in self._results if data.get("filepath") not in path_set
+            ]
+            self._rebuild_views_from_results()
         includes_checkpoint = any(
             Path(path).suffix.lower() in {".ckpt", ".pt", ".pth"} for path in paths
         )

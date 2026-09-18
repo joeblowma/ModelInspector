@@ -31,6 +31,7 @@ from back.inspection_summary import compact_inspection_summary
 from back.companion_discovery import companion_identities_match
 from back.shard_discovery import discover_shard_set
 from back.sidecar_discovery import discover_sidecars, sidecar_identity_snapshot
+from back.cache_invalidation import invalidate_raw_dump as _invalidate_raw_dump
 
 
 CACHE_VERSION = 2
@@ -61,12 +62,8 @@ def _cache_key(filepath: str, options: dict | None) -> str:
     return json.dumps(
         [resolved, relevant_options], sort_keys=True, separators=(",", ":")
     )
-
-
 def _entry_id(key: str) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
-
-
 def _identity(filepath: str) -> dict[str, Any]:
     p = Path(filepath)
     st = p.stat()
@@ -79,16 +76,10 @@ def _identity(filepath: str) -> dict[str, Any]:
         "file_size": st.st_size,
         "mtime_ns": st.st_mtime_ns,
     }
-
-
 def _load_index() -> dict:
     return _load_storage_index(_index_path(), CACHE_VERSION)
-
-
 def _save_index(index: dict):
     _save_storage_index(_index_path(), index)
-
-
 def _path_match_values(filepath: str) -> set[str]:
     values = {str(Path(filepath).absolute()).lower()}
     try:
@@ -96,24 +87,14 @@ def _path_match_values(filepath: str) -> set[str]:
     except OSError:
         pass
     return values
-
-
 def _read_entry(entry_id: str) -> dict | None:
     return _read_storage_entry(_entry_path(entry_id))
-
-
 def _write_entry(entry_id: str, entry: dict):
     _write_storage_entry(_entry_path(entry_id), entry)
-
-
 def _read_data_entry(entry_id: str) -> dict | None:
     return _read_storage_entry(_data_path(entry_id))
-
-
 def _write_data_entry(entry_id: str, entry: dict):
     _write_storage_entry(_data_path(entry_id), entry)
-
-
 def _iter_cached_entries():
     legacy_path = _legacy_cache_path()
     if legacy_path:
@@ -142,8 +123,6 @@ def _iter_cached_entries():
         entry = _read_entry(entry_id)
         if isinstance(entry, dict):
             yield entry
-
-
 def _entry_matches_path(entry: dict, filepath: str) -> bool:
     wanted = _path_match_values(filepath)
     raw_identity = entry.get("identity")
@@ -157,15 +136,11 @@ def _entry_matches_path(entry: dict, filepath: str) -> bool:
     }
     candidates.discard("")
     return bool(wanted & candidates)
-
-
 def _include_sidecars(options: dict | None) -> bool:
     options = options or {}
     return not options.get("_sidecar_inspection") and options.get(
         "include_sidecars", True
     )
-
-
 def _cache_companion_identities_match(
     filepath: str, data: dict, options: dict | None
 ) -> bool:
@@ -184,8 +159,6 @@ def _cache_companion_identities_match(
     return data.get("sidecar_identities", []) == sidecar_identity_snapshot(
         current_sidecars
     ) and companion_identities_match(filepath, data)
-
-
 def get_cached_inspection(filepath: str, options: dict | None = None) -> dict | None:
     key = _cache_key(filepath, options)
     entry_id = _entry_id(key)
@@ -215,8 +188,6 @@ def get_cached_inspection(filepath: str, options: dict | None = None) -> dict | 
     if data is None or not _cache_companion_identities_match(filepath, data, options):
         return None
     return data
-
-
 def get_cached_inspection_snapshot(filepath: str) -> dict | None:
     """Return cached inspection data for a path without requiring the file to exist."""
     if Path(filepath).exists():
@@ -243,8 +214,6 @@ def get_cached_inspection_snapshot(filepath: str) -> dict | None:
             snapshot.setdefault("cache_status", "snapshot")
             return snapshot
     return None
-
-
 def _iter_cached_inspection_matches(filepaths: list[str]):
     """Yield each requested filepath and matching cached data at most once."""
     wanted_by_value = {}
@@ -271,8 +240,6 @@ def _iter_cached_inspection_matches(filepaths: list[str]):
             if filepath and filepath not in matched:
                 matched.add(filepath)
                 yield filepath, data
-
-
 def get_cached_inspection_snapshots(filepaths: list[str]) -> dict[str, dict]:
     """Return cached inspection snapshots for many paths using one cache scan."""
     snapshots = {}
@@ -303,7 +270,6 @@ def get_cached_inspection_summary_snapshots(
 ) -> dict[str, dict]:
     """Return compact persisted snapshots without recomputing an option-derived key."""
     return dict(iter_cached_inspection_summary_snapshots(filepaths))
-
 def iter_cached_inspection_summary_snapshots(
     filepaths: list[str], should_cancel: Callable[[], bool] | None = None
 ):
@@ -314,8 +280,6 @@ def iter_cached_inspection_summary_snapshots(
         summary_source = dict(data)
         summary_source.setdefault("cache_status", "snapshot")
         yield filepath, compact_inspection_summary(summary_source)
-
-
 def list_cached_inspection_paths() -> list[str]:
     """Return paths that have cached inspection summaries."""
     paths = []
@@ -341,8 +305,6 @@ def list_cached_inspection_paths() -> list[str]:
             paths.append(path)
             break
     return paths
-
-
 def store_cached_inspection(filepath: str, data: dict, options: dict | None = None):
     key = _cache_key(filepath, options)
     entry_id = _entry_id(key)
@@ -390,8 +352,6 @@ def store_cached_inspection(filepath: str, data: dict, options: dict | None = No
         )
         index["entries"][entry_id] = index_entry
         _save_index(index)
-
-
 def store_model_data(
     filepath: str,
     metadata: dict,
@@ -417,8 +377,6 @@ def store_model_data(
             f"data/{entry_id}.json"
         )
         _save_index(index)
-
-
 def get_cached_model_data(filepath: str, options: dict | None = None) -> dict | None:
     try:
         key = _cache_key(filepath, options)
@@ -448,13 +406,9 @@ def get_cached_model_data(filepath: str, options: dict | None = None) -> dict | 
         if wanted & entry_values:
             return entry
     return None
-
-
 def store_directory_scan(folder: str, paths: list[str]):
     """Cache the latest successful recursive scan for a model library folder."""
     _store_directory_scan(folder, paths, CACHE_VERSION)
-
-
 def list_cached_directories() -> list[str]:
     return _list_cached_directories(CACHE_VERSION)
 
@@ -462,14 +416,46 @@ def list_cached_directories() -> list[str]:
 def get_cached_directory_scan(folder: str) -> list[str]:
     """Return cached scan paths without pruning missing or temporarily unavailable files."""
     return _get_cached_directory_scan(folder, CACHE_VERSION)
-
-
 def store_raw_dump(filepath: str, dump: str):
     _store_raw_dump(filepath, dump, CACHE_VERSION, _path_match_values)
 
 
 def get_cached_raw_dump(filepath: str) -> str | None:
     return _get_cached_raw_dump(filepath, CACHE_VERSION, _path_match_values)
+
+
+def invalidate_cached_inspection(filepath: str, options: dict | None = None) -> bool:
+    """Remove the current inspection and full-data cache entries for one model."""
+    key = _cache_key(filepath, options)
+    entry_id = _entry_id(key)
+    legacy_path = _legacy_cache_path()
+    with _CACHE_LOCK:
+        if legacy_path:
+            cache = _load_legacy_cache(legacy_path)
+            removed = cache["entries"].pop(key, None) is not None
+            try:
+                legacy_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp_path = legacy_path.with_suffix(legacy_path.suffix + ".tmp")
+                tmp_path.write_text(json.dumps(cache, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+                os.replace(tmp_path, legacy_path)
+            except Exception:
+                return False
+            sidecar_path = legacy_path.with_name(legacy_path.stem + ".sidecars") / f"{entry_id}.json"
+            paths = (_data_path(entry_id), sidecar_path)
+        else:
+            removed = _entry_path(entry_id).exists()
+            _entry_path(entry_id).unlink(missing_ok=True)
+            index = _load_index()
+            removed = index["entries"].pop(entry_id, None) is not None or removed
+            _save_index(index)
+            paths = (_data_path(entry_id), cache_dir() / "sidecars" / f"{entry_id}.json")
+        for path in paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        removed = _invalidate_raw_dump(filepath, CACHE_VERSION, _path_match_values) or removed
+    return removed
 
 
 def clear_inspection_cache() -> int:

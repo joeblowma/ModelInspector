@@ -204,17 +204,13 @@ class IntegrationMixin(CacheLoadControllerMixin):
                 settings_dialog.refresh_theme(tc)
             except RuntimeError:
                 self._settings_dialog = None
-        # Refresh ModelCard stylesheets
-        cards_container = getattr(self, "cards_scroll", None)
-        if cards_container is not None:
-            try:
-                root = cards_container.rootPane()
-                if root is not None:
-                    for child in root.children():
-                        if hasattr(child, "_refresh_style") and hasattr(child, "filepath"):
-                            child._refresh_style()
-            except Exception:
-                pass
+        # Cards retain their construction-time palette.
+        for cards in ("_path_to_card", "_path_to_simple_card"):
+            for card in getattr(self, cards, {}).values():
+                try:
+                    card._refresh_style()
+                except RuntimeError:
+                    pass
         # Refresh embedded Explorer stylesheets.
         explorer = getattr(self, "_explorer", None)
         if explorer is not None and hasattr(explorer, "refresh_theme"):
@@ -303,7 +299,7 @@ class IntegrationMixin(CacheLoadControllerMixin):
     def _handle_explorer_inspect(self, request: dict[str, Any]) -> None:
         path = str(request.get("inspection", {}).get("filepath") or "")
         if path and Path(path).is_file():
-            self._add_files([path])
+            self._add_files([path], preserve_existing=True)
         else:
             QMessageBox.information(self, "Explorer", "The cached header is historic or unavailable; no file inspection was started.")
 

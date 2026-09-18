@@ -214,6 +214,20 @@ def test_card_details_ignore_legacy_preferences_and_metadata_stays_spacious():
     dialog.close()
 
 
+def test_current_model_location_updates_and_embedded_card_has_no_open_viewer_tooltip():
+    _app()
+    dialog = AdvancedViewerDialog({"filepath": "R:/models/first.safetensors"})
+    assert dialog.filename_label.text() == "first.safetensors"
+    assert dialog.filepath_label.text() == "R:/models/first.safetensors"
+    assert dialog._card_details_card.toolTip() == ""
+
+    dialog.set_inspection({"filepath": "R:/models/second.gguf"})
+    assert dialog.filename_label.text() == "second.gguf"
+    assert dialog.filepath_label.text() == "R:/models/second.gguf"
+    assert "Click to open the Advanced Viewer" not in dialog._card_details_card.toolTip()
+    dialog.close()
+
+
 def test_overview_cards_reserve_padding_and_usable_minimum_geometry():
     _app()
     dialog = AdvancedViewerDialog()

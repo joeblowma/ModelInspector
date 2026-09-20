@@ -2,6 +2,8 @@
 """Headless checks for the reusable Explorer widget and its data contract."""
 
 import os
+import json
+import struct
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -66,6 +68,56 @@ def test_explorer_displays_bounded_metadata_tensors_and_candidates(app):
     assert all(len(widget.metadata_table.item(row, 1).text()) < 1300 for row in range(widget.metadata_table.rowCount()))
     assert widget.embedded_table.rowCount() == 1
     assert "payloads are not loaded" in widget.status_label.text()
+
+
+def test_metadata_detail_recovers_full_long_and_deep_header_values(app, tmp_path):
+    long_value = "header-start-" + "x" * 1400 + "-long-tail-marker"
+    metadata = {
+        "tokenizer.chat_template": long_value,
+        "structured": {"level1": {"level2": {"level3": {"deep-tail-marker": True}}}},
+    }
+    header = json.dumps(
+        {"__metadata__": metadata, "weight": {"dtype": "F16", "shape": [1], "data_offsets": [0, 2]}}
+    ).encode()
+    source = tmp_path / "full-metadata.safetensors"
+    source.write_bytes(struct.pack("<Q", len(header)) + header + b"\0\0TENSOR_PAYLOAD_MUST_NOT_BE_READ")
+
+    widget = ExplorerTab()
+    widget.set_inspection({"filepath": str(source), "metadata": metadata})
+    assert widget.metadata_table.rowCount() == 2
+    assert all("long-tail-marker" not in widget.metadata_table.item(row, 1).text() for row in range(widget.metadata_table.rowCount()))
+
+    long_row = next(row for row in range(widget.metadata_table.rowCount()) if widget.metadata_table.item(row, 0).text() == "tokenizer.chat_template")
+    widget.metadata_table.selectRow(long_row)
+    assert "long-tail-marker" in widget.metadata_detail.toPlainText()
+
+    deep_row = next(row for row in range(widget.metadata_table.rowCount()) if widget.metadata_table.item(row, 0).text().startswith("structured."))
+    widget.metadata_table.selectRow(deep_row)
+    assert "deep-tail-marker" in widget.metadata_detail.toPlainText()
+
+
+def test_metadata_detail_recovers_full_gguf_array_preview_tail(app, tmp_path):
+    values = [f"token-{index}" for index in range(60)]
+    key = b"tokenizer.tokens"
+    encoded = struct.pack("<IQ", 8, len(values)) + b"".join(
+        struct.pack("<Q", len(value.encode())) + value.encode() for value in values
+    )
+    source = tmp_path / "full-array.gguf"
+    source.write_bytes(
+        b"GGUF" + struct.pack("<IQQ", 3, 1, 1) + struct.pack("<Q", len(key)) + key
+        + struct.pack("<I", 9) + encoded + b"TENSOR_PAYLOAD_MUST_NOT_BE_READ"
+    )
+
+    widget = ExplorerTab()
+    widget.set_inspection({
+        "filepath": str(source),
+        "metadata": {"tokenizer.tokens": {"count": len(values), "preview": values[:50], "truncated": True}},
+    })
+    row = next(row for row in range(widget.metadata_table.rowCount()) if widget.metadata_table.item(row, 0).text() == "tokenizer.tokens")
+    widget.metadata_table.selectRow(row)
+    detail = widget.metadata_detail.toPlainText()
+    assert "token-59" in detail
+    assert '"preview"' not in detail
 
 
 def test_tensor_search_bucket_filter_and_detail_preview(app):

@@ -257,27 +257,6 @@ def normalize_tensor_descriptors(data: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _flatten_metadata(value: Any, prefix: str = "", depth: int = 0) -> list[dict[str, Any]]:
-    if not isinstance(value, Mapping) or depth > 3:
-        return [{"key": prefix or "value", "value": _safe_text(value), "raw": value}]
-    rows: list[dict[str, Any]] = []
-    for key, item in value.items():
-        full_key = f"{prefix}.{key}" if prefix else str(key)
-        if isinstance(item, Mapping) and depth < 3:
-            rows.extend(_flatten_metadata(item, full_key, depth + 1))
-        else:
-            rows.append({"key": full_key, "value": _safe_text(item), "raw": item})
-        if len(rows) >= _MAX_METADATA_ROWS:
-            rows.append({"key": "…", "value": "Metadata row limit reached", "raw": None})
-            break
-    return rows
-
-
-def flatten_metadata(value: Any) -> list[dict[str, Any]]:
-    """Return bounded, searchable rows from a nested metadata mapping."""
-    return _flatten_metadata(value)
-
-
 def _is_truncated_metadata_preview(value: Any) -> bool:
     return (
         isinstance(value, Mapping)
@@ -285,6 +264,36 @@ def _is_truncated_metadata_preview(value: Any) -> bool:
         and "preview" in value
         and "count" in value
     )
+
+
+def _flatten_metadata(
+    value: Any,
+    prefix: str = "",
+    depth: int = 0,
+    path: tuple[str, ...] = (),
+) -> list[dict[str, Any]]:
+    if _is_truncated_metadata_preview(value) or not isinstance(value, Mapping) or depth > 3:
+        return [{"key": prefix or "value", "value": _safe_text(value), "raw": value, "raw_path": path}]
+    rows: list[dict[str, Any]] = []
+    for key, item in value.items():
+        key_text = str(key)
+        full_key = f"{prefix}.{key_text}" if prefix else key_text
+        item_path = (*path, key_text)
+        if _is_truncated_metadata_preview(item):
+            rows.append({"key": full_key, "value": _safe_text(item), "raw": item, "raw_path": item_path})
+        elif isinstance(item, Mapping) and depth < 3:
+            rows.extend(_flatten_metadata(item, full_key, depth + 1, item_path))
+        else:
+            rows.append({"key": full_key, "value": _safe_text(item), "raw": item, "raw_path": item_path})
+        if len(rows) >= _MAX_METADATA_ROWS:
+            rows.append({"key": "…", "value": "Metadata row limit reached", "raw": None})
+            break
+    return rows
+
+
+def flatten_metadata(value: Any) -> list[dict[str, Any]]:
+    """Return bounded searchable rows while retaining source paths for details."""
+    return _flatten_metadata(value)
 
 
 def detect_embedded_content(inspection: Mapping[str, Any] | None, records: Sequence[Mapping[str, Any]] = ()) -> list[dict[str, Any]]:

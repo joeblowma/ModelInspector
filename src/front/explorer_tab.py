@@ -4,13 +4,11 @@ The widget accepts ordinary mappings and sequences instead of depending on the
 cache or inspection worker. It displays headers, never reads or writes tensor
 payloads, and emits host-handled requests for candidate actions.
 """
-
 from __future__ import annotations
 
 import re
 from collections.abc import Mapping
 from typing import Any
-
 from PyQt6.QtCore import QRegularExpression, Qt, QSortFilterProxyModel, pyqtSignal
 from PyQt6.QtGui import QColor, QStandardItem, QStandardItemModel
 from PyQt6.QtWidgets import (
@@ -30,13 +28,10 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from .explorer_data import bucket_label, detect_embedded_content, display_count, flatten_metadata, friendly_bytes, natural_name_key, normalize_tensor_descriptors, safe_display
-from .explorer_metadata import perform_metadata_action, raw_metadata_status
+from .explorer_metadata import RawMetadataUnavailable, full_metadata_value, perform_metadata_action, raw_metadata_status, readable_metadata
 from .tensor_root_summary import TensorRootSummary
-
 __all__ = ["ExplorerTab", "TENSOR_COLUMNS", "normalize_tensor_descriptors", "detect_embedded_content"]
-
 TENSOR_COLUMNS = ("Name", "Shape", "Dtype", "Bucket", "Shard", "Size", "Parameters")
 class _TensorProxy(QSortFilterProxyModel):
     """Proxy that combines free-text filtering, bucket filtering, and sorting."""
@@ -45,7 +40,6 @@ class _TensorProxy(QSortFilterProxyModel):
         super().__init__(parent)
         self._bucket = ""
         self.setFilterKeyColumn(-1)
-
     def set_bucket(self, bucket: str) -> None:
         self._bucket = bucket.strip().lower()
         self.invalidateFilter()
@@ -67,8 +61,6 @@ class _TensorProxy(QSortFilterProxyModel):
         if isinstance(left_value, (int, float)) or isinstance(right_value, (int, float)):
             return (left_value is None, left_value or 0) < (right_value is None, right_value or 0)
         return natural_name_key(str(left.data() or "")) < natural_name_key(str(right.data() or ""))
-
-
 class ExplorerTab(QWidget):
     """Reusable header-only model explorer for the desktop application.
 
@@ -83,7 +75,6 @@ class ExplorerTab(QWidget):
     tensor_selected = pyqtSignal(object)
     inspection_requested = inspect_requested
     extract_requested = extraction_requested
-
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._inspection: dict[str, Any] = {}
@@ -94,7 +85,6 @@ class ExplorerTab(QWidget):
         self._payload_available = False
         self._loading = False
         self._build_ui()
-
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         self.status_label = QLabel("Read-only header view. No tensor payloads are loaded.")
@@ -129,8 +119,13 @@ class ExplorerTab(QWidget):
         assert vertical_header is not None
         vertical_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.metadata_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.metadata_table.setToolTip("Read-only metadata rows. Long values are truncated for safety.")
+        self.metadata_table.itemSelectionChanged.connect(self._metadata_selection_changed)
+        self.metadata_table.setToolTip("Read-only compact metadata rows. Select a row for the complete header value.")
         metadata_layout.addWidget(self.metadata_table)
+        self.metadata_detail = QTextEdit()
+        self.metadata_detail.setReadOnly(True)
+        self.metadata_detail.setPlaceholderText("Select a metadata row to view its complete header value.")
+        metadata_layout.addWidget(self.metadata_detail, 1)
         metadata_page_layout.addWidget(metadata_group)
 
         self.tensors_page = QWidget()
@@ -379,15 +374,33 @@ class ExplorerTab(QWidget):
         self._update_status()
 
     def _render_metadata(self) -> None:
+        self.metadata_detail.clear()
         self.metadata_table.setSortingEnabled(False)
         self.metadata_table.setRowCount(len(self._metadata_rows))
         for row_index, row in enumerate(self._metadata_rows):
             for column, key in enumerate(("key", "value")):
                 item = QTableWidgetItem(str(row[key]))
-                item.setToolTip("Read-only metadata preview; long values are truncated.")
+                item.setToolTip("Compact metadata preview; select this row for the complete header value.")
                 self.metadata_table.setItem(row_index, column, item)
         self.metadata_table.setSortingEnabled(True)
         self._filter_metadata(self.metadata_search.text())
+
+    def _metadata_selection_changed(self) -> None:
+        selection_model = self.metadata_table.selectionModel()
+        rows = selection_model.selectedRows() if selection_model is not None else []
+        if not rows:
+            self.metadata_detail.clear()
+            return
+        row = rows[0].row()
+        if not 0 <= row < len(self._metadata_rows):
+            self.metadata_detail.clear()
+            return
+        try:
+            value = full_metadata_value(self._inspection, self._metadata_rows[row])
+            text = readable_metadata({"value": value})
+        except (OSError, RawMetadataUnavailable, TypeError, ValueError, RecursionError) as error:
+            text = f"Full metadata unavailable: {error}"
+        self.metadata_detail.setPlainText(text)
 
     def _filter_metadata(self, text: str) -> None:
         needle = text.casefold().strip()

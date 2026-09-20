@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from PyQt6.QtWidgets import QApplication, QSizePolicy, QVBoxLayout
 
 from front.advanced_viewer import AdvancedViewerDialog, Qt, QWidget
+from front.model_path_label import ModelPathLabel
 
 
 _APPLICATION: QApplication | None = None
@@ -217,15 +218,44 @@ def test_card_details_ignore_legacy_preferences_and_metadata_stays_spacious():
 def test_current_model_location_updates_and_embedded_card_has_no_open_viewer_tooltip():
     _app()
     dialog = AdvancedViewerDialog({"filepath": "R:/models/first.safetensors"})
-    assert dialog.filename_label.text() == "first.safetensors"
-    assert dialog.filepath_label.text() == "R:/models/first.safetensors"
+    assert dialog.model_path_label.text() == "R:/models/first.safetensors"
+    assert dialog.model_path_label.full_path == "R:/models/first.safetensors"
+    assert dialog.model_path_label.toolTip() == "R:/models/first.safetensors"
     assert dialog._card_details_card.toolTip() == ""
 
     dialog.set_inspection({"filepath": "R:/models/second.gguf"})
-    assert dialog.filename_label.text() == "second.gguf"
-    assert dialog.filepath_label.text() == "R:/models/second.gguf"
+    assert dialog.model_path_label.text() == "R:/models/second.gguf"
+    assert dialog.model_path_label.full_path == "R:/models/second.gguf"
+    assert dialog.model_path_label.toolTip() == "R:/models/second.gguf"
     assert "Click to open the Advanced Viewer" not in dialog._card_details_card.toolTip()
     dialog.close()
+
+
+def test_model_path_label_resizes_middle_elision_and_copies_exact_paths():
+    app = _app()
+    full_path = "C:/some/very/deeply/nested/path/with/a/your-really-long-named-file-is-this.gguf"
+    label = ModelPathLabel()
+    label.set_path(full_path)
+    label.resize(620, 24)
+    label.show()
+    app.processEvents()
+
+    assert label.text() != full_path
+    assert "<...>" in label.text()
+    assert label.text().startswith("C:/")
+    assert label.text().endswith("/your-really-long-named-file-is-this.gguf")
+    assert label.toolTip() == full_path
+
+    label.resize(1400, 24)
+    app.processEvents()
+    assert label.text() == full_path
+
+    assert label.copy_file_path() == full_path
+    assert QApplication.instance().clipboard().text() == full_path
+    folder = str(Path(full_path).parent)
+    assert label.copy_folder_path() == folder
+    assert QApplication.instance().clipboard().text() == folder
+    label.close()
 
 
 def test_overview_cards_reserve_padding_and_usable_minimum_geometry():

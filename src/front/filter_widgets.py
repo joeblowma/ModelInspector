@@ -82,9 +82,10 @@ class CheckFilterButton(QToolButton):
     def _clear_item_actions(self):
         while self._items_layout.count():
             item = self._items_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+            if item is not None:
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
         self._arch_checks.clear()
 
     def _filter_sort_key(self, value: str):

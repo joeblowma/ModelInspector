@@ -298,7 +298,9 @@ class IntegrationMixin(CacheLoadControllerMixin):
 
     def _handle_explorer_inspect(self, request: dict[str, Any]) -> None:
         path = str(request.get("inspection", {}).get("filepath") or "")
-        if path and Path(path).is_file():
+        if self._result_for_filepath(path) is not None:
+            self._show_advanced_viewer_for_path(path)
+        elif path and Path(path).is_file():
             self._add_files([path], preserve_existing=True)
         else:
             QMessageBox.information(self, "Explorer", "The cached header is historic or unavailable; no file inspection was started.")

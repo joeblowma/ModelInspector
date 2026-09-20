@@ -8,10 +8,10 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QToolButton
 
 from back.theme_loader import BUILTIN_THEME, Theme
-from front.application import _theme_stylesheet
+from front.application import _theme_stylesheet, apply_theme
 from front.advanced_viewer import AdvancedViewerDialog
 from front.integration_controller import IntegrationMixin
 from front.model_card import ModelCard
@@ -44,6 +44,38 @@ def test_tool_buttons_use_theme_palette_for_popup_states() -> None:
     assert "QToolButton::menu-button {" in stylesheet
     assert "#123456" in stylesheet
     assert "#345678" in stylesheet
+
+
+def test_open_button_uses_palette_across_live_theme_switches(app) -> None:
+    first_colors = dict(BUILTIN_THEME.colors)
+    first_colors.update({"accent": "#123456", "surface_alt": "#234567"})
+    second_colors = dict(BUILTIN_THEME.colors)
+    second_colors.update({"accent": "#345678", "surface_alt": "#456789"})
+    open_button = QToolButton()
+    open_button.setObjectName("openBtn")
+    stylesheets = []
+    try:
+        for colors in (first_colors, second_colors):
+            apply_theme(app, theme=Theme("test", "Test", colors), notify=False)
+            stylesheet = app.styleSheet()
+            stylesheets.append(stylesheet)
+            assert (
+                "QPushButton, QToolButton { background-color: %s;" % colors["accent"]
+            ) in stylesheet
+            assert (
+                "QPushButton:hover, QToolButton:hover { background-color: %s; }"
+                % colors["surface_alt"]
+            ) in stylesheet
+            open_rule = stylesheet.split("QToolButton#openBtn {", 1)[1].split("}", 1)[0]
+            assert "background-color" not in open_rule
+            assert "border-color" not in open_rule
+            assert "color:" not in open_rule
+            assert "QToolButton#openBtn:hover" not in stylesheet
+            assert "QToolButton#openBtn:pressed" not in stylesheet
+        assert stylesheets[0] != stylesheets[1]
+    finally:
+        apply_theme(app, theme=BUILTIN_THEME, notify=False)
+        open_button.deleteLater()
 
 
 def test_existing_normal_and_active_advanced_cards_refresh_their_theme(monkeypatch, app) -> None:

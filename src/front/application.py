@@ -91,21 +91,11 @@ QPushButton#clearBtn:hover {
     background-color: #f5a8be;
 }
 QToolButton#openBtn {
-    background-color: #45475a;
     padding: 0px 10px;
     min-height: 31px;
     max-height: 31px;
-    color: #cdd6f4;
-    border: 1px solid #585b70;
     border-radius: 6px;
     font-weight: bold;
-}
-QToolButton#openBtn:hover {
-    background-color: #585b70;
-    border-color: #f5c2e7;
-}
-QToolButton#openBtn:pressed {
-    background-color: #6c7086;
 }
 QTableWidget {
     background-color: #181825;

@@ -11,7 +11,6 @@ from typing import Any
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QFileDialog, QTextEdit, QVBoxLayout, QWidget
 
 _MAX_HEADER_BYTES = 200_000_000
-_MAX_INSPECT_TEXT = 8_000
 _MAX_GGUF_METADATA_BYTES = _MAX_HEADER_BYTES
 _MAX_GGUF_METADATA_DEPTH = 32
 _GGUF_SCALAR_FORMATS = {
@@ -38,6 +37,15 @@ class RawMetadataUnavailable(ValueError):
     """The exact metadata value has no safe, locatable source bytes."""
 
 
+def _is_truncated_preview(value: Any) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and value.get("truncated") is True
+        and "preview" in value
+        and "count" in value
+    )
+
+
 def readable_metadata(candidate: Mapping[str, Any]) -> str:
     """Format one metadata candidate without flattening template newlines."""
     value = candidate.get("value")
@@ -50,10 +58,7 @@ def readable_metadata(candidate: Mapping[str, Any]) -> str:
 
 
 def _inspect_text(candidate: Mapping[str, Any]) -> str:
-    text = readable_metadata(candidate)
-    if len(text) <= _MAX_INSPECT_TEXT:
-        return text
-    return f"{text[:_MAX_INSPECT_TEXT - 32]}… [truncated; {len(text):,} chars]"
+    return readable_metadata(candidate)
 
 
 def _candidate_path(inspection: Mapping[str, Any], candidate: Mapping[str, Any]) -> Path:
@@ -345,6 +350,17 @@ def _source_candidate(inspection: Mapping[str, Any], candidate: Mapping[str, Any
     return resolved
 
 
+def full_metadata_value(inspection: Mapping[str, Any], candidate: Mapping[str, Any]) -> Any:
+    """Resolve one metadata row to its complete header value when locatable."""
+    source_candidate = _source_candidate(inspection, candidate)
+    if source_candidate is not None:
+        return source_candidate["value"]
+    value = candidate["raw"] if "raw" in candidate else candidate.get("value")
+    if _is_truncated_preview(value):
+        raise RawMetadataUnavailable("full metadata source unavailable; cached preview was not substituted")
+    return value
+
+
 def _save(parent: QWidget, title: str, default_name: str, data: bytes, file_filter: str) -> str:
     filename, _ = QFileDialog.getSaveFileName(parent, title, default_name, file_filter)
     if not filename:
@@ -365,6 +381,8 @@ def perform_metadata_action(parent: QWidget, inspection: Mapping[str, Any], cand
     )
     if action == "inspect":
         display_candidate = source_candidate or dict(candidate)
+        if source_candidate is None and _is_truncated_preview(display_candidate.get("value")):
+            display_candidate["value"] = "Full metadata unavailable; cached preview was not substituted."
         dialog = QDialog(parent)
         title = str(display_candidate.get("name") or "Embedded metadata")
         if source_candidate is None and candidate.get("raw_path") is not None:

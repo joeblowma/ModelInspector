@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
+import pytest
 
 from front import selection_controller
 from gui import MainWindow
@@ -121,6 +122,56 @@ def test_explorer_inspect_preserves_loaded_models_in_replace_mode(tmp_path, monk
         assert window._queued_files == [existing, str(inspected)]
         assert [result["filepath"] for result in window._results] == [existing]
         assert started == [([str(inspected)], False)]
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.parametrize("add_mode", ("replace", "additive"))
+def test_explorer_inspect_reopens_loaded_model_without_changing_ui_state(
+    tmp_path, monkeypatch, add_mode
+):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    first = tmp_path / "first.safetensors"
+    second = tmp_path / "second.safetensors"
+    first.touch()
+    second.touch()
+    opened: list[str] = []
+    analyzed: list[object] = []
+    monkeypatch.setattr(window, "_show_advanced_viewer_for_path", opened.append)
+    monkeypatch.setattr(window, "_analyze_all", lambda *args, **kwargs: analyzed.append(args))
+    try:
+        window._add_mode = add_mode
+        for path in (str(first), str(second)):
+            data = _summary(path)
+            window._queued_files.append(path)
+            window._results.append(data)
+            window._add_card(data)
+            window._add_table_row(data)
+        window._selected_paths = {str(second)}
+        queued_before = list(window._queued_files)
+        results_before = [result["filepath"] for result in window._results]
+        cards_before = list(window._path_to_card)
+        rows_before = [
+            str(window.table.item(row, 1).data(Qt.ItemDataRole.UserRole))
+            for row in range(window.table.rowCount())
+        ]
+
+        window._handle_explorer_inspect({"inspection": {"filepath": str(first)}})
+
+        assert opened == [str(first)]
+        assert analyzed == []
+        assert window._queued_files == queued_before
+        assert [result["filepath"] for result in window._results] == results_before
+        assert list(window._path_to_card) == cards_before
+        assert [
+            str(window.table.item(row, 1).data(Qt.ItemDataRole.UserRole))
+            for row in range(window.table.rowCount())
+        ] == rows_before
+        assert window._selected_paths == {str(second)}
     finally:
         window.close()
         app.processEvents()

@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 from back.theme_loader import get_global_theme_colors
 from front.explorer_tab import ExplorerTab
 from front.metadata_ui import HeaderInspectionController
+from front.model_path_label import ModelPathLabel
 
 __all__ = ["build_advanced_viewer_ui"]
 
@@ -43,6 +44,12 @@ def _value_style(colors: dict[str, str]) -> str:
     return "color: %(text)s; font-size: 13px; font-weight: bold;" % colors
 
 
+def _disable_tab_scroll_buttons(work_area: Any) -> None:
+    tab_bar = work_area.tabBar()
+    if tab_bar is not None:
+        tab_bar.setUsesScrollButtons(False)
+
+
 def build_advanced_viewer_ui(dialog: Any) -> None:
     """Build and connect all widgets owned by an advanced viewer dialog."""
     root = QVBoxLayout(dialog)
@@ -50,29 +57,21 @@ def build_advanced_viewer_ui(dialog: Any) -> None:
     root.setSpacing(10)
     colors = get_global_theme_colors()
 
-    source_group = QGroupBox("Current model")
-    source_form = QFormLayout(source_group)
-    source_form.setHorizontalSpacing(14)
-    source_form.setVerticalSpacing(6)
-    dialog.filename_label = QLabel("Unknown")
-    dialog.filename_label.setStyleSheet(_value_style(colors))
-    dialog.filename_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-    dialog.filename_label.setToolTip("Original filename for the currently inspected model.")
-    source_form.addRow("Filename", dialog.filename_label)
-    dialog.filepath_label = QLabel("Unknown")
-    dialog.filepath_label.setWordWrap(True)
-    dialog.filepath_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-    dialog.filepath_label.setStyleSheet(_value_style(colors))
-    dialog.filepath_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-    dialog.filepath_label.setToolTip("Full path for the currently inspected model.")
-    source_form.addRow("Full path", dialog.filepath_label)
-    root.addWidget(source_group)
+    model_row = QHBoxLayout()
+    model_title = QLabel("Model:")
+    model_title.setStyleSheet(_muted_style(colors))
+    model_row.addWidget(model_title)
+    dialog.model_path_label = ModelPathLabel()
+    dialog.model_path_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+    dialog.model_path_label.setStyleSheet(_value_style(colors))
+    model_row.addWidget(dialog.model_path_label, 1)
+    root.addLayout(model_row)
 
     dialog.work_area = QTabWidget()
     dialog.work_area.setToolTip(
         "Browse Overview, Card Details, Metadata, Tensors, and Embedded Content pages."
     )
-    dialog.work_area.tabBar().setUsesScrollButtons(False)
+    _disable_tab_scroll_buttons(dialog.work_area)
 
     facts_page = QWidget()
     facts_layout = QVBoxLayout(facts_page)

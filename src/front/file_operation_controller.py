@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import cast
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
@@ -157,7 +158,8 @@ class FileOperationControllerMixin:
             self._results = [
                 r for r in self._results if r.get("filepath") not in moved_set
             ]
-            self._selected_paths -= moved_set
+            selected_paths = cast(set[str], getattr(self, "_selected_paths"))
+            selected_paths.difference_update(moved_set)
             self._rebuild_views_from_results()
             self._update_file_count()
         if cancelled:

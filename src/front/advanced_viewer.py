@@ -109,6 +109,9 @@ from front.metadata_ui import (
 )
 from front.model_card import ModelCard
 
+if TYPE_CHECKING:
+    from front.model_path_label import ModelPathLabel
+
 __all__ = ["AdvancedViewer", "AdvancedViewerDialog", "AdvancedViewerPopup"]
 
 
@@ -140,8 +143,24 @@ _BADGE_COLORS = {
 class AdvancedViewerDialog(QDialog):
     """Parent-owned, window-modal viewer for model facts and exploration."""
 
-    filename_label: QLabel
-    filepath_label: QLabel
+    model_path_label: ModelPathLabel
+    work_area: QTabWidget
+    explorer_tab: ExplorerTab
+    _header_controller: HeaderInspectionController
+    _capability_row: QHBoxLayout
+    _domain_row: QHBoxLayout
+    _summary_rows: dict[str, tuple[QLabel, QLabel]]
+    _summary_values: dict[str, QLabel]
+    _projection_values: dict[str, QLabel]
+    _overview_muted_labels: list[QLabel]
+    context_spin: QSpinBox
+    batch_spin: QSpinBox
+    quantization_combo: QComboBox
+    weight_bits_spin: QDoubleSpinBox
+    kv_cache_bits_combo: QComboBox
+    assumptions_label: QLabel
+    _card_details_content_layout: QVBoxLayout
+    _last_configuration: str
 
     def __init__(
         self,
@@ -208,9 +227,7 @@ class AdvancedViewerDialog(QDialog):
         display_path = filepath or resolved or _UNKNOWN
         if filepath and not Path(filepath).is_absolute() and resolved:
             display_path = resolved
-        filename = Path(filepath).name if filepath else ""
-        self.filename_label.setText(filename or str(self._inspection.get("filename") or _UNKNOWN))
-        self.filepath_label.setText(display_path)
+        self.model_path_label.set_path(display_path)
 
     @staticmethod
     def _tensor_data_from_inspection(inspection: Mapping[str, Any]) -> Any:

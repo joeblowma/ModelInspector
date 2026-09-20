@@ -30,6 +30,20 @@ the follow-up list below.
   The source GUI was visually audited (commit abd1ed4), but packaged-exe visual
   and render QA remains pending; the current frozen-help check is headless.
 
+### Review gates
+
+- [x] Gates 1-4 have headless evidence: Advanced shows full non-tensor values;
+  Inspect does not destructively add files; a single `Model: <path>` label
+  middle-elides and supports copying; and Open uses the active theme rules.
+  This records automated/headless evidence only, not a manual real-world QA
+  claim.
+- [ ] Gate 5 — **BLOCKED**, not a pass: independent strict pylint records 486
+  findings (`C237`, `R158`, `W91`, `E0`) at 9.58, below the pre-existing 10
+  threshold. The 494-finding baseline (`C241`, `R158`, `W94`, `E1`) had three
+  introduced `C` findings, now removed; remaining `C`/`R`/`W` debt is
+  pre-existing. No rejected behavior is claimed or accepted by this lint
+  status; the recommended follow-up is scoped cleanup to the configured gate.
+
 ### Release validation still open
 
 - [x] Local full-suite, rebuild, clean-install, wheel/sdist roundtrip, version,
@@ -96,3 +110,6 @@ the follow-up list below.
 - Run a full Graphify rebuild and verify frontend/backend nodes and edges after
   the repaired ignore ordering; use incremental updates after later structure
   changes.
+- Resolve the remaining baseline strict-pylint `C`/`R`/`W` findings in a scoped
+  maintenance follow-up; do not close Gate 5 until an independent final count
+  passes the configured threshold.

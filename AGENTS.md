@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a small Python desktop/CLI utility for inspecting various language and diffusion model files.
+This is a growing Python desktop/CLI utility for inspecting various language and diffusion model files.
 
 - `src/` contains .py source code
   - `back/cache_invalidation.py` holds the shared raw-cache invalidation helper used by targeted rescan guards.
@@ -14,8 +14,14 @@ This is a small Python desktop/CLI utility for inspecting various language and d
   - `model_readers.py` Read-only model file readers and discovery helpers
   - `modelinfo.py` Model-info dump helpers for Model Inspector
   - `front/` GUI presentation and application layer: `application` bootstraps Qt and applies themes; `window_core`, `window_layout`, and `window_lifecycle` compose `MainWindow`; `analysis_controller`, `discovery_controller`, `selection_controller`, `startup_cache_controller`, `view_controller`, and `integration_controller` manage UI workflows; `explorer_tab`/`explorer_data` provide header-only inspection exploration; `advanced_viewer` provides live resource projections and delegates construction to `advanced_viewer_layout`; `tensor_root_summary` formats compact tensor-root facts; `settings_data_tab` owns Data-column editing and single-row side-button reordering, with `settings_data_support` holding its durable row state and cleanup helpers; `theme_tab` provides live theme editing, with `theme_editor_support` holding palette labels and Qt color conversion; `smart_column_controller` applies runtime smart-column masks; `data_columns` holds the canonical ordered Data-column labels/default widths and locked-column keys shared by table construction, Settings reset, and width fallback; `cache_load_controller`/`cache_load_worker` project persisted cache summaries off the GUI thread in bounded, cancel/close-safe batches; `startup_arguments` parses GUI startup arguments before Qt starts; `cache_identity` is the read-only bridge projecting persisted cache identity metadata for cache verification and background sync; `file_operation_controller` (`FileOperationControllerMixin`) owns long file operations (move, dump) with modal progress, no-clobber failure retention, and cooperative cancel between files, backed by `file_operation_worker` (`FileOperationWorker` thread plus safe move helpers); `explorer_metadata` performs read-only embedded-metadata actions (Inspect decoded text, Save readable artifact, Extract exact source JSON bytes for locatable safetensors/GGUF metadata; tensor payloads are never read); `help_window` shows `--help` in a window for frozen builds with no stdout; `model_card`, `filter_widgets`, `settings_dialog`, and `scan_projection` provide reusable widgets, dialogs, and scan-event delivery.
-  - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `companion_discovery` performs bounded resolved-parent JSON/Jinja discovery and normalized architecture facts, while `capability_facts` derives conservative domain/chat evidence and `capability_evidence` projects evidence-backed capabilities (filtering weak evidence) shared by the GUI, reports, and estimator; `reader_registry`, `checkpoint_reader`, and `onnx_reader` provide safe format-reader dispatch; `shard_discovery` and `sidecar_discovery` discover associated files; `cache_storage` persists cache records; `cache_location` resolves the cache root vs model-cache directory (`--cache`/`--cachedir`) and the most-recently-used history; `estimator`, `estimator_metadata` (labelled KV/runtime metadata projection helper), `theme_loader`, `theme_store`, `settings_store`, and `cache_verifier` provide UI-safe backend services; `reporting` writes reports; `modelinfo_diagnostics` projects header-only `.modelinfo` diagnostics with credential-key redaction; `inspection_summary` supplies compact GUI-facing result state.
+  - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `companion_discovery` performs bounded resolved-parent JSON/Jinja discovery and normalized architecture facts, while `capability_facts` derives conservative domain/chat evidence and `capability_evidence` projects evidence-backed capabilities (filtering weak evidence) shared by the GUI, reports, and estimator; `reader_registry`, `checkpoint_reader`, and `onnx_reader` provide safe format-reader dispatch; `shard_discovery` and `sidecar_discovery` discover associated files; `cache_storage` persists cache records; `cache_location` resolves the cache root vs model-cache directory (`--cache`/`--cachedir`) and the most-recently-used history; `estimator`, `estimator_metadata` (labeled KV/runtime metadata projection helper), `theme_loader`, `theme_store`, `settings_store`, and `cache_verifier` provide UI-safe backend services; `reporting` writes reports; `modelinfo_diagnostics` projects header-only `.modelinfo` diagnostics with credential-key redaction; `inspection_summary` supplies compact GUI-facing result state.
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
+- `src/front/model_path_label.py` owns the compact one-line `Model: <path>`
+  label, middle-elided tooltip, and file/folder path copy behavior. Keep this
+  display/copy logic in that module.
+- Explorer metadata remains bounded and read-only: source JSON recovery is
+  limited to locatable safetensors/GGUF metadata, never reads tensor payloads,
+  and supported loaded-model Inspect must not add files or trigger reanalysis.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
 - `win_compile.bat`, `win_clean.bat`, `ModelInspector.spec`, `build/`, and `dist/` support PyInstaller packaging.
@@ -56,56 +62,7 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
-Existing tests:
-- `tests/test_ptq_precision.py` — actual PTQ142/PTQ143 header mapping and precision preservation.
-- `tests/test_rescan_selected.py` — selected-model invalidation, selection preservation, and busy-operation guards.
-- `tests/test_release_workflow.py` — static revision-artifact, release-zip, and tag-release workflow contracts; hosted validation is still required.
-- `.\tests\conftest.py` — shared test helpers, including the session-scoped `_qapp_holder` fixture that holds one `QApplication` reference for the whole session (PyQt6 crashes with 0xC0000409 if the QApplication is garbage-collected); tests obtain the same instance via `QApplication.instance()`.
-- `.\tests\test_gui_scan_lifecycle.py` — compact card mode, asynchronous discovery with queued terminal paths, terminal projection waiting, redundant selection-style suppression, close deferred until analysis and cache-sync workers finish, raw-dump cached/generated prefixing, and modelinfo dump content.
-- `.\tests\test_checkpoint_no_prompt.py` — GUI checkpoint metadata-only routing without consent prompts.
-- `.\tests\test_inspection_summary.py`
-- `.\tests\test_integrated_scan_behavior.py`
-- `.\tests\test_background_tasks.py`
-- `.\tests\test_gui_projection.py`
-- `.\tests\test_explorer_tab.py`
-- `.\tests\test_advanced_viewer.py`
-- `.\tests\test_filter_widgets.py`
-- `.\tests\test_model_card_fields.py` — planned fixed simple/advanced card-field contracts; legacy masks are ignored.
-- `.\tests\test_settings_data_tab.py`
-- `.\tests\test_backend_phase2.py`
-- `.\tests\test_phase4_integration.py`
-- `.\tests\test_cache_sync_ui.py`
-- `.\tests\test_cache_menu_integration.py`
-- `.\tests\test_smart_column_groups.py`
-- `.\tests\test_reader_registry.py`
-- `.\tests\test_onnx_reader.py`
-- `.\tests\test_shard_discovery.py`
-- `.\tests\test_sidecar_discovery.py`
-- `.\tests\test_cache_sidecar_integration.py`
-- `.\tests\test_reporting_shards.py`
-- `.\tests\test_theme_tab.py`
-- `.\tests\test_theme_color_picker.py`
-- `.\tests\test_theme_live_updates.py` — QSS inactive-tab hover and cached live-theme refresh linkage.
-- `.\tests\test_theme_paths.py` — bundled default asset resolution and safe new-theme storage.
-- `.\tests\test_settings_geometry.py`
-- `.\tests\test_settings_close.py` - Settings close skips the full card rebuild and persists the remembered size.
-- `.\tests\test_cache_load.py` - bounded async cache-load projection, cancel/close safety, and filter/selection preservation.
-- `.\tests\test_app_paths.py` - output-dir defaults/override and installed-wheel resource resolution.
-- `.\tests\test_startup_arguments.py` - GUI `--settings`/`-s` and optional startup targets; `--help` before Qt.
-- `.\tests\test_packaging.py` - static packaging contract (setuptools backend, flat layout, entry points, packaged assets).
-- `.\tests\test_tooltip_audit.py`
-- `.\tests\test_companion_metadata.py` — bounded companion facts and companion-cache identity regressions.
-- `.\tests\test_unknown_reduction.py` — header-only architecture and domain fallbacks.
-- `.\tests\test_tensor_root_summary.py`
-- `.\tests\test_capability_evidence.py` — shared evidence-backed capability projection; weak evidence filtered.
-- `.\tests\test_reporting_capabilities.py` — report capability lines use evidence-backed projection.
-- `.\tests\test_file_operations.py` — threaded modal move/dump workflow and feedback.
-- `.\tests\test_file_operation_safety.py` — no-clobber failure retention and cooperative cancel.
-- `.\tests\test_startup_feedback.py` — startup action feedback and unknown summary retention.
-- `.\tests\test_cache_locations.py` — model-cache vs cache-root separation, history precedence, live-redirect busy guard, and flag wiring.
-- `.\tests\test_explorer_metadata.py` — read-only embedded-metadata Inspect/Save/raw-source semantics and exact bytes.
-- `.\tests\test_frozen_help.py` — windowed `--help` for frozen builds without stdout.
-- `.\tests\test_modelinfo_diagnostics.py` — header-only `.modelinfo` diagnostics and credential redaction without tokenizer over-reach.
+`.\tests\AGENTS.md` - contains a list of existing tests and their uses. Read before creating new tests, update when tests change.
 
 ## Agent-Specific Instructions
 

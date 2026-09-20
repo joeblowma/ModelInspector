@@ -6,6 +6,8 @@
 
 Inspect `.safetensors`, `.gguf`, `onnx` and index various other model files from a desktop GUI and CLI.
 
+Based on the original project [Safetensors Model Inspector](https://github.com/MNeMoNiCuZ/SafetensorsModelInspector) by **MNeMoNiCuZ**.
+
 ## What It Does
 
 - Detects architecture families and variants (Flux, SDXL/SD3, Wan, Hunyuan, Qwen, HiDream, LTX, Z-Image, Chroma, and more)
@@ -18,7 +20,7 @@ Inspect `.safetensors`, `.gguf`, `onnx` and index various other model files from
 ## Setup
 
 - install the wheel, run `python -m modelinspector-gui` for the GUI or `python -m modelinspector` to use the CLI
-- Windows .exe provided by github's action runner, run the executeable for GUI
+- Windows .exe provided by github's action runner, run the executable for GUI
 
 ## CLI Usage
 

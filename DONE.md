@@ -3,6 +3,39 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-09-20 — Review gates and final regression pass
+
+### Completed implementation and review fixes
+
+- [x] Gate 1: Advanced Viewer exposes full non-tensor values while retaining
+  bounded compact tensor presentation.
+- [x] Gate 2: supported loaded-model Inspect paths remain read-only and bypass
+  destructive file addition or unnecessary reanalysis.
+- [x] Explorer metadata recovers a locatable source path and presents full
+  long/deep safetensors and GGUF arrays in the detail pane from headers only,
+  while retaining the bounded compact table.
+- [x] Gate 3: the single `Model: <path>` label uses middle elision and supports
+  copying the file or folder path.
+- [x] Gate 4: Open theme presentation uses theme rules rather than hardcoded ID
+  colors.
+- [x] The implementations were independently reviewed; the pylint `E` issue
+  and all three post-baseline `C` findings were corrected.
+
+### Validation and unresolved gate
+
+- [x] Integrated suite: 448 passed, 4 skipped, compared with the 442 passed,
+  4 skipped baseline. Targeted regressions in the existing Explorer, card,
+  Advanced Viewer, and live-theme test files passed.
+- [x] Pyright reached 0 errors after the initial 38-error result; `actionlint`
+  passes.
+- [ ] Gate 5 — **BLOCKED**, not a pass: strict pylint's independent final log
+  records 486 findings (`C237`, `R158`, `W91`, `E0`) at 9.58, below the
+  pre-existing strict 10 threshold. The baseline was 494 (`C241`, `R158`,
+  `W94`, `E1`); remaining findings are pre-existing `C`/`R`/`W` debt. No
+  rejected behavior is claimed or accepted by this lint status.
+- [x] Gates 1-4 have headless evidence only; this does not claim manual
+  real-world visual or behavioral QA.
+
 ## 2026-09-18 — Near-release bug bash
 
 ### Completed fixes and focused coverage

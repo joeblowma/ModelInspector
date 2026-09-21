@@ -119,6 +119,28 @@ def test_diffusion_components_with_an_llm_text_encoder_are_not_language_models()
     assert facts["domain"] is None
 
 
+def test_qwen_image_diffusion_is_not_language_while_qwen35_stays_llm() -> None:
+    for architecture in ("Qwen Image", "Qwen Image 2.1", "Qwen Image 2.1 VAE"):
+        diffusion = build_capability_facts(
+            ["transformer_blocks.0.img_mlp.gate_up.weight"],
+            {},
+            {},
+            architecture,
+            {},
+        )
+        assert diffusion["domain"] is None
+        assert diffusion["capabilities"] == []
+
+    prompt_enhancer = build_capability_facts(
+        _keys(),
+        {"general.architecture": "qwen35"},
+        {},
+        "qwen35",
+        {},
+    )
+    assert prompt_enhancer["domain"] == "LLM"
+
+
 def test_false_containers_and_arbitrary_nested_data_are_not_capabilities() -> None:
     companion = {
         "config": {

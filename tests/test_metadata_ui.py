@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import QApplication, QLabel
 
 from back.inspection_summary import compact_inspection_summary
 from front.advanced_viewer import AdvancedViewerDialog
+import front.metadata_ui as metadata_ui
 from front.metadata_ui import domain_badge_values, inspection_domain
 from front.model_card import ModelCard
 
@@ -38,6 +39,24 @@ def _write_safetensors(path: Path) -> None:
     }
     raw = json.dumps(header).encode("utf-8")
     path.write_bytes(struct.pack("<Q", len(raw)) + raw + b"header-only-test")
+
+
+def test_live_header_load_skips_full_data_cache_scan(monkeypatch, tmp_path: Path) -> None:
+    model = tmp_path / "live.safetensors"
+    _write_safetensors(model)
+
+    def unexpected_cache_scan(*_args, **_kwargs):
+        raise AssertionError("live header load must not scan full-data cache")
+
+    monkeypatch.setattr(metadata_ui, "get_cached_model_data", unexpected_cache_scan)
+
+    payload = metadata_ui.load_header_only(str(model))
+
+    assert set(payload["tensor_info"]) == {
+        "model.embed_tokens.weight",
+        "model.layers.0.self_attn.q_proj.weight",
+        "model.layers.1.self_attn.q_proj.weight",
+    }
 
 
 def _labels(widget) -> set[str]:

@@ -15,11 +15,24 @@ from back.companion_discovery import build_architecture_facts
 from back.inspection_pipeline import inspect_file
 
 
-def _write_safetensors(path: Path, names: list[str]) -> None:
-    header = {
-        name: {"dtype": "F16", "shape": [8, 8], "data_offsets": [0, 256]}
-        for name in names
-    }
+def _write_safetensors(
+    path: Path,
+    names: list[str],
+    *,
+    shapes: dict[str, list[int]] | None = None,
+    metadata: dict[str, str] | None = None,
+) -> None:
+    header = {"__metadata__": metadata or {}}
+    header.update(
+        {
+            name: {
+                "dtype": "F16",
+                "shape": (shapes or {}).get(name, [8, 8]),
+                "data_offsets": [0, 256],
+            }
+            for name in names
+        }
+    )
     raw = json.dumps(header).encode("utf-8")
     path.write_bytes(struct.pack("<Q", len(raw)) + raw + b"not a tensor payload")
 
@@ -374,6 +387,42 @@ def test_qwen_image_21_header_layout_handles_safetensors_and_gguf_shapes() -> No
     # Removing the version-specific text input evidence leaves the broad
     # transformer fallback in place rather than guessing Qwen Image 2.1.
     assert _detect(keys[:1] + keys[3:], shapes=safetensors_shapes) == "LTX"
+
+
+def test_qwen_image_pipeline_routes_diffusion_domain_from_header_only_fixture(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    qwen21 = tmp_path / "qwen_image_2.1.safetensors"
+    qwen21_keys = [
+        "img_in.weight",
+        "txt_in.in_layer.weight",
+        "txt_in.text_norm.weight",
+        "transformer_blocks.0.img_mlp.gate_up.weight",
+        "transformer_blocks.31.img_mlp.out.weight",
+    ]
+    _write_safetensors(
+        qwen21,
+        qwen21_keys,
+        shapes={
+            "img_in.weight": [4096, 64],
+            "txt_in.in_layer.weight": [4096, 4096],
+            "txt_in.text_norm.weight": [4096],
+            "transformer_blocks.0.img_mlp.gate_up.weight": [24576, 4096],
+            "transformer_blocks.31.img_mlp.out.weight": [4096, 4096],
+        },
+        metadata={
+            "converted_by": "Star Ultimate Model Converter",
+            "format": "pt",
+            "smi.format": "SAFETENSORS",
+        },
+    )
+
+    result = inspect_file(str(qwen21))
+
+    assert result["architecture"] == "Qwen Image 2.1"
+    assert result["capability_facts"]["domain"] is None
+    assert result["capability_facts"]["capabilities"] == []
 
 
 def test_qwen_vae_metadata_and_ltx_video_vae_shapes_stay_component_models() -> None:

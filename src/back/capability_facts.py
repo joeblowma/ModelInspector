@@ -58,7 +58,8 @@ _PROJECTOR_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 _DIFFUSION_MODEL_RE = re.compile(
-    r"(?:diffusion|stable[-_ ]diffusion|flux|sdxl|sd3|unet|vae)", re.IGNORECASE
+    r"(?:diffusion|stable[-_ ]diffusion|flux|sdxl|sd3|unet|vae|qwen[-_ ]+image)",
+    re.IGNORECASE,
 )
 
 
@@ -289,8 +290,11 @@ def build_capability_facts(
     text_config = config.get("text_config")
     if not standalone_projector and not diffusion_checkpoint and isinstance(text_config, Mapping) and _first_positive(text_config, _LAYER_KEYS):
         language_evidence.append("config.json:text_config")
-    if not standalone_projector and _LANGUAGE_HINTS.search(architecture_text) and not _NON_LANGUAGE_HINTS.search(
-        architecture_text
+    if (
+        not standalone_projector
+        and not diffusion_checkpoint
+        and _LANGUAGE_HINTS.search(architecture_text)
+        and not _NON_LANGUAGE_HINTS.search(architecture_text)
     ):
         language_evidence.append("config/header language architecture")
     lowered_keys = [str(key).lower() for key in keys]

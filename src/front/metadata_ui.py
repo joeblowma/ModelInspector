@@ -109,43 +109,35 @@ def _natural_key(value: str) -> tuple[str | int, ...]:
     )
 
 
-def _cache_identity_matches(filepath: str, cached: Mapping[str, Any]) -> bool:
-    identity = cached.get("identity")
-    if not isinstance(identity, Mapping):
-        return False
-    try:
-        path = Path(filepath)
-        stat = path.stat()
-        resolved = str(path.resolve(strict=True)).lower()
-    except (OSError, RuntimeError):
-        return False
-    return (
-        str(identity.get("resolved_filepath") or "").lower() == resolved
-        and int(identity.get("file_size", -1)) == int(stat.st_size)
-        and int(identity.get("mtime_ns", -1)) == int(stat.st_mtime_ns)
-    )
-
-
 def load_header_only(filepath: str) -> dict[str, Any]:
-    """Load descriptors from a valid full-data cache or model header only."""
-    cached = get_cached_model_data(
-        filepath, options={"checkpoint_safety": "metadata"}
-    )
+    """Load a live model header, falling back to cached descriptors if absent."""
+    if Path(filepath).exists():
+        metadata, tensor_info, file_size = read_model_header(
+            filepath, options={"checkpoint_safety": "metadata"}
+        )
+        descriptors = dict(tensor_info) if isinstance(tensor_info, Mapping) else {}
+        return {
+            "metadata": dict(metadata) if isinstance(metadata, Mapping) else {},
+            "tensor_info": descriptors,
+            "file_size": int(file_size),
+            "original_tensor_order": list(descriptors),
+        }
+
+    cached = get_cached_model_data(filepath, options={"checkpoint_safety": "metadata"})
     if isinstance(cached, Mapping) and isinstance(cached.get("tensor_info"), Mapping):
-        if _cache_identity_matches(filepath, cached) or not Path(filepath).exists():
-            tensor_info = dict(cached["tensor_info"])
-            original = cached.get("original_tensor_order")
-            original_order = (
-                [str(name) for name in original]
-                if isinstance(original, list)
-                else list(tensor_info)
-            )
-            return {
-                "metadata": dict(cached.get("metadata") or {}),
-                "tensor_info": tensor_info,
-                "file_size": int(cached.get("file_size") or 0),
-                "original_tensor_order": original_order,
-            }
+        tensor_info = dict(cached["tensor_info"])
+        original = cached.get("original_tensor_order")
+        original_order = (
+            [str(name) for name in original]
+            if isinstance(original, list)
+            else list(tensor_info)
+        )
+        return {
+            "metadata": dict(cached.get("metadata") or {}),
+            "tensor_info": tensor_info,
+            "file_size": int(cached.get("file_size") or 0),
+            "original_tensor_order": original_order,
+        }
 
     metadata, tensor_info, file_size = read_model_header(
         filepath, options={"checkpoint_safety": "metadata"}

@@ -25,6 +25,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Get short sha
+        uses: benjlevesque/short-sha@v3.0
+        id: short-sha
+        with:
+          length: 7
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -105,7 +111,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: modelinspector-wheel-${{ matrix.os }}-${{ matrix.python-version }}-${{ github.sha }}
+          name: modelinspector-wheel-${{ matrix.os }}-${{ matrix.python-version }}-${{ steps.short-sha.outputs.sha }}
           path: dist/
           if-no-files-found: error
 
@@ -116,6 +122,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Get short sha
+        uses: benjlevesque/short-sha@v3.0
+        id: short-sha
+        with:
+          length: 7
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -134,11 +146,11 @@ jobs:
           python assets/ResizeSplash.py assets/splash_base.bmp assets/splash.png 400 600
           python assets/GetVersion.py
 
-      - name: Inspect generated version file
-        run: |
-          echo "=== CONTENT OF VERSION.TXT START ==="
-          cat version.txt
-          echo "=== CONTENT OF VERSION.TXT END ==="
+      # - name: Inspect generated version file
+        # run: |
+          # echo "=== CONTENT OF VERSION.TXT START ==="
+          # cat version.txt
+          # echo "=== CONTENT OF VERSION.TXT END ==="
 
       - name: Build Windows executable
         shell: pwsh
@@ -203,7 +215,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: modelinspector-windows-${{ github.sha }}
+          name: modelinspector-windows-${{ steps.short-sha.outputs.sha }}
           path: |
             dist/ModelInspector.exe
           if-no-files-found: error

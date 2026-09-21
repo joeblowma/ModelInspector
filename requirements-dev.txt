@@ -11,3 +11,4 @@ wheel
 pylint
 pytest
 pyright
+mypy

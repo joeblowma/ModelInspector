@@ -22,16 +22,22 @@ jobs:
       - name: Checkout tagged source
         uses: actions/checkout@v7
 
+      - name: Get short sha
+        uses: benjlevesque/short-sha@v3.0
+        id: short-sha
+        with:
+          length: 7
+
       - name: Download canonical universal wheel
         uses: actions/download-artifact@v7
         with:
-          name: modelinspector-wheel-ubuntu-latest-3.12-${{ github.sha }}
+          name: modelinspector-wheel-ubuntu-latest-3.12-${{ steps.short-sha.outputs.sha }}
           path: release-artifacts/wheels
 
       - name: Download Windows executable
         uses: actions/download-artifact@v7
         with:
-          name: modelinspector-windows-${{ github.sha }}
+          name: modelinspector-windows-${{ steps.short-sha.outputs.sha }}
           path: release-artifacts/windows
 
       - name: Validate version and prepare release assets

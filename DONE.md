@@ -3,6 +3,48 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-09-21 — b8c0645 follow-up fixes
+
+- [x] Uniform Cards scroll sizing now leaves only viewport whitespace for fixed
+  card sets.
+- [x] New files are always analyzed; the obsolete `auto_analyze_on_add` option
+  and button were removed.
+- [x] Unchanged Settings closes without reapplying work, while changed Data
+  settings refresh only the affected slices and report progress.
+- [x] Raw `.raw` metadata is unframed; readable-content extensions are handled,
+  optional extra JSON remains governed by the existing option, and bounded
+  previews are stored and reused by Inspect without replacing the model list.
+- [x] Advanced Inspect preserves the model list, and QwenImage2.1/VAE plus LTX
+  video-VAE architecture coverage was added.
+
+### Final validation and boundary fixes
+
+- [x] The canonical run at `2026-09-21T10:57:10.5414636-06:00` passed
+  **466 tests, with 4 skipped, in 172.61 seconds** (exit 0):
+  `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-metadata-full-20260921.log`.
+- [x] Focused metadata coverage passed 12 tests. The real-header Qwen smokes
+  passed in human-readable and JSON modes: the generic Qwen Image2.1 false
+  positive is eliminated by the diffusion guard; unsupported diffusion projects
+  a null domain and empty capabilities, without claiming image-domain or
+  inference support. Qwen35 prompt enhancers remain LLM with thinking/tools.
+- [x] The header-loader root cause was the live-file cache fallback scanning
+  `data/*.json` after an exact-key miss (measured full call 5.732s versus a
+  4-second deadline). Live files now read their header directly; missing-file
+  cache fallback remains, with regression coverage proving live loads do not
+  scan the full-data cache.
+- [x] Historical pre-fix runs recorded 462 passed/4 skipped/1 failed at the
+  header-loader path and a separate 463 passed/4 skipped run; those are no
+  longer current blockers.
+- [ ] Packaged visual QA, the existing strict pylint blocker, hosted
+  build/tagged-release validation, and the full Graphify refresh remain open
+  in `TODO.md`.
+- [ ] Mypy is not a configured clean gate: the first UI pass had 187 errors
+  without a baseline, and the targeted metadata pass had four import-resolution
+  errors (`back.capability_evidence`, `model_cache`, `model_readers`,
+  `.explorer_data`).
+
 ## 2026-09-20 — Review gates and final regression pass
 
 ### Completed implementation and review fixes
@@ -166,7 +208,7 @@ that the whole project is release-complete.
 
 - [x] Settings is resizable and remembers its size, clamped to the current
   screen; the default remains 900x640.
-- [x] Save/output dialogs default to `~/.local/ModelInspector` via
+- [x] Save/output dialogs default to `~/.local/share/ModelInspector` via
   `ensure_output_dir()` (`SMI_OUTPUT_DIR` override). The legacy
   `.model-inspector` settings/cache stay in place to avoid a destructive
   migration, and `--settings`/`-s` selects an explicit settings file for the CLI

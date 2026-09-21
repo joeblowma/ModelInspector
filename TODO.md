@@ -11,7 +11,7 @@ the follow-up list below.
 - [x] **1. Settings** — resizable and remembers its size, clamped to the current
   screen; the release default remains 900x640.
 - [x] **2. Output paths** — GUI save/output dialogs default to
-  `~/.local/ModelInspector` via `app_paths.ensure_output_dir()` (override
+  `~/.local/share/ModelInspector` via `app_paths.ensure_output_dir()` (override
   `SMI_OUTPUT_DIR`). Existing `.model-inspector` settings/cache stay in place to
   avoid a destructive migration, and `--settings <path>` / `-s <path>` selects
   an explicit settings file for both CLI and GUI. Modelinfo dumps intentionally
@@ -46,13 +46,23 @@ the follow-up list below.
 
 ### Release validation still open
 
-- [x] Local full-suite, rebuild, clean-install, wheel/sdist roundtrip, version,
-  CLI/GUI help/assets/tiny-model/modelinfo, source bounded-GUI, and PTQ header
-  smokes passed. The final focused correction run passed 25 tests.
+- [x] Final canonical suite at `2026-09-21T10:57:10.5414636-06:00`: 466
+  passed, 4 skipped in 172.61 seconds, exit 0. Command:
+  `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-metadata-full-20260921.log`.
+- [x] Focused metadata regression: 12 passed. Real-header Qwen smokes passed
+  in human-readable and JSON modes; the generic Qwen Image2.1 false positive
+  is guarded, unsupported diffusion projects a null domain and empty
+  capabilities, and Qwen35 prompt enhancers remain LLM with thinking/tools.
 - [ ] Verify hosted CI Windows executable checks and actual revision-named
   artifacts.
 - [ ] Validate the tagged GitHub release: tag/source/wheel version agreement
   and both release asset types.
+- [ ] Mypy is not a configured clean gate: the first UI pass reported 187
+  errors without a baseline, and the targeted metadata pass reported four
+  import-resolution errors (`back.capability_evidence`, `model_cache`,
+  `model_readers`, `.explorer_data`).
 
 ## Deferred product work
 
@@ -83,14 +93,20 @@ the follow-up list below.
 
 ### Explorer and Raw Dump
 
-- Keep target-specific context-menu View Raw behavior and Raw label refinement
-  under review; the Data selection column is now a locked first/always-visible
-  column, so selection-column pinning is no longer an open question.
+- Completed bounded preview, readable-content, exact source extraction, and
+  stored-preview reuse work is recorded in `DONE.md`; the remaining raw/metadata
+  work is intentionally limited to the items below.
 - Implement host-side extraction only for genuinely supported embedded tensors;
   Explorer currently emits host-handled requests only.
 - Consider safe text/template extraction, template validation and
   supported-kwargs reporting, and a selected-model metadata re-scan that
   preserves cached-first behavior.
+
+### Test and evidence follow-up
+
+- [x] Metadata UI live-file header loading now bypasses full-data cache scans;
+  missing-file cache fallback and the capability/domain boundary are covered
+  by regression tests. Keep the `test_ui_release_gates.py` catalog current.
 
 ### Advanced Viewer refinements — non-release
 

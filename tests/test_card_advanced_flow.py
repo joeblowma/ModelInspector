@@ -2,6 +2,8 @@
 
 import os
 import sys
+import json
+import struct
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,7 +17,10 @@ import pytest
 
 from front import selection_controller
 from front.advanced_viewer import AdvancedViewerDialog
+from front.explorer_data import detect_embedded_content
+from front.explorer_metadata import raw_metadata_bytes
 from gui import MainWindow
+from model_cache import store_cached_inspection
 
 
 def _summary(path: str) -> dict:
@@ -113,6 +118,39 @@ def test_advanced_viewer_reuses_existing_dialog_for_repeat_entry(tmp_path, monke
 
         assert window._advanced_dialog is first
         assert first.explorer_tab.dump_json_modelinfo is False
+    finally:
+        window.close()
+        app.processEvents()
+
+
+def test_advanced_viewer_keeps_live_result_and_exports_real_cached_source(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    source = tmp_path / "dragged.safetensors"
+    values = [f"token-{index}" for index in range(60)]
+    header = json.dumps({"__metadata__": {"tokenizer": {"tokens": values}}}).encode()
+    source.write_bytes(struct.pack("<Q", len(header)) + header + b"TENSOR_PAYLOAD_MUST_NOT_BE_READ")
+    stale = str(tmp_path / "stale.safetensors")
+    preview = {"count": len(values), "preview": values[:50], "truncated": True}
+    cached = _summary(stale) | {"resolved_filepath": stale, "metadata": {"tokenizer": {"tokens": preview}}}
+    store_cached_inspection(str(source), cached)
+    window = MainWindow()
+    monkeypatch.setattr(AdvancedViewerDialog, "exec", lambda _dialog: 0)
+    try:
+        window._results.append(_summary(str(source)))
+        results_before = list(window._results)
+        window._show_advanced_viewer_for_path(str(source))
+        dialog = window._advanced_dialog
+        assert dialog is not None
+        assert dialog._inspection["filepath"] == str(source)
+        assert dialog._inspection["requested_filepath"] == str(source)
+        candidate = detect_embedded_content(dialog._inspection)[0]
+        assert b"token-59" in raw_metadata_bytes(dialog._inspection, candidate)
+
+        window._show_advanced_viewer_for_path(str(source))
+        assert window._advanced_dialog is dialog
+        assert window._results == results_before
     finally:
         window.close()
         app.processEvents()

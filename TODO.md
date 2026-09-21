@@ -46,12 +46,12 @@ the follow-up list below.
 
 ### Release validation still open
 
-- [x] Final canonical suite at `2026-09-21T10:57:10.5414636-06:00`: 466
-  passed, 4 skipped in 172.61 seconds, exit 0. Command:
+- [x] Final canonical suite: 470 passed, 4 skipped in 52.11 seconds, exit 0.
+  Command:
   `$env:PYTHONPATH='src';
-  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:
-  `R:\Temp\opencode\modelinspector-metadata-full-20260921.log`.
-- [x] Focused metadata regression: 12 passed. Real-header Qwen smokes passed
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`.
+- [x] Focused Explorer/metadata/Advanced regression: 55 passed. Real-header
+  Qwen smokes passed
   in human-readable and JSON modes; the generic Qwen Image2.1 false positive
   is guarded, unsupported diffusion projects a null domain and empty
   capabilities, and Qwen35 prompt enhancers remain LLM with thinking/tools.
@@ -94,8 +94,9 @@ the follow-up list below.
 ### Explorer and Raw Dump
 
 - Completed bounded preview, readable-content, exact source extraction, and
-  stored-preview reuse work is recorded in `DONE.md`; the remaining raw/metadata
-  work is intentionally limited to the items below.
+  stored-preview reuse work is recorded in `DONE.md`, including stable sorted
+  row previews and requested/resolved live-source recovery from cache previews;
+  the remaining raw/metadata work is intentionally limited to the items below.
 - Implement host-side extraction only for genuinely supported embedded tensors;
   Explorer currently emits host-handled requests only.
 - Consider safe text/template extraction, template validation and

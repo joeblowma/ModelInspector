@@ -69,11 +69,12 @@ def _inspect_text(candidate: Mapping[str, Any]) -> str:
 
 
 def _candidate_path(inspection: Mapping[str, Any], candidate: Mapping[str, Any]) -> Path:
-    raw_path = inspection.get("filepath") or inspection.get("path")
-    path = Path(str(raw_path or ""))
-    if not path.is_file():
-        raise RawMetadataUnavailable("source model file is unavailable")
-    return path
+    del candidate
+    for key in ("requested_filepath", "resolved_filepath", "filepath", "path"):
+        path = Path(str(inspection.get(key) or ""))
+        if path.is_file():
+            return path
+    raise RawMetadataUnavailable("source model file is unavailable")
 
 
 def _header_bytes(path: Path) -> bytes:

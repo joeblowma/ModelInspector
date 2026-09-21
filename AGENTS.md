@@ -23,6 +23,9 @@ This is a growing Python desktop/CLI utility for inspecting various language and
 - Explorer metadata remains bounded and read-only: source JSON recovery is
   limited to locatable safetensors/GGUF metadata, never reads tensor payloads,
   and supported loaded-model Inspect must not add files or trigger reanalysis.
+  Sorted/filterable metadata and embedded rows retain Qt payload mappings; Save
+  and Extract prefer an existing requested path, then resolved/legacy paths, so
+  cached previews never replace live metadata or require a cache purge.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
 - `win_compile.bat`, `win_clean.bat`, `ModelInspector.spec`, `build/`, and `dist/` support PyInstaller packaging.
@@ -63,7 +66,7 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
-Current validation is 466 passed, 4 skipped in 172.61 seconds with exit 0 on the canonical suite. The live-file header loader now reads directly and retains cache fallback only for missing files. Generic Qwen Image2.1 no longer produces a diffusion-as-LLM false positive; unsupported diffusion projects a null domain and empty capabilities, while Qwen35 prompt enhancers remain LLM with thinking/tools. Keep packaged visual QA, the existing strict-pylint blocker, hosted/tagged validation, and Graphify refresh open. Mypy is not a configured clean gate: the first UI pass had 187 errors without a baseline, and targeted metadata had four import-resolution errors.
+Current validation is 470 passed, 4 skipped in 52.11 seconds with exit 0 on the canonical suite; focused Explorer/metadata/Advanced coverage is 55 passed. The live-file header loader now reads directly and retains cache fallback only for missing files. Generic Qwen Image2.1 no longer produces a diffusion-as-LLM false positive; unsupported diffusion projects a null domain and empty capabilities, while Qwen35 prompt enhancers remain LLM with thinking/tools. Keep packaged visual QA, the existing strict-pylint blocker, hosted/tagged validation, and Graphify refresh open. Mypy is not a configured clean gate: the first UI pass had 187 errors without a baseline, and targeted metadata had four import-resolution errors.
 
 `.\tests\AGENTS.md` - contains a list of existing tests and their uses. Read before creating new tests, update when tests change.
 

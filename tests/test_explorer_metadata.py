@@ -203,6 +203,37 @@ def test_actions_decode_full_gguf_array_metadata_instead_of_preview(monkeypatch,
     assert b"token-59" in saved[0] and b'"preview"' not in saved[0]
 
 
+@pytest.mark.parametrize("suffix", (".safetensors", ".gguf"))
+def test_cached_preview_exports_from_requested_live_source(monkeypatch, tmp_path, suffix):
+    values = [f"token-{index}" for index in range(60)]
+    preview = {"count": len(values), "preview": values[:50], "truncated": True}
+    source = tmp_path / f"live{suffix}"
+    if suffix == ".safetensors":
+        header = json.dumps({"__metadata__": {"tokenizer": {"tokens": values}}}).encode()
+        source.write_bytes(struct.pack("<Q", len(header)) + header + b"TENSOR_PAYLOAD_MUST_NOT_BE_READ")
+        metadata = {"tokenizer": {"tokens": preview}}
+    else:
+        key = b"tokenizer.tokens"
+        encoded = struct.pack("<IQ", 8, len(values)) + b"".join(
+            struct.pack("<Q", len(value)) + value.encode() for value in values
+        )
+        source.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 0, 1) + struct.pack("<Q", len(key)) + key + struct.pack("<I", 9) + encoded + b"TENSOR_PAYLOAD_MUST_NOT_BE_READ")
+        metadata = {key.decode(): preview}
+    inspection = {
+        "filepath": str(tmp_path / f"stale{suffix}"),
+        "resolved_filepath": str(source),
+        "requested_filepath": str(source),
+        "metadata": metadata,
+    }
+    candidate = detect_embedded_content(inspection)[0]
+    saved: list[bytes] = []
+    monkeypatch.setattr(explorer_metadata, "_save", lambda *args: saved.append(args[3]) or "saved")
+
+    assert b"token-59" in raw_metadata_bytes(inspection, candidate)
+    assert perform_metadata_action(None, inspection, candidate, "save") == "saved"
+    assert b"token-59" in saved[0] and b'"preview"' not in saved[0]
+
+
 def test_gguf_raw_array_drops_type_count_and_string_length_framing(tmp_path):
     values = [b"alpha", b"{\"role\":\"user\"}"]
     key = b"tokenizer.tokens"

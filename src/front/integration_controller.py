@@ -311,12 +311,17 @@ class IntegrationMixin(CacheLoadControllerMixin):
         """Open the exact requested model, never an arbitrary selected entry."""
         filepath = str(filepath or "")
         inspection = self._result_for_filepath(filepath) if filepath else None
-        if inspection is None and filepath:
-            inspection = get_cached_inspection_snapshots([filepath]).get(filepath)
+        detail = get_cached_inspection_snapshots([filepath]).get(filepath, {}) if filepath else {}
+        if inspection is None:
+            inspection = detail or None
         if inspection is None:
             QMessageBox.information(self, "Advanced Viewer", "The requested model is unavailable.")
             return
-        detail = get_cached_inspection_snapshots([filepath]).get(filepath, {}) if filepath else {}
+        if detail and not isinstance(inspection.get("metadata"), dict):
+            inspection = {**detail, **inspection}
+        inspection = dict(inspection)
+        if filepath:
+            inspection["requested_filepath"] = filepath
         dialog = getattr(self, "_advanced_dialog", None)
         if dialog is not None:
             try:
@@ -325,14 +330,14 @@ class IntegrationMixin(CacheLoadControllerMixin):
             except (TypeError, RuntimeError):
                 dialog = None
         if dialog is None:
-            dialog = AdvancedViewerDialog(self, detail or inspection)
+            dialog = AdvancedViewerDialog(self, inspection)
             self._advanced_dialog = dialog
             explorer = dialog.explorer_tab
             explorer.inspect_requested.connect(self._handle_explorer_inspect)
             explorer.export_requested.connect(self._handle_explorer_export)
             explorer.extraction_requested.connect(self._handle_explorer_extract)
         elif str(getattr(dialog, "_inspection", {}).get("filepath") or "") != filepath:
-            dialog.set_inspection(detail or inspection)
+            dialog.set_inspection(inspection)
         dialog.explorer_tab.dump_json_modelinfo = bool(
             getattr(self, "_dump_json_modelinfo", False)
         )

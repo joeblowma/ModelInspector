@@ -375,12 +375,13 @@ class ExplorerTab(QWidget):
 
     def _render_metadata(self) -> None:
         self.metadata_detail.clear()
+        self.metadata_table.clearSelection()
         self.metadata_table.setSortingEnabled(False)
         self.metadata_table.setRowCount(len(self._metadata_rows))
         for row_index, row in enumerate(self._metadata_rows):
             for column, key in enumerate(("key", "value")):
                 item = QTableWidgetItem(str(row[key]))
-                item.setToolTip("Stored bounded metadata preview; no full source value is loaded.")
+                item.setData(Qt.ItemDataRole.UserRole, row); item.setToolTip("Stored bounded metadata preview; no full source value is loaded.")
                 self.metadata_table.setItem(row_index, column, item)
         self.metadata_table.setSortingEnabled(True)
         self._filter_metadata(self.metadata_search.text())
@@ -391,11 +392,12 @@ class ExplorerTab(QWidget):
         if not rows:
             self.metadata_detail.clear()
             return
-        row = rows[0].row()
-        if not 0 <= row < len(self._metadata_rows):
+        item = self.metadata_table.item(rows[0].row(), 0)
+        if item is None or not isinstance(item.data(Qt.ItemDataRole.UserRole), Mapping):
             self.metadata_detail.clear()
             return
-        value = self._metadata_rows[row].get("raw", self._metadata_rows[row].get("value"))
+        metadata = item.data(Qt.ItemDataRole.UserRole)
+        value = metadata.get("raw", metadata.get("value"))
         self.metadata_detail.setPlainText(_inspect_text({"value": value}))
 
     def _filter_metadata(self, text: str) -> None:
@@ -405,13 +407,10 @@ class ExplorerTab(QWidget):
             value = self.metadata_table.item(row, 1)
             haystack = f"{key.text() if key else ''} {value.text() if value else ''}".casefold()
             self.metadata_table.setRowHidden(row, bool(needle and needle not in haystack))
-
     def _filter_tensors(self, text: str) -> None:
         self.tensor_proxy.setFilterRegularExpression(QRegularExpression(re.escape(text)))
-
     def _filter_tensor_bucket(self, index: int) -> None:
         self.tensor_proxy.set_bucket(str(self.tensor_bucket_filter.itemData(index) or ""))
-
     def _tensor_selection_changed(self, selected, _deselected) -> None:
         if not selected.indexes():
             self.tensor_detail.clear()
@@ -428,7 +427,7 @@ class ExplorerTab(QWidget):
         for row, candidate in enumerate(self._embedded_candidates):
             for column, key in enumerate(("kind", "name", "summary")):
                 item = QTableWidgetItem(str(candidate.get(key, "")))
-                item.setToolTip("Detected from headers or metadata; selecting it does not read payloads.")
+                item.setData(Qt.ItemDataRole.UserRole, candidate); item.setToolTip("Detected from headers or metadata; selecting it does not read payloads.")
                 self.embedded_table.setItem(row, column, item)
         enabled = bool(self._embedded_candidates)
         self.inspect_button.setEnabled(enabled)
@@ -442,9 +441,9 @@ class ExplorerTab(QWidget):
         selection_model = self.embedded_table.selectionModel()
         rows = selection_model.selectedRows() if selection_model is not None else []
         if rows:
-            row = rows[0].row()
-            if 0 <= row < len(self._embedded_candidates):
-                candidate = self._embedded_candidates[row]
+            item = self.embedded_table.item(rows[0].row(), 0)
+            if item is not None and isinstance(item.data(Qt.ItemDataRole.UserRole), Mapping):
+                candidate = item.data(Qt.ItemDataRole.UserRole)
                 self.embedded_detail.setPlainText(safe_display(candidate.get("value")))
                 available, message = raw_metadata_status(self._inspection, candidate)
                 self.extract_button.setEnabled(available)
@@ -455,8 +454,9 @@ class ExplorerTab(QWidget):
         rows = selection_model.selectedRows() if selection_model is not None else []
         if not rows and self._embedded_candidates:
             return self._embedded_candidates[0]
-        row = rows[0].row() if rows else -1
-        return self._embedded_candidates[row] if 0 <= row < len(self._embedded_candidates) else None
+        item = self.embedded_table.item(rows[0].row(), 0) if rows else None
+        candidate = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        return dict(candidate) if isinstance(candidate, Mapping) else None
 
     def _emit_candidate(self, signal, action: str) -> None:
         candidate = self._selected_candidate()

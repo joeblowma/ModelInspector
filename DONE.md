@@ -17,9 +17,24 @@ completed foundation does not imply that every refinement in `TODO.md` is done.
 - [x] Advanced Inspect preserves the model list, and QwenImage2.1/VAE plus LTX
   video-VAE architecture coverage was added.
 
+### Explorer metadata cache/source recovery
+
+- [x] Metadata and embedded-content previews retain their row payload in Qt
+  user data, so sorting, filtering, and rerendering cannot display another
+  row's value.
+- [x] Readable Save and exact Extract resolve an existing requested model path
+  before resolved or legacy cached paths. Cached preview/stub entries therefore
+  recover locatable safetensors/GGUF header values after drag/drop without a
+  cache purge, reanalysis, list mutation, or tensor-payload read; unavailable
+  source files still refuse truncated-preview export.
+- [x] Advanced Viewer keeps a live inspection authoritative and adds cached
+  details only when that live result is a metadata-free compact summary.
+- [x] Independent canonical validation: **470 passed, 4 skipped in 52.11
+  seconds**, exit 0. Focused Explorer/metadata/Advanced coverage: **55 passed**.
+
 ### Final validation and boundary fixes
 
-- [x] The canonical run at `2026-09-21T10:57:10.5414636-06:00` passed
+- [x] The earlier canonical run at `2026-09-21T10:57:10.5414636-06:00` passed
   **466 tests, with 4 skipped, in 172.61 seconds** (exit 0):
   `$env:PYTHONPATH='src';
   $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:

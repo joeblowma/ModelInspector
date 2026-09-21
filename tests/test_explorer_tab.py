@@ -142,6 +142,34 @@ def test_metadata_detail_uses_only_stored_preview_and_marks_trimmed_output(app):
     )
 
 
+def test_metadata_and_embedded_selection_use_sorted_row_payloads(app):
+    widget = ExplorerTab()
+    widget.set_inspection(
+        {"metadata": {"z": "Z", "a": "A", "m": "M", "tokenizer": {"z": "Z", "a": "A"}}}
+    )
+    widget.metadata_table.sortItems(0, Qt.SortOrder.AscendingOrder)
+    a_row = next(row for row in range(widget.metadata_table.rowCount()) if widget.metadata_table.item(row, 0).text() == "a")
+    widget.metadata_table.selectRow(a_row)
+    assert widget.metadata_detail.toPlainText() == "A"
+
+    widget.metadata_search.setText("m")
+    m_row = next(row for row in range(widget.metadata_table.rowCount()) if not widget.metadata_table.isRowHidden(row))
+    widget.metadata_table.selectRow(m_row)
+    assert widget.metadata_detail.toPlainText() == "M"
+
+    widget.metadata_search.clear()
+    widget.embedded_table.setSortingEnabled(True)
+    widget.embedded_table.sortItems(1, Qt.SortOrder.AscendingOrder)
+    embedded_a = next(row for row in range(widget.embedded_table.rowCount()) if widget.embedded_table.item(row, 1).text() == "tokenizer.a")
+    widget.embedded_table.selectRow(embedded_a)
+    assert "A" in widget.embedded_detail.toPlainText()
+
+    widget.set_inspection({"metadata": {"z": "Z2", "a": "A2", "m": "M2"}})
+    a_row = next(row for row in range(widget.metadata_table.rowCount()) if widget.metadata_table.item(row, 0).text() == "a")
+    widget.metadata_table.selectRow(a_row)
+    assert widget.metadata_detail.toPlainText() == "A2"
+
+
 def test_tensor_search_bucket_filter_and_detail_preview(app):
     widget = ExplorerTab()
     widget.set_tensor_data(

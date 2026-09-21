@@ -11,8 +11,8 @@
 - `.\tests\test_integrated_scan_behavior.py`
 - `.\tests\test_background_tasks.py`
 - `.\tests\test_gui_projection.py`
-- `.\tests\test_explorer_tab.py` — source-path recovery, bounded header-only metadata actions, and non-destructive loaded-model Inspect behavior.
-- `.\tests\test_card_advanced_flow.py` — full non-tensor Advanced values and supported replace/additive Inspect flow.
+- `.\tests\test_explorer_tab.py` — bounded metadata/tensor exploration, stable sorted/filterable metadata and embedded-row previews, and non-destructive loaded-model Inspect behavior.
+- `.\tests\test_card_advanced_flow.py` — full non-tensor Advanced values, supported replace/additive Inspect flow, and cached drag/drop source reuse without list reset.
 - `.\tests\test_advanced_viewer.py` — bounded tensor presentation alongside full non-tensor values.
 - `.\tests\test_filter_widgets.py`
 - `.\tests\test_model_card_fields.py` — planned fixed simple/advanced card-field contracts; legacy masks are ignored.
@@ -48,7 +48,7 @@
 - `.\tests\test_file_operation_safety.py` — no-clobber failure retention and cooperative cancel.
 - `.\tests\test_startup_feedback.py` — startup action feedback and unknown summary retention.
 - `.\tests\test_cache_locations.py` — model-cache vs cache-root separation, history precedence, live-redirect busy guard, and flag wiring.
-- `.\tests\test_explorer_metadata.py` — bounded read-only embedded-metadata Inspect/Save/raw-source semantics, readable-content handling, stored previews, and exact safetensors/GGUF source bytes without tensor reads.
+- `.\tests\test_explorer_metadata.py` — bounded read-only embedded-metadata Inspect/Save/raw-source semantics, readable-content handling, stored previews, requested/resolved-path recovery, and exact safetensors/GGUF source bytes without tensor reads.
 - `.\tests\test_metadata_ui.py` — live-file header loading without full-data cache scans, missing-file fallback, metadata/domain/capability badge projection, and Advanced Viewer metadata UI contracts.
 - `.\tests\test_frozen_help.py` — windowed `--help` for frozen builds without stdout.
 - `.\tests\test_modelinfo_diagnostics.py` — header-only `.modelinfo` diagnostics and credential redaction without tokenizer over-reach.
@@ -56,8 +56,8 @@
 
 ## Current validation note
 
-- Canonical full suite: **466 passed, 4 skipped in 172.61 seconds**, exit 0;
-  focused metadata coverage: 12 passed. Real-header Qwen smokes passed in
+- Canonical full suite: **470 passed, 4 skipped in 52.11 seconds**, exit 0;
+  focused Explorer/metadata/Advanced coverage: 55 passed. Real-header Qwen smokes passed in
   human-readable and JSON modes.
 - Generic Qwen Image2.1 is guarded against the diffusion-as-LLM false positive;
   unsupported diffusion projects a null domain and empty capabilities, while

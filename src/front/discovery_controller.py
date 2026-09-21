@@ -53,7 +53,6 @@ class DiscoveryControllerMixin:
         self._discovery_generation += 1
         self._discovery_roots = list(roots)
         self._discovery_paths = list(seed_paths or [])
-        self._discovery_auto_analyze = self._auto_analyze_on_add
         self._discovery_checkpoint_safety = checkpoint_safety
         self._scan_cancel_requested = False
         self.progress.setVisible(True)
@@ -149,7 +148,7 @@ class DiscoveryControllerMixin:
             self._set_progress_status(f"Discovered {len(unique_paths)} files")
         if unique_paths:
             added = self._queue_files(unique_paths)
-            if added and self._discovery_auto_analyze:
+            if added:
                 self._analyze_all()
                 return
         self._clear_progress_status(delay_ms=3000)
@@ -174,8 +173,7 @@ class DiscoveryControllerMixin:
         added = self._queue_files(paths, preserve_existing=preserve_existing)
         if not added:
             return
-        if self._auto_analyze_on_add:
-            self._analyze_all(paths=added, clear_existing=not preserve_existing)
+        self._analyze_all(paths=added, clear_existing=not preserve_existing)
 
     def _update_file_count(self):
         if not self.progress.isVisible():

@@ -131,6 +131,7 @@ def _detect_from_metadata(metadata: dict):
     sshs_meta = meta["sshs_meta"]
     gguf_arch = meta["gguf_arch"]
     ss = meta["ss"]
+    spec = meta["spec"]
     output_name = meta["output_name"]
     sd_model = meta["sd_model"]
 
@@ -138,6 +139,12 @@ def _detect_from_metadata(metadata: dict):
         return None
 
     # Order matters: check specific variants before generic families
+
+    normalized_spec = re.sub(r"[-\s]+", "_", spec)
+    if normalized_spec in {"qwen_image_2.1_vae", "qwen_image_2_1_vae"}:
+        return "Qwen Image 2.1 VAE"
+    if normalized_spec in {"qwen_image_2.1", "qwen_image_2_1"}:
+        return "Qwen Image 2.1"
 
     # Chroma
     if "chroma" in all_meta:

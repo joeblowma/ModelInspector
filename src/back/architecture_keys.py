@@ -13,8 +13,10 @@ from .architecture_variants import (
     _collect_lora_up_dims,
     _detect_flux_variant,
     _detect_from_dims,
+    _detect_qwen_image_variant,
     _detect_sd_variant,
     _detect_sdxl_pony_ilxl,
+    _detect_vae_variant,
     _detect_wan_variant,
     _detect_zimage_variant,
     _max_block_index,
@@ -30,9 +32,11 @@ __all__ = [
     "_detect_flux_variant",
     "_detect_from_dims",
     "_detect_from_keys",
+    "_detect_qwen_image_variant",
     "_detect_lora_rank",
     "_detect_sd_variant",
     "_detect_sdxl_pony_ilxl",
+    "_detect_vae_variant",
     "_detect_wan_variant",
     "_detect_zimage_variant",
     "_max_block_index",
@@ -163,6 +167,14 @@ def _detect_from_keys(
     if "individual_token_refiner" in key_blob:
         return "HunyuanVideo", details
 
+    if components.get("vae") and not any(
+        components.get(name)
+        for name in ("unet", "transformer", "text_encoder", "text_encoder_2", "lora")
+    ):
+        vae_variant = _detect_vae_variant(keys, shapes)
+        if vae_variant:
+            return vae_variant, details
+
     # Conservative multi-key signatures for newer families.  Each requires
     # several discriminative substrings so broad families (Wan, SD, Qwen,
     # Z-Image) are not stolen by a single generic token.  Negative cases for
@@ -236,6 +248,11 @@ def _detect_from_keys(
         and "patchify_proj" not in key_blob
     ):
         return "HiDream", details
+
+    if not components.get("lora"):
+        qwen_image_variant = _detect_qwen_image_variant(keys, shapes, details)
+        if qwen_image_variant:
+            return qwen_image_variant, details
 
     if "add_k_proj" in key_blob or "add_q_proj" in key_blob:
         meta_blob = _build_metadata_blob(metadata)["all_meta"]

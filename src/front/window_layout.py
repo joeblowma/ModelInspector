@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QHeaderView,
+    QLayout,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -144,10 +145,14 @@ class WindowLayoutMixin:
         self.cards_scroll = QScrollArea()
         self.cards_scroll.setWidgetResizable(True)
         self.cards_container = QWidget()
+        self.cards_container.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+        )
         self.cards_layout = QVBoxLayout(self.cards_container)
         self.cards_layout.setSpacing(12)
         self.cards_layout.setContentsMargins(8, 8, 8, 8)
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.cards_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.cards_scroll.setWidget(self.cards_container)
 
         self.cards_placeholder = QLabel(

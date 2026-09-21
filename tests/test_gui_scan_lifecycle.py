@@ -78,7 +78,7 @@ def test_discovery_runs_asynchronously_and_queues_terminal_paths(
     second_model.write_bytes(b"")
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
-    window._auto_analyze_on_add = False
+    monkeypatch.setattr(window, "_analyze_all", lambda *args, **kwargs: None)
     try:
         window._start_discovery([str(model.parent), str(second_model.parent)])
         deadline = time.monotonic() + 5

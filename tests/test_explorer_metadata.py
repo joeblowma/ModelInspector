@@ -60,10 +60,10 @@ def test_gguf_embedded_metadata_extracts_header_bytes_without_tensor_reads(tmp_p
     candidate = detect_embedded_content(inspection)[0]
 
     assert readable_metadata(candidate) == template
-    assert raw_metadata_bytes(inspection, candidate) == raw_value
+    assert raw_metadata_bytes(inspection, candidate) == template_bytes
     available, message = raw_metadata_status(inspection, candidate)
     assert available
-    assert message == "Extract exact GGUF-encoded metadata value bytes; tensor payloads are never read."
+    assert message == "Extract exact GGUF metadata value bytes; tensor payloads are never read."
 
 
 def test_metadata_actions_stop_at_gguf_metadata_boundary(monkeypatch, tmp_path):
@@ -124,7 +124,7 @@ def test_metadata_actions_stop_at_gguf_metadata_boundary(monkeypatch, tmp_path):
 
     assert perform_metadata_action(None, inspection, candidate, "save") == "saved"
     assert perform_metadata_action(None, inspection, candidate, "extract") == "saved"
-    assert saved == [template_bytes, raw_value]
+    assert saved == [template_bytes, template_bytes]
 
 
 def test_inspect_opens_readable_popup_without_transforming_template_text(monkeypatch):
@@ -154,7 +154,7 @@ def test_inspect_labels_cached_preview_when_source_is_unavailable(monkeypatch, t
     monkeypatch.setattr(explorer_metadata.QDialog, "exec", lambda dialog: titles.append(dialog.windowTitle()) or 0)
 
     assert perform_metadata_action(None, inspection, candidate, "inspect") == ""
-    assert titles == ["tokenizer.chat_template (cached preview; source unavailable)"]
+    assert titles == ["tokenizer.chat_template"]
 
 
 def test_actions_reload_full_safetensors_metadata_instead_of_reader_preview(monkeypatch, tmp_path):
@@ -175,7 +175,9 @@ def test_actions_reload_full_safetensors_metadata_instead_of_reader_preview(monk
 
     assert perform_metadata_action(None, inspection, candidate, "inspect") == ""
     assert perform_metadata_action(None, inspection, candidate, "save") == "saved"
-    assert "token-59" in displayed[0] and '"preview"' not in displayed[0]
+    assert "token-49" in displayed[0]
+    assert "token-59" not in displayed[0]
+    assert displayed[0].endswith(explorer_metadata.TRIMMED_OUTPUT_MARKER)
     assert b"token-59" in saved[0] and b'"preview"' not in saved[0]
 
 
@@ -199,6 +201,75 @@ def test_actions_decode_full_gguf_array_metadata_instead_of_preview(monkeypatch,
 
     assert perform_metadata_action(None, inspection, candidate, "save") == "saved"
     assert b"token-59" in saved[0] and b'"preview"' not in saved[0]
+
+
+def test_gguf_raw_array_drops_type_count_and_string_length_framing(tmp_path):
+    values = [b"alpha", b"{\"role\":\"user\"}"]
+    key = b"tokenizer.tokens"
+    encoded = struct.pack("<IQ", 8, len(values)) + b"".join(
+        struct.pack("<Q", len(value)) + value for value in values
+    )
+    source = tmp_path / "framed.gguf"
+    source.write_bytes(
+        b"GGUF" + struct.pack("<IQQ", 3, 0, 1) + struct.pack("<Q", len(key)) + key
+        + struct.pack("<I", 9) + encoded
+    )
+    inspection = {"filepath": str(source), "metadata": {key.decode(): values}}
+    candidate = detect_embedded_content(inspection)[0]
+
+    assert raw_metadata_bytes(inspection, candidate) == b"".join(values)
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "suffix"),
+    (
+        ("tokenizer.chat_template", "{{ messages }}", ".jinja"),
+        ("metadata", '{"role":"user"}', ".json"),
+        ("metadata", "<root><item /></root>", ".xml"),
+        ("metadata", "plain text", ".txt"),
+    ),
+)
+def test_readable_artifact_suffixes_are_content_aware(name, value, suffix):
+    candidate = {"name": name, "value": value}
+    assert explorer_metadata._readable_suffix(candidate, readable_metadata(candidate)) == suffix
+
+
+def test_json_metadata_sidecar_is_opt_in_and_not_duplicated_for_json_main_file(
+    monkeypatch, tmp_path
+):
+    template = "{{ user }}"
+    header = json.dumps({"__metadata__": {"tokenizer.chat_template": template}}).encode()
+    source = tmp_path / "sidecar.safetensors"
+    source.write_bytes(struct.pack("<Q", len(header)) + header)
+    inspection = {"filepath": str(source), "metadata": {"tokenizer.chat_template": template}}
+    candidate = detect_embedded_content(inspection)[0]
+    readable_path = tmp_path / "template.jinja"
+    monkeypatch.setattr(
+        explorer_metadata.QFileDialog,
+        "getSaveFileName",
+        lambda *_args: (str(readable_path), ""),
+    )
+
+    perform_metadata_action(None, inspection, candidate, "save")
+    assert not readable_path.with_suffix(".json").exists()
+
+    perform_metadata_action(
+        None, inspection, candidate, "save", dump_json_modelinfo=True
+    )
+    assert readable_path.with_suffix(".json").read_text(encoding="utf-8") == (
+        json.dumps(template, ensure_ascii=False, indent=2, default=str) + "\n"
+    )
+
+    json_main = tmp_path / "natural.json"
+    monkeypatch.setattr(
+        explorer_metadata.QFileDialog,
+        "getSaveFileName",
+        lambda *_args: (str(json_main), ""),
+    )
+    perform_metadata_action(
+        None, inspection, candidate, "save", dump_json_modelinfo=True
+    )
+    assert not json_main.with_suffix(".json.json").exists()
 
 
 def test_actions_decode_full_gguf_scalar_metadata(monkeypatch, tmp_path):

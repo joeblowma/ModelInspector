@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from PyQt6.QtCore import QTimer
+
 from front.data_columns import LOCKED_COLUMN_KEYS, column_key, default_column_width
 
 
@@ -187,6 +189,38 @@ class SmartColumnControllerMixin:
         self._column_widths[logical] = parsed
         return parsed
 
+    def _apply_data_layout_column(self, logical: int, by_key: dict[str, dict]) -> None:
+        key = self._column_key(logical)
+        entry = by_key.get(key)
+        visible = not self.table.isColumnHidden(logical) if entry is None else (
+            True if key in LOCKED_COLUMN_KEYS else bool(entry.get("visible", True))
+        )
+        name = self._table_columns[logical] if logical < len(self._table_columns) else ""
+        if entry is not None and getattr(self, "_smart_group_owner", None) and name in self._smart_group_owner:
+            self._smart_group_baseline[name] = visible
+        self.table.setColumnHidden(logical, not visible)
+        self.table.setColumnWidth(
+            logical, self._remember_column_width(logical, entry.get("width") if entry else None)
+        )
+
+    def _move_data_layout_section(self, header, rows, visual: int) -> None:
+        row = rows[visual]
+        if not isinstance(row, dict):
+            return
+        key = str(row.get("key", ""))
+        for logical in range(self.table.columnCount()):
+            if key == self._column_key(logical) and header.visualIndex(logical) != visual:
+                header.moveSection(header.visualIndex(logical), visual)
+                return
+
+    def _finish_data_layout(self, header) -> None:
+        # The locked selection column is always the first, visible column.
+        self.table.setColumnHidden(0, False)
+        if header.visualIndex(0) != 0:
+            header.moveSection(header.visualIndex(0), 0)
+        if hasattr(self, "_smart_group_state"):
+            self._apply_smart_group_masks()
+
     def _apply_data_layout(self, layout: dict[str, Any]) -> None:
         rows = layout.get("columns", ()) if isinstance(layout, dict) else ()
         by_key = {str(row.get("key")): row for row in rows if isinstance(row, dict)}
@@ -194,37 +228,37 @@ class SmartColumnControllerMixin:
         assert header is not None
         self._ensure_column_widths()
         for logical in range(self.table.columnCount()):
-            key = self._column_key(logical)
-            entry = by_key.get(key)
-            if entry is None:
-                visible = not self.table.isColumnHidden(logical)
+            self._apply_data_layout_column(logical, by_key)
+        for visual in range(len(rows)):
+            self._move_data_layout_section(header, rows, visual)
+        self._finish_data_layout(header)
+
+    def _apply_data_layout_time_sliced(self, layout: dict[str, Any], finished, is_current) -> None:
+        """Apply table header mutations on the GUI thread between event turns."""
+        rows = layout.get("columns", ()) if isinstance(layout, dict) else ()
+        by_key = {str(row.get("key")): row for row in rows if isinstance(row, dict)}
+        header = self.table.horizontalHeader()
+        assert header is not None
+        self._ensure_column_widths()
+        logical = visual = 0
+
+        def apply_next() -> None:
+            nonlocal logical, visual
+            if not is_current():
+                return
+            if logical < self.table.columnCount():
+                self._apply_data_layout_column(logical, by_key)
+                logical += 1
+            elif visual < len(rows):
+                self._move_data_layout_section(header, rows, visual)
+                visual += 1
             else:
-                visible = True if key in LOCKED_COLUMN_KEYS else bool(entry.get("visible", True))
-                name = self._table_columns[logical] if logical < len(self._table_columns) else ""
-                if getattr(self, "_smart_group_owner", None) and name in self._smart_group_owner:
-                    # Only an explicit persisted entry refreshes the mask
-                    # baseline; absent columns keep the snapshot so a currently
-                    # masked column is not mistaken for a persisted hidden one.
-                    self._smart_group_baseline[name] = visible
-            self.table.setColumnHidden(logical, not visible)
-            self.table.setColumnWidth(
-                logical,
-                self._remember_column_width(logical, entry.get("width") if entry else None),
-            )
-        for visual, row in enumerate(rows):
-            if not isinstance(row, dict):
-                continue
-            key = str(row.get("key", ""))
-            for logical in range(self.table.columnCount()):
-                if key == self._column_key(logical) and header.visualIndex(logical) != visual:
-                    header.moveSection(header.visualIndex(logical), visual)
-                    break
-        # The locked selection column is always the first, visible column.
-        self.table.setColumnHidden(0, False)
-        if header.visualIndex(0) != 0:
-            header.moveSection(header.visualIndex(0), 0)
-        if hasattr(self, "_smart_group_state"):
-            self._apply_smart_group_masks()
+                self._finish_data_layout(header)
+                finished()
+                return
+            QTimer.singleShot(0, apply_next)
+
+        QTimer.singleShot(0, apply_next)
 
     def _capture_data_layout(self) -> dict[str, Any]:
         header = self.table.horizontalHeader()

@@ -14,8 +14,10 @@ __all__ = [
     "_collect_lora_up_dims",
     "_detect_flux_variant",
     "_detect_from_dims",
+    "_detect_qwen_image_variant",
     "_detect_sd_variant",
     "_detect_sdxl_pony_ilxl",
+    "_detect_vae_variant",
     "_detect_wan_variant",
     "_detect_zimage_variant",
     "_max_block_index",
@@ -44,6 +46,63 @@ def _collect_lora_up_dims(keys, shapes):
             if len(s) >= 2:
                 dims.add(s[0])
     return dims
+
+
+def _detect_qwen_image_variant(keys, shapes, details):
+    """Recognize the header-only Qwen Image 2.1 transformer layout.
+
+    The 4096-wide image/text inputs and 32-block ``img_mlp`` layout are the
+    version evidence available in both safetensors and GGUF headers. Packed
+    parameter totals are deliberately not used to infer a model size.
+    """
+    required = {
+        "img_in.weight",
+        "txt_in.in_layer.weight",
+        "txt_in.text_norm.weight",
+    }
+    if not required.issubset(keys):
+        return None
+
+    image_shape = tuple(shapes.get("img_in.weight", ()))
+    if image_shape not in ((4096, 64), (64, 4096)):
+        return None
+    if tuple(shapes.get("txt_in.in_layer.weight", ())) != (4096, 4096):
+        return None
+    if tuple(shapes.get("txt_in.text_norm.weight", ())) != (4096,):
+        return None
+
+    block_indices = {
+        int(match.group(1))
+        for key in keys
+        for match in [re.search(r"(?:^|\.)transformer_blocks\.(\d+)\.img_mlp\.", key)]
+        if match
+    }
+    if not {0, 31}.issubset(block_indices):
+        return None
+
+    details["transformer_blocks"] = max(block_indices) + 1
+    details["qwen_image_version_source"] = (
+        "header: 4096-wide inputs and 32-block img_mlp layout"
+    )
+    return "Qwen Image 2.1"
+
+
+def _detect_vae_variant(keys, shapes):
+    """Recognize the conservative LTX 2 video-VAE header signature."""
+    allowed_prefixes = ("encoder.", "decoder.", "latents_mean", "latents_std")
+    if not keys or any(not key.startswith(allowed_prefixes) for key in keys):
+        return None
+    decoder_shape = tuple(shapes.get("decoder.conv_out.conv.weight", ()))
+    encoder_shape = tuple(shapes.get("encoder.conv_in.conv.weight", ()))
+    if decoder_shape == (48, 128, 3, 3, 3) and encoder_shape == (
+        128,
+        48,
+        3,
+        3,
+        3,
+    ):
+        return "LTX 2 Video VAE"
+    return None
 
 
 def _build_metadata_blob(metadata: dict):

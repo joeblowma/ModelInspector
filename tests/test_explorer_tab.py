@@ -96,7 +96,7 @@ def test_metadata_detail_recovers_full_long_and_deep_header_values(app, tmp_path
     assert "deep-tail-marker" in widget.metadata_detail.toPlainText()
 
 
-def test_metadata_detail_recovers_full_gguf_array_preview_tail(app, tmp_path):
+def test_metadata_detail_does_not_recover_full_gguf_array_preview_tail(app, tmp_path):
     values = [f"token-{index}" for index in range(60)]
     key = b"tokenizer.tokens"
     encoded = struct.pack("<IQ", 8, len(values)) + b"".join(
@@ -116,8 +116,30 @@ def test_metadata_detail_recovers_full_gguf_array_preview_tail(app, tmp_path):
     row = next(row for row in range(widget.metadata_table.rowCount()) if widget.metadata_table.item(row, 0).text() == "tokenizer.tokens")
     widget.metadata_table.selectRow(row)
     detail = widget.metadata_detail.toPlainText()
-    assert "token-59" in detail
-    assert '"preview"' not in detail
+    assert "token-49" in detail
+    assert "token-59" not in detail
+    assert detail.endswith("\n\n---- output trimmed - extract for full data ----")
+
+
+def test_metadata_detail_uses_only_stored_preview_and_marks_trimmed_output(app):
+    values = [f"token-{index}" for index in range(60)]
+    widget = ExplorerTab()
+    widget.set_inspection(
+        {"metadata": {"tokenizer.tokens": {"count": 60, "preview": values[:50], "truncated": True}}}
+    )
+    row = next(
+        row
+        for row in range(widget.metadata_table.rowCount())
+        if widget.metadata_table.item(row, 0).text() == "tokenizer.tokens"
+    )
+
+    widget.metadata_table.selectRow(row)
+
+    assert "token-49" in widget.metadata_detail.toPlainText()
+    assert "token-59" not in widget.metadata_detail.toPlainText()
+    assert widget.metadata_detail.toPlainText().endswith(
+        "\n\n---- output trimmed - extract for full data ----"
+    )
 
 
 def test_tensor_search_bucket_filter_and_detail_preview(app):

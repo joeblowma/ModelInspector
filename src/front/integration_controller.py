@@ -4,15 +4,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 import weakref
 
 from PyQt6 import sip
 from PyQt6.QtCore import QObject, QTimer
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QMessageBox
 
-from app_paths import ensure_output_dir
 from back.checkpoint_reader import CHECKPOINT_SAFETY_METADATA
 from back.cache_verifier import verify_cache_entries
 from back.settings_store import open_settings
@@ -25,11 +23,11 @@ from front.settings_data_tab import ColumnDefinition
 from model_cache import get_cached_inspection_snapshots
 
 
-def _run_deferred_settings_rebuild(window_ref, generation: int) -> None:
+def _run_deferred_settings_rebuild(window_ref, generation: int, apply_layout: bool) -> None:
     """Run a queued rebuild only while its Python window wrapper is alive."""
     window = window_ref()
     if window is not None:
-        window._run_settings_rebuild(generation)
+        window._run_settings_rebuild(generation, apply_layout)
 
 
 class IntegrationMixin(CacheLoadControllerMixin):
@@ -56,14 +54,15 @@ class IntegrationMixin(CacheLoadControllerMixin):
 
     def _open_settings(self) -> None:
         from front.settings_dialog import SettingsDialog
+        previous_layout = self._capture_data_layout()
         dialog = SettingsDialog(
             self, allow_filename_alias_detection=self._allow_filename_alias_detection,
-            auto_analyze_on_add=self._auto_analyze_on_add, dump_json_modelinfo=self._dump_json_modelinfo,
+            dump_json_modelinfo=self._dump_json_modelinfo,
             auto_load_raw_dump=self._auto_load_raw_dump,
             cache_full_data_on_analyze=self._cache_full_data_on_analyze, analysis_threads=self._analysis_threads,
             add_mode=self._add_mode, default_tab=self._default_tab,
             data_columns=self._column_definitions(),
-            data_configuration=self._capture_data_layout(),
+            data_configuration=previous_layout,
             theme_id=self._data_layout.get("theme", "default"),
             dialog_size=self._remembered_settings_size(),
         )
@@ -85,23 +84,36 @@ class IntegrationMixin(CacheLoadControllerMixin):
         self._save_settings_size(dialog)
         if not accepted:
             return
-        self._allow_filename_alias_detection = dialog.alias_checkbox.isChecked()
-        self._auto_analyze_on_add = dialog.auto_analyze_checkbox.isChecked()
-        self._dump_json_modelinfo = dialog.dump_json_checkbox.isChecked()
-        self._auto_load_raw_dump = dialog.auto_load_raw_checkbox.isChecked()
-        self._cache_full_data_on_analyze = dialog.cache_full_data_checkbox.isChecked()
-        self._analysis_threads = int(dialog.analysis_threads_combo.currentData() or 1)
-        self._add_mode = str(dialog.add_mode_combo.currentData() or "replace")
-        self._default_tab = str(dialog.default_tab_combo.currentData() or "cards")
-        self._data_layout = dialog.data_settings_tab.export_configuration()
-        self._data_layout["theme"] = dialog.current_theme_id()
-        self._schedule_settings_rebuild()
+        values = (
+            dialog.alias_checkbox.isChecked(), dialog.dump_json_checkbox.isChecked(),
+            dialog.auto_load_raw_checkbox.isChecked(), dialog.cache_full_data_checkbox.isChecked(),
+            int(dialog.analysis_threads_combo.currentData() or 1),
+            str(dialog.add_mode_combo.currentData() or "replace"),
+            str(dialog.default_tab_combo.currentData() or "cards"),
+        )
+        old_values = (
+            self._allow_filename_alias_detection, self._dump_json_modelinfo,
+            self._auto_load_raw_dump, self._cache_full_data_on_analyze,
+            self._analysis_threads, self._add_mode, self._default_tab,
+        )
+        data_layout = dialog.data_settings_tab.export_configuration()
+        data_layout["theme"] = dialog.current_theme_id()
+        layout_changed = data_layout.get("columns", []) != previous_layout.get("columns", [])
+        changed = values != old_values or data_layout != previous_layout
+        (
+            self._allow_filename_alias_detection, self._dump_json_modelinfo,
+            self._auto_load_raw_dump, self._cache_full_data_on_analyze,
+            self._analysis_threads, self._add_mode, self._default_tab,
+        ) = values
+        self._data_layout = data_layout
+        if changed:
+            self._schedule_settings_rebuild(apply_layout=layout_changed)
         if str(model_cache_dir()) != previous_cache_dir:
             # The model cache was redirected live; refresh the cache-driven UI
             # for the new location. No existing cache files are moved/deleted.
             self._refresh_cache_controls()
 
-    def _schedule_settings_rebuild(self) -> None:
+    def _schedule_settings_rebuild(self, *, apply_layout: bool = True) -> None:
         """Defer the expensive model reprojection until Settings has closed."""
         if not self._settings_rebuild_is_active():
             return
@@ -110,8 +122,8 @@ class IntegrationMixin(CacheLoadControllerMixin):
         window_ref = weakref.ref(self)
         QTimer.singleShot(
             0,
-            lambda ref=window_ref, generation=generation: _run_deferred_settings_rebuild(
-                ref, generation
+            lambda ref=window_ref, generation=generation, apply_layout=apply_layout: _run_deferred_settings_rebuild(
+                ref, generation, apply_layout
             ),
         )
 
@@ -129,17 +141,34 @@ class IntegrationMixin(CacheLoadControllerMixin):
                 return False
         return True
 
-    def _run_settings_rebuild(self, generation: int) -> None:
-        if self._settings_rebuild_is_active() and generation == self._settings_rebuild_generation:
-            self._apply_data_layout(self._data_layout)
+    def _run_settings_rebuild(self, generation: int, apply_layout: bool = True) -> None:
+        if not self._settings_rebuild_is_active() or generation != self._settings_rebuild_generation:
+            return
+        def finish() -> None:
+            if not self._settings_rebuild_is_active() or generation != self._settings_rebuild_generation:
+                return
             self._save_accepted_settings()
             self._update_raw_controls()
             self._update_analyze_slot()
             self._apply_default_tab()
-            # Cards are rendered from result data only; Settings never changes
-            # them.  Rebuilding every card here was the multi-second close
-            # freeze, so only the changed projections (columns, persistence,
-            # controls, default tab) are refreshed.
+            clear_progress = getattr(self, "_clear_progress_status", None)
+            if callable(clear_progress):
+                clear_progress()
+        if not apply_layout:
+            finish()
+            return
+        apply_time_sliced = getattr(self, "_apply_data_layout_time_sliced", None)
+        if callable(apply_time_sliced):
+            self.progress.setVisible(True)
+            self.progress.setRange(0, 0)
+            self._set_progress_status("Applying Data column settings...")
+            apply_time_sliced(
+                self._data_layout, finish,
+                lambda: self._settings_rebuild_is_active() and generation == self._settings_rebuild_generation,
+            )
+        else:
+            self._apply_data_layout(self._data_layout)
+            finish()
 
     def _save_accepted_settings(self) -> None:
         """Persist one accepted dialog as a single crash-safe settings update."""
@@ -154,7 +183,6 @@ class IntegrationMixin(CacheLoadControllerMixin):
         store.setValues(
             {
                 "allow_filename_alias_detection": str(self._allow_filename_alias_detection).lower(),
-                "auto_analyze_on_add": str(self._auto_analyze_on_add).lower(),
                 "dump_json_modelinfo": str(self._dump_json_modelinfo).lower(),
                 "auto_load_raw_dump": str(self._auto_load_raw_dump).lower(),
                 "cache_full_data_on_analyze": str(self._cache_full_data_on_analyze).lower(),
@@ -255,7 +283,9 @@ class IntegrationMixin(CacheLoadControllerMixin):
         store = open_settings(
             self._settings_path(), self._legacy_settings_path(), defer_initial_save=True
         )
-        store.setValue("settings_size", {"width": width, "height": height})
+        size = {"width": width, "height": height}
+        if store.value("settings_size") != size:
+            store.setValue("settings_size", size)
 
     def _settings_path(self):
         from app_paths import settings_path
@@ -287,41 +317,39 @@ class IntegrationMixin(CacheLoadControllerMixin):
             QMessageBox.information(self, "Advanced Viewer", "The requested model is unavailable.")
             return
         detail = get_cached_inspection_snapshots([filepath]).get(filepath, {}) if filepath else {}
-        self._advanced_dialog = AdvancedViewerDialog(
-            self, detail or inspection
+        dialog = getattr(self, "_advanced_dialog", None)
+        if dialog is not None:
+            try:
+                if sip.isdeleted(dialog):
+                    dialog = None
+            except (TypeError, RuntimeError):
+                dialog = None
+        if dialog is None:
+            dialog = AdvancedViewerDialog(self, detail or inspection)
+            self._advanced_dialog = dialog
+            explorer = dialog.explorer_tab
+            explorer.inspect_requested.connect(self._handle_explorer_inspect)
+            explorer.export_requested.connect(self._handle_explorer_export)
+            explorer.extraction_requested.connect(self._handle_explorer_extract)
+        elif str(getattr(dialog, "_inspection", {}).get("filepath") or "") != filepath:
+            dialog.set_inspection(detail or inspection)
+        dialog.explorer_tab.dump_json_modelinfo = bool(
+            getattr(self, "_dump_json_modelinfo", False)
         )
-        explorer = self._advanced_dialog.explorer_tab
-        explorer.inspect_requested.connect(self._handle_explorer_inspect)
-        explorer.export_requested.connect(self._handle_explorer_export)
-        explorer.extraction_requested.connect(self._handle_explorer_extract)
-        self._advanced_dialog.exec()
+        if dialog.isVisible():
+            dialog.raise_()
+            dialog.activateWindow()
+            return
+        dialog.exec()
 
     def _handle_explorer_inspect(self, request: dict[str, Any]) -> None:
-        path = str(request.get("inspection", {}).get("filepath") or "")
-        if self._result_for_filepath(path) is not None:
-            self._show_advanced_viewer_for_path(path)
-        elif path and Path(path).is_file():
-            self._add_files([path], preserve_existing=True)
-        else:
-            QMessageBox.information(self, "Explorer", "The cached header is historic or unavailable; no file inspection was started.")
-
-    def _save_explorer_request(self, request: dict[str, Any], title: str) -> None:
-        destination, _ = QFileDialog.getSaveFileName(
-            self, title, str(ensure_output_dir()), "JSON files (*.json)"
-        )
-        if not destination:
-            return
-        payload = {"candidate": request.get("candidate", {}), "inspection": request.get("inspection", {}), "header_only": True}
-        try:
-            Path(destination).write_text(json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
-        except OSError as exc:
-            QMessageBox.warning(self, title, f"Could not write the selected destination: {exc}")
+        del request
 
     def _handle_explorer_export(self, request: dict[str, Any]) -> None:
-        self._save_explorer_request(request, "Export Explorer Header")
+        del request
 
     def _handle_explorer_extract(self, request: dict[str, Any]) -> None:
-        self._save_explorer_request(request, "Save Extraction Request")
+        del request
 
     def _cache_report(self):
         paths = self._list_cached_inspection_paths()

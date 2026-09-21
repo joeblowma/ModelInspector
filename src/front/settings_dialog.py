@@ -81,7 +81,6 @@ class SettingsDialog(QDialog):
         self,
         parent=None,
         allow_filename_alias_detection=False,
-        auto_analyze_on_add=True,
         dump_json_modelinfo=False,
         auto_load_raw_dump=False,
         cache_full_data_on_analyze=False,
@@ -118,12 +117,13 @@ class SettingsDialog(QDialog):
         selected_theme_id = str(theme_id or saved_data_configuration.get("theme", "default"))
         self._accepted = False
         self._theme_restored = False
+        self._theme_previewed = False
         self._theme_restore_id = selected_theme_id
         self.theme_tab = ThemeTab(selected_theme_id, parent=self)
         self.theme_editor_tab = self.theme_tab
         self._theme_restore_id = self.theme_tab.current_theme_id()
         self.theme_tab.themeChanged.connect(self._on_theme_tab_changed)
-        self.theme_tab.themePreviewChanged.connect(self.themePreviewChanged.emit)
+        self.theme_tab.themePreviewChanged.connect(self._on_theme_preview_changed)
         self.theme_tab.themeLoadFailed.connect(self._on_theme_load_failed)
         self.theme_tab.themePersisted.connect(self._on_theme_persisted)
 
@@ -157,18 +157,11 @@ class SettingsDialog(QDialog):
             "Fallback alias matching by filename for special naming cases. Supports ILXL, Illustrious, Illu, PDXL, Pony, Pony7, NAI, and Qwen Edit.",
         )
 
-        self.auto_analyze_checkbox = QCheckBox("Auto-analyze when files are added")
-        self.auto_analyze_checkbox.setChecked(auto_analyze_on_add)
-        analyze_cell = make_general_cell(
-            self.auto_analyze_checkbox,
-            "Immediately start analysis after dropping or browsing files.",
-        )
-
-        self.dump_json_checkbox = QCheckBox("Also dump JSON .modelinfo")
+        self.dump_json_checkbox = QCheckBox("Also save JSON metadata")
         self.dump_json_checkbox.setChecked(dump_json_modelinfo)
         dump_json_cell = make_general_cell(
             self.dump_json_checkbox,
-            "When dumping modelinfo, also write a pretty-printed .modelinfo.json file.",
+            "When saving readable metadata, also write a pretty-printed JSON file.",
         )
 
         self.auto_load_raw_checkbox = QCheckBox("Auto-load Raw full dump")
@@ -244,7 +237,6 @@ class SettingsDialog(QDialog):
         )
 
         g_layout.addWidget(alias_cell, 0, 0)
-        g_layout.addWidget(analyze_cell, 0, 1)
         g_layout.addWidget(mode_cell, 1, 0)
         g_layout.addWidget(tab_cell, 1, 1)
         g_layout.addWidget(dump_json_cell, 1, 2)
@@ -410,6 +402,11 @@ class SettingsDialog(QDialog):
         text = self.cache_dir_combo.currentText().strip()
         if not text:
             return True
+        from app_paths import model_cache_dir
+        if os.path.normcase(os.path.normpath(text)) == os.path.normcase(
+            os.path.normpath(str(model_cache_dir()))
+        ):
+            return True
         parent = self.parent()
         if parent is not None and _cache_task_running(parent):
             QMessageBox.warning(
@@ -441,7 +438,12 @@ class SettingsDialog(QDialog):
             label.setStyleSheet("color: %(muted)s; font-size: 11px;" % colors)
 
     def _on_theme_tab_changed(self, theme_id: str) -> None:
+        self._theme_previewed = theme_id != self._theme_restore_id
         self.themeChanged.emit(theme_id)
+
+    def _on_theme_preview_changed(self, theme) -> None:
+        self._theme_previewed = True
+        self.themePreviewChanged.emit(theme)
 
     def _on_theme_load_failed(self, requested: str, diagnostics: object) -> None:
         details = tuple(str(item) for item in (diagnostics if isinstance(diagnostics, (tuple, list)) else (diagnostics,)))
@@ -475,7 +477,7 @@ class SettingsDialog(QDialog):
         super().accept()
 
     def _restore_live_theme(self) -> None:
-        if self._theme_restored:
+        if self._theme_restored or not self._theme_previewed:
             return
         self._theme_restored = True
         self.theme_tab.set_theme(self._theme_restore_id)

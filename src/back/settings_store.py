@@ -13,7 +13,6 @@ from back.theme_loader import parse_jsonc
 
 DEFAULTS: dict[str, Any] = {
     "allow_filename_alias_detection": False,
-    "auto_analyze_on_add": True,
     "dump_json_modelinfo": False,
     "auto_load_raw_dump": False,
     "cache_full_data_on_analyze": False,
@@ -85,6 +84,7 @@ class SettingsStore:
                 if not isinstance(values, dict):
                     raise ValueError("settings root must contain an object")
                 self.values.update(values)
+                self.values.pop("auto_analyze_on_add", None)
                 return
             except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
                 self.diagnostic = f"Malformed settings.jsonc; using defaults: {exc}"

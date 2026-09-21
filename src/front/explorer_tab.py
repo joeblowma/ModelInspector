@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from .explorer_data import bucket_label, detect_embedded_content, display_count, flatten_metadata, friendly_bytes, natural_name_key, normalize_tensor_descriptors, safe_display
-from .explorer_metadata import RawMetadataUnavailable, full_metadata_value, perform_metadata_action, raw_metadata_status, readable_metadata
+from .explorer_metadata import _inspect_text, perform_metadata_action, raw_metadata_status
 from .tensor_root_summary import TensorRootSummary
 __all__ = ["ExplorerTab", "TENSOR_COLUMNS", "normalize_tensor_descriptors", "detect_embedded_content"]
 TENSOR_COLUMNS = ("Name", "Shape", "Dtype", "Bucket", "Shard", "Size", "Parameters")
@@ -120,11 +120,11 @@ class ExplorerTab(QWidget):
         vertical_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.metadata_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.metadata_table.itemSelectionChanged.connect(self._metadata_selection_changed)
-        self.metadata_table.setToolTip("Read-only compact metadata rows. Select a row for the complete header value.")
+        self.metadata_table.setToolTip("Read-only compact metadata rows. Select a row for the stored bounded preview.")
         metadata_layout.addWidget(self.metadata_table)
         self.metadata_detail = QTextEdit()
         self.metadata_detail.setReadOnly(True)
-        self.metadata_detail.setPlaceholderText("Select a metadata row to view its complete header value.")
+        self.metadata_detail.setPlaceholderText("Select a metadata row to view its stored bounded preview.")
         metadata_layout.addWidget(self.metadata_detail, 1)
         metadata_page_layout.addWidget(metadata_group)
 
@@ -380,7 +380,7 @@ class ExplorerTab(QWidget):
         for row_index, row in enumerate(self._metadata_rows):
             for column, key in enumerate(("key", "value")):
                 item = QTableWidgetItem(str(row[key]))
-                item.setToolTip("Compact metadata preview; select this row for the complete header value.")
+                item.setToolTip("Stored bounded metadata preview; no full source value is loaded.")
                 self.metadata_table.setItem(row_index, column, item)
         self.metadata_table.setSortingEnabled(True)
         self._filter_metadata(self.metadata_search.text())
@@ -395,12 +395,8 @@ class ExplorerTab(QWidget):
         if not 0 <= row < len(self._metadata_rows):
             self.metadata_detail.clear()
             return
-        try:
-            value = full_metadata_value(self._inspection, self._metadata_rows[row])
-            text = readable_metadata({"value": value})
-        except (OSError, RawMetadataUnavailable, TypeError, ValueError, RecursionError) as error:
-            text = f"Full metadata unavailable: {error}"
-        self.metadata_detail.setPlainText(text)
+        value = self._metadata_rows[row].get("raw", self._metadata_rows[row].get("value"))
+        self.metadata_detail.setPlainText(_inspect_text({"value": value}))
 
     def _filter_metadata(self, text: str) -> None:
         needle = text.casefold().strip()
@@ -471,7 +467,12 @@ class ExplorerTab(QWidget):
                 "read_only": True,
                 "payload_available": self._payload_available,
             })
-            feedback = perform_metadata_action(self, self._inspection, candidate, action)
+            if getattr(self, "dump_json_modelinfo", False):
+                feedback = perform_metadata_action(
+                    self, self._inspection, candidate, action, dump_json_modelinfo=True
+                )
+            else:
+                feedback = perform_metadata_action(self, self._inspection, candidate, action)
             if feedback:
                 self.embedded_detail.setPlainText(feedback)
 

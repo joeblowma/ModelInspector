@@ -7,6 +7,7 @@ import struct
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QFileDialog, QTextEdit, QVBoxLayout, QWidget
 
@@ -31,6 +32,7 @@ _GGUF_SCALAR_SIZES = {
     for value_type, format_string in _GGUF_SCALAR_FORMATS.items()
 }
 _MAX_GGUF_METADATA_ITEMS = 200_000
+TRIMMED_OUTPUT_MARKER = "\n\n---- output trimmed - extract for full data ----"
 
 
 class RawMetadataUnavailable(ValueError):
@@ -58,7 +60,12 @@ def readable_metadata(candidate: Mapping[str, Any]) -> str:
 
 
 def _inspect_text(candidate: Mapping[str, Any]) -> str:
-    return readable_metadata(candidate)
+    value = candidate.get("value")
+    trimmed = _is_truncated_preview(value)
+    if trimmed:
+        value = value["preview"]
+    text = readable_metadata({"value": value})
+    return text + TRIMMED_OUTPUT_MARKER if trimmed else text
 
 
 def _candidate_path(inspection: Mapping[str, Any], candidate: Mapping[str, Any]) -> Path:
@@ -157,6 +164,21 @@ def _object_members(data: bytes, start: int, end: int) -> dict[str, tuple[int, i
     return members
 
 
+def _read_safetensors_value_slice(header: bytes, raw_path: Sequence[Any]) -> bytes:
+    root = _object_members(header, _skip_space(header, 0), len(header))
+    location = root.get("__metadata__")
+    if location is None:
+        raise RawMetadataUnavailable("source header has no embedded metadata")
+    start, end = location
+    for key in raw_path:
+        members = _object_members(header, start, end)
+        location = members.get(str(key))
+        if location is None:
+            raise RawMetadataUnavailable("metadata value is not present in the source header")
+        start, end = location
+    return header[start:end]
+
+
 def _gguf_exact(source, size: int, file_size: int) -> bytes:
     if (
         size < 0
@@ -195,6 +217,24 @@ def _gguf_value_end(source, value_type: int, file_size: int, depth: int = 0) -> 
     else:
         raise RawMetadataUnavailable(f"unsupported GGUF metadata type {value_type}")
     return source.tell()
+
+
+def _read_gguf_value_slice(source, value_type: int, file_size: int, depth: int = 0) -> bytes:
+    if depth > _MAX_GGUF_METADATA_DEPTH:
+        raise RawMetadataUnavailable("GGUF metadata array nesting exceeds the safe scan limit")
+    if value_type == 8:
+        length = struct.unpack("<Q", _gguf_exact(source, 8, file_size))[0]
+        return _gguf_exact(source, length, file_size)
+    if value_type == 9:
+        item_type = struct.unpack("<I", _gguf_exact(source, 4, file_size))[0]
+        count = struct.unpack("<Q", _gguf_exact(source, 8, file_size))[0]
+        if count > _MAX_GGUF_METADATA_ITEMS:
+            raise RawMetadataUnavailable("GGUF metadata array exceeds the safe scan limit")
+        return b"".join(_read_gguf_value_slice(source, item_type, file_size, depth + 1) for _ in range(count))
+    size = _GGUF_SCALAR_SIZES.get(value_type)
+    if size is None:
+        raise RawMetadataUnavailable(f"unsupported GGUF metadata type {value_type}")
+    return _gguf_exact(source, size, file_size)
 
 
 def _gguf_read_value(source, value_type: int, file_size: int, depth: int = 0) -> Any:
@@ -240,11 +280,9 @@ def _gguf_metadata_bytes(path: Path, raw_path: Sequence[Any]) -> bytes:
         for _ in range(key_count):
             key = _gguf_string(source, file_size)
             value_type = struct.unpack("<I", _gguf_exact(source, 4, file_size))[0]
-            value_start = source.tell()
-            value_end = _gguf_value_end(source, value_type, file_size)
             if key == target_key:
-                source.seek(value_start)
-                return _gguf_exact(source, value_end - value_start, file_size)
+                return _read_gguf_value_slice(source, value_type, file_size)
+            _gguf_value_end(source, value_type, file_size)
     raise RawMetadataUnavailable("metadata value is not present in the GGUF header")
 
 
@@ -283,19 +321,7 @@ def raw_metadata_bytes(inspection: Mapping[str, Any], candidate: Mapping[str, An
         return _gguf_metadata_bytes(path, raw_path)
     if path.suffix.lower() != ".safetensors":
         raise RawMetadataUnavailable("raw metadata extraction is unsupported for this format")
-    header = _header_bytes(path)
-    root = _object_members(header, _skip_space(header, 0), len(header))
-    location = root.get("__metadata__")
-    if location is None:
-        raise RawMetadataUnavailable("source header has no embedded metadata")
-    start, end = location
-    for key in raw_path:
-        members = _object_members(header, start, end)
-        location = members.get(str(key))
-        if location is None:
-            raise RawMetadataUnavailable("metadata value is not present in the source header")
-        start, end = location
-    return header[start:end]
+    return _read_safetensors_value_slice(_header_bytes(path), raw_path)
 
 
 def raw_metadata_status(inspection: Mapping[str, Any], candidate: Mapping[str, Any]) -> tuple[bool, str]:
@@ -305,7 +331,7 @@ def raw_metadata_status(inspection: Mapping[str, Any], candidate: Mapping[str, A
     except (OSError, RawMetadataUnavailable) as error:
         return False, f"Raw original bytes unavailable: {error}"
     if path.suffix.lower() == ".gguf":
-        return True, "Extract exact GGUF-encoded metadata value bytes; tensor payloads are never read."
+        return True, "Extract exact GGUF metadata value bytes; tensor payloads are never read."
     return True, "Extract exact JSON source bytes; tensor payloads are never read."
 
 
@@ -361,7 +387,45 @@ def full_metadata_value(inspection: Mapping[str, Any], candidate: Mapping[str, A
     return value
 
 
-def _save(parent: QWidget, title: str, default_name: str, data: bytes, file_filter: str) -> str:
+def _readable_suffix(candidate: Mapping[str, Any], text: str) -> str:
+    name = str(candidate.get("name") or "").casefold()
+    if name.endswith((".jinja", ".jinja2", ".j2")):
+        return ".jinja"
+    if name.endswith(".json"):
+        return ".json"
+    if name.endswith(".xml"):
+        return ".xml"
+    value = candidate.get("value")
+    if not isinstance(value, str):
+        return ".json"
+    try:
+        json.loads(text)
+    except (TypeError, ValueError, RecursionError):
+        pass
+    else:
+        return ".json"
+    if text.lstrip().startswith("<"):
+        try:
+            ElementTree.fromstring(text)
+        except ElementTree.ParseError:
+            pass
+        else:
+            return ".xml"
+    if any(marker in name for marker in ("chat_template", "chat.template", "template")):
+        return ".jinja"
+    if any(marker in text for marker in ("{{", "}}", "{%", "%}", "{#", "#}")):
+        return ".jinja"
+    return ".txt"
+
+
+def _save(
+    parent: QWidget,
+    title: str,
+    default_name: str,
+    data: bytes,
+    file_filter: str,
+    extra_json: bytes | None = None,
+) -> str:
     filename, _ = QFileDialog.getSaveFileName(parent, title, default_name, file_filter)
     if not filename:
         return ""
@@ -369,24 +433,30 @@ def _save(parent: QWidget, title: str, default_name: str, data: bytes, file_filt
         Path(filename).write_bytes(data)
     except OSError as error:
         return f"Could not save metadata: {error}"
-    return f"Saved {len(data):,} bytes to {filename}"
+    path = Path(filename)
+    if extra_json is None or path.suffix.lower() == ".json":
+        return f"Saved {len(data):,} bytes to {filename}"
+    sidecar = path.with_suffix(".json")
+    try:
+        sidecar.write_bytes(extra_json)
+    except OSError as error:
+        return f"Saved {len(data):,} bytes to {filename}; JSON metadata dump failed: {error}"
+    return f"Saved {len(data):,} bytes to {filename} and JSON metadata to {sidecar}"
 
 
-def perform_metadata_action(parent: QWidget, inspection: Mapping[str, Any], candidate: Mapping[str, Any], action: str) -> str:
+def perform_metadata_action(
+    parent: QWidget,
+    inspection: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    action: str,
+    *,
+    dump_json_modelinfo: bool = False,
+) -> str:
     """Run the approved UI action for metadata only; return feedback when needed."""
-    source_candidate = (
-        _source_candidate(inspection, candidate)
-        if action in {"inspect", "save"}
-        else None
-    )
     if action == "inspect":
-        display_candidate = source_candidate or dict(candidate)
-        if source_candidate is None and _is_truncated_preview(display_candidate.get("value")):
-            display_candidate["value"] = "Full metadata unavailable; cached preview was not substituted."
+        display_candidate = dict(candidate)
         dialog = QDialog(parent)
         title = str(display_candidate.get("name") or "Embedded metadata")
-        if source_candidate is None and candidate.get("raw_path") is not None:
-            title += " (cached preview; source unavailable)"
         dialog.setWindowTitle(title)
         layout = QVBoxLayout(dialog)
         detail = QTextEdit()
@@ -401,12 +471,26 @@ def perform_metadata_action(parent: QWidget, inspection: Mapping[str, Any], cand
         dialog.exec()
         return ""
     if action == "save":
+        source_candidate = _source_candidate(inspection, candidate)
         if source_candidate is None:
             return "Readable metadata source unavailable; nothing was saved."
         display_candidate = source_candidate
         text = readable_metadata(display_candidate)
-        suffix = ".txt" if isinstance(display_candidate.get("value"), str) else ".json"
-        return _save(parent, "Save readable metadata", f"embedded_metadata{suffix}", text.encode("utf-8"), "Text or JSON files (*.txt *.json);;All files (*)")
+        suffix = _readable_suffix(display_candidate, text)
+        extra_json = None
+        if dump_json_modelinfo and suffix != ".json":
+            extra_json = (
+                json.dumps(display_candidate.get("value"), ensure_ascii=False, indent=2, default=str)
+                + "\n"
+            ).encode("utf-8")
+        return _save(
+            parent,
+            "Save readable metadata",
+            f"embedded_metadata{suffix}",
+            text.encode("utf-8"),
+            "Readable files (*.txt *.jinja *.json *.xml);;All files (*)",
+            extra_json,
+        )
     try:
         raw = raw_metadata_bytes(inspection, candidate)
     except (OSError, RawMetadataUnavailable) as error:

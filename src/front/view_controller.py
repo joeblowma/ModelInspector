@@ -133,14 +133,9 @@ class ViewControllerMixin:
         QTimer.singleShot(0, clear_batch)
     def _refresh_card_layout_geometry(self):
         self.cards_layout.invalidate()
-        self.cards_container.adjustSize()
         self.cards_container.updateGeometry()
         cards_viewport = self.cards_scroll.viewport()
         assert cards_viewport is not None
-        margins = self.cards_layout.contentsMargins()
-        maximum_width = max(1, cards_viewport.width() - margins.left() - margins.right())
-        for card in self._path_to_card.values():
-            card.setMaximumWidth(maximum_width)
         cards_viewport.update()
     def _add_table_row(self, data: dict):
         """Populate a row without a live sort reordering it mid-insert.

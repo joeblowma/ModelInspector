@@ -101,7 +101,6 @@ class WindowCoreMixin:
         self._discovery_generation = 0
         self._discovery_paths: list[str] = []
         self._discovery_roots: list[str] = []
-        self._discovery_auto_analyze = False
         self._discovery_terminal: dict | None = None
         self._table_sort_restore: tuple[bool, int, Qt.SortOrder] | None = None
         self._card_rebuild_generation = 0
@@ -132,7 +131,6 @@ class WindowCoreMixin:
         self._progress_status_generation = 0
         self._allow_filename_alias_detection = False
         self._show_full_paths = False
-        self._auto_analyze_on_add = True
         self._dump_json_modelinfo = False
         self._auto_load_raw_dump = False
         self._cache_full_data_on_analyze = False
@@ -315,9 +313,6 @@ class WindowCoreMixin:
         self._allow_filename_alias_detection = (
             str(s.value("allow_filename_alias_detection", "false")).lower() == "true"
         )
-        self._auto_analyze_on_add = (
-            str(s.value("auto_analyze_on_add", "true")).lower() == "true"
-        )
         self._dump_json_modelinfo = (
             str(s.value("dump_json_modelinfo", "false")).lower() == "true"
         )
@@ -358,7 +353,6 @@ class WindowCoreMixin:
             "allow_filename_alias_detection",
             str(self._allow_filename_alias_detection).lower(),
         )
-        s.setValue("auto_analyze_on_add", str(self._auto_analyze_on_add).lower())
         s.setValue("dump_json_modelinfo", str(self._dump_json_modelinfo).lower())
         s.setValue("auto_load_raw_dump", str(self._auto_load_raw_dump).lower())
         s.setValue(
@@ -418,9 +412,7 @@ class WindowCoreMixin:
     def _update_analyze_slot(self):
         busy = bool(self._worker and self._worker.isRunning()) or self.progress.isVisible()
         self.progress.setVisible(busy)
-        self.analyze_btn.setVisible(
-            not busy and (not self._auto_analyze_on_add or self._has_unanalyzed_queue())
-        )
+        self.analyze_btn.setVisible(not busy and self._has_unanalyzed_queue())
         self.action_slot.setVisible(True)
 
     def _set_cancel_available(self, available: bool):

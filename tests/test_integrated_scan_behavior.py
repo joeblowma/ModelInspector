@@ -203,7 +203,6 @@ def test_replace_and_additive_queue_modes(tmp_path, monkeypatch):
     monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
     app = _app()
     window = gui.MainWindow()
-    window._auto_analyze_on_add = False
     try:
         window._add_mode = "replace"
         assert window._queue_files(["first", "second"]) == ["first", "second"]

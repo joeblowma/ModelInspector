@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import QApplication
 import pytest
 
 from front import selection_controller
+from front.advanced_viewer import AdvancedViewerDialog
 from gui import MainWindow
 
 
@@ -75,7 +76,7 @@ def test_card_actions_open_exact_model_while_checkbox_owns_selection(tmp_path, m
         assert window.cards_layout.alignment() & Qt.AlignmentFlag.AlignTop
         viewport = window.cards_scroll.viewport()
         assert viewport is not None
-        assert card.maximumWidth() <= viewport.width() - 16
+        assert card.width() == viewport.width() - 16
 
         second = "R:/synthetic/second.safetensors"
         second_data = _summary(second)
@@ -96,7 +97,28 @@ def test_card_actions_open_exact_model_while_checkbox_owns_selection(tmp_path, m
         window.close()
 
 
-def test_explorer_inspect_preserves_loaded_models_in_replace_mode(tmp_path, monkeypatch):
+def test_advanced_viewer_reuses_existing_dialog_for_repeat_entry(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    path = str(tmp_path / "repeat.safetensors")
+    data = _summary(path)
+    monkeypatch.setattr(AdvancedViewerDialog, "exec", lambda _dialog: 0)
+    try:
+        window._results.append(data)
+        window._show_advanced_viewer_for_path(path)
+        first = window._advanced_dialog
+        window._show_advanced_viewer_for_path(path)
+
+        assert window._advanced_dialog is first
+        assert first.explorer_tab.dump_json_modelinfo is False
+    finally:
+        window.close()
+        app.processEvents()
+
+
+def test_explorer_inspect_does_not_reanalyze_or_change_model_list(tmp_path, monkeypatch):
     monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
     monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
     app = QApplication.instance() or QApplication([])
@@ -119,16 +141,16 @@ def test_explorer_inspect_preserves_loaded_models_in_replace_mode(tmp_path, monk
 
         window._handle_explorer_inspect({"inspection": {"filepath": str(inspected)}})
 
-        assert window._queued_files == [existing, str(inspected)]
+        assert window._queued_files == [existing]
         assert [result["filepath"] for result in window._results] == [existing]
-        assert started == [([str(inspected)], False)]
+        assert started == []
     finally:
         window.close()
         app.processEvents()
 
 
 @pytest.mark.parametrize("add_mode", ("replace", "additive"))
-def test_explorer_inspect_reopens_loaded_model_without_changing_ui_state(
+def test_explorer_inspect_keeps_loaded_model_without_reentering_advanced_viewer(
     tmp_path, monkeypatch, add_mode
 ):
     monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
@@ -162,7 +184,7 @@ def test_explorer_inspect_reopens_loaded_model_without_changing_ui_state(
 
         window._handle_explorer_inspect({"inspection": {"filepath": str(first)}})
 
-        assert opened == [str(first)]
+        assert opened == []
         assert analyzed == []
         assert window._queued_files == queued_before
         assert [result["filepath"] for result in window._results] == results_before

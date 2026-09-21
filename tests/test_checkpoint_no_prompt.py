@@ -75,7 +75,7 @@ def _window(tmp_path, monkeypatch):
     monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
     _APPLICATION = cast(QApplication, QApplication.instance() or QApplication([]))
     window = gui.MainWindow()
-    window._auto_analyze_on_add = False
+    monkeypatch.setattr(window, "_analyze_all", lambda *args, **kwargs: None)
     return window
 
 

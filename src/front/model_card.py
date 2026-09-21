@@ -100,6 +100,7 @@ def card_stat_items(
 
 
 class ModelCard(QFrame):
+    CARD_HEIGHT = 168
     advanced_requested = pyqtSignal(str)
     checkbox_toggled = pyqtSignal(str, bool)
     drag_over_requested = pyqtSignal(str)
@@ -125,7 +126,8 @@ class ModelCard(QFrame):
                 border-color: %(highlight)s;
             }
         """ % self._theme_colors)
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(self.CARD_HEIGHT)
         self.setToolTip("Click to open the Advanced Viewer. Right-click for context actions.")
 
         layout = QVBoxLayout(self)
@@ -302,7 +304,6 @@ class ModelCard(QFrame):
             return
         self._filter_visible = visible
         self.setVisible(visible)
-        self.setMaximumHeight(16777215 if visible else 0)
         self.updateGeometry()
 
     def _on_checkbox_clicked(self, checked):

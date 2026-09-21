@@ -344,3 +344,79 @@ def test_broad_families_are_not_stolen_by_new_signatures() -> None:
     # Krea 2 metadata (ss_base_model_version "krea2") maps to Krea 2 rather
     # than the FLUX.1 Krea label.
     assert _detect(["model.layers.0.weight"], {"ss_base_model_version": "krea2"}) == "Krea 2"
+
+
+def test_qwen_image_21_header_layout_handles_safetensors_and_gguf_shapes() -> None:
+    keys = [
+        "img_in.weight",
+        "txt_in.in_layer.weight",
+        "txt_in.text_norm.weight",
+        "transformer_blocks.0.img_mlp.gate_up.weight",
+        "transformer_blocks.31.img_mlp.out.weight",
+    ]
+    safetensors_shapes = {
+        "img_in.weight": [4096, 64],
+        "txt_in.in_layer.weight": [4096, 4096],
+        "txt_in.text_norm.weight": [4096],
+        "transformer_blocks.0.img_mlp.gate_up.weight": [24576, 4096],
+        "transformer_blocks.31.img_mlp.out.weight": [4096, 4096],
+    }
+    gguf_shapes = dict(safetensors_shapes)
+    gguf_shapes["img_in.weight"] = [64, 4096]
+
+    for shapes in (safetensors_shapes, gguf_shapes):
+        architecture, details = detect_architecture(
+            keys, shapes, 0, {"lora": False}, {}
+        )
+        assert architecture == "Qwen Image 2.1"
+        assert details["transformer_blocks"] == 32
+
+    # Removing the version-specific text input evidence leaves the broad
+    # transformer fallback in place rather than guessing Qwen Image 2.1.
+    assert _detect(keys[:1] + keys[3:], shapes=safetensors_shapes) == "LTX"
+
+
+def test_qwen_vae_metadata_and_ltx_video_vae_shapes_stay_component_models() -> None:
+    qwen_keys = ["encoder.conv_in.weight", "decoder.conv1.weight"]
+    qwen_architecture, _ = detect_architecture(
+        qwen_keys,
+        {key: [8, 8] for key in qwen_keys},
+        0,
+        {"lora": False, "vae": True},
+        {"modelspec.architecture": "qwen_image_2.1_vae"},
+    )
+    assert qwen_architecture == "Qwen Image 2.1 VAE"
+
+    ltx_keys = [
+        "encoder.conv_in.conv.weight",
+        "decoder.conv_out.conv.weight",
+        "encoder.down_blocks.0.weight",
+        "decoder.up_blocks.0.weight",
+    ]
+    ltx_shapes = {
+        "encoder.conv_in.conv.weight": [128, 48, 3, 3, 3],
+        "decoder.conv_out.conv.weight": [48, 128, 3, 3, 3],
+        "encoder.down_blocks.0.weight": [128, 128, 3, 3, 3],
+        "decoder.up_blocks.0.weight": [128, 128, 3, 3, 3],
+    }
+    ltx_architecture, _ = detect_architecture(
+        ltx_keys, ltx_shapes, 0, {"lora": False, "vae": True}, {}
+    )
+    assert ltx_architecture == "LTX 2 Video VAE"
+
+
+def test_qwen35_prompt_enhancer_remains_an_llm() -> None:
+    keys = [
+        "blk.0.attn_q.weight",
+        "blk.31.attn_q.weight",
+        "blk.0.ssm_in.weight",
+        "token_embd.weight",
+    ]
+    metadata = {
+        "general.architecture": "qwen35",
+        "general.size_label": "9.0B",
+    }
+    architecture = _detect(keys, metadata)
+    assert architecture == "qwen35"
+    facts = build_capability_facts(keys, metadata, {}, architecture, {})
+    assert facts["domain"] == "LLM"

@@ -1,7 +1,11 @@
 # ModelInspector
 
+<img src="./assets/ss/icontag.png" width="100" alt="icon_image">
+
 ModelInspector is a Windows-friendly desktop and CLI utility for inspecting
 language and diffusion model files without loading tensor payloads.
+
+Inspect `.safetensors`, `.gguf`, `onnx` and index various other model files.
 
 Based on the original [Safetensors Model Inspector](https://github.com/MNeMoNiCuZ/SafetensorsModelInspector).
 See the [project repository](https://github.com/joeblowma/ModelInspector) and
@@ -13,7 +17,7 @@ See the [project repository](https://github.com/joeblowma/ModelInspector) and
 - The Windows release is a packaged `ModelInspector.exe` and does not require
   a separate Python installation.
 
-## Install on Windows
+## Install
 
 ### Windows release
 
@@ -39,7 +43,7 @@ after installation; they are not `python -m` module names.
 ```bat
 git clone https://github.com/joeblowma/ModelInspector.git
 cd ModelInspector
-py -3.12 -m pip install -r requirements.txt
+py -m pip install -r requirements.txt
 py src/gui.py
 py src/inspect_model.py --help
 ```
@@ -47,7 +51,7 @@ py src/inspect_model.py --help
 `py src/gui.py` starts the GUI. `py src/inspect_model.py` starts the CLI.
 Both accept the source-checkout layout without an editable install.
 
-## Supported formats and safety
+## Supported formats
 
 The normal reader set is:
 
@@ -151,6 +155,40 @@ default through `app_paths.ensure_output_dir()` and create it when needed.
 Override paths with `SMI_DATA_DIR`, `SMI_CACHE_DIR`, `SMI_MODEL_CACHE_DIR`,
 `SMI_SETTINGS_PATH`, or `SMI_OUTPUT_DIR`.
 
+### Gratuitous GUI images
+
+**Main**
+<table>
+  <tr>
+    <td><img src="./assets/ss/main1_cards.png" width="200" alt="Image r0.1"></td>
+    <td><img src="./assets/ss/main2_data.png" width="200" alt="Image r0.2"></td>
+    <td><img src="./assets/ss/main3_raw.png" width="200" alt="Image r0.3"></td>
+  </tr>
+</table>
+
+**Settings**
+
+<table>
+  <tr>
+    <td><img src="./assets/ss/set1_gen.png" width="200" alt="Image r1.1"></td>
+    <td><img src="./assets/ss/set2_data.png" width="200" alt="Image r1.2"></td>
+    <td><img src="./assets/ss/set3_themedk.png" width="200" alt="Image r1.3"></td>
+    <td><img src="./assets/ss/set3_themelt.png" width="200" alt="Image r1.4"></td>
+  </tr>
+</table>
+
+**Advanced View**
+
+<table>
+  <tr>
+    <td><img src="./assets/ss/adv1_overview.png" width="200" alt="Image r2.1"></td>
+    <td><img src="./assets/ss/adv2_card.png" width="200" alt="Image r2.2"></td>
+    <td><img src="./assets/ss/adv3_meta.png" width="200" alt="Image r2.3"></td>
+    <td><img src="./assets/ss/adv4_tensor.png" width="200" alt="Image r2.4"></td>
+    <td><img src="./assets/ss/adv5_embed.png" width="200" alt="Image r2.5"></td>
+  </tr>
+</table>
+
 ## Build and test
 
 From a checkout:
@@ -158,7 +196,6 @@ From a checkout:
 ```bat
 py -3.12 -m pip install -r requirements-dev.txt
 py -3.12 -m build --wheel
-win_compile.bat
 ```
 
 For the canonical headless test run in PowerShell:
@@ -172,20 +209,6 @@ python -m pytest tests
 `win_clean.bat` removes generated build artifacts. Packaging contracts can be
 checked with `python -m pytest tests/test_packaging.py -q`.
 
-## Validation status
-
-The final canonical run at `2026-09-21T10:57:10.5414636-06:00` passed
-**466 tests, with 4 skipped, in 172.61 seconds** (exit 0):
-`$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`.
-The run log is `R:\Temp\opencode\modelinspector-metadata-full-20260921.log`.
-The focused metadata run passed 12 tests. Real-header Qwen smokes passed in
-human-readable and JSON modes: the generic Qwen Image2.1 false positive is
-fixed by the diffusion guard; the unsupported diffusion case projects a null
-domain and empty capabilities, not an image-domain or inference-support claim.
-Qwen35 prompt enhancers remain `LLM` with `thinking`/`tools`.
-
-This does not claim all release gates are green: packaged visual QA, the
-existing strict pylint blocker, hosted Windows/build validation, tagged-release
-validation, and a full Graphify refresh remain open. Mypy is not a configured
-clean gate; the first UI pass had 187 errors without a baseline, and the
-targeted metadata pass had four import-resolution errors.
+<p align="center">
+  <img width="130" src="./assets/ss/badge.png">
+</p>

@@ -225,7 +225,8 @@ def test_krea2_weight_scale_quantized_keys() -> None:
         "double_blocks.0.img_attn.qkv.weight",
         "single_blocks.0.linear1.weight",
     ]
-    assert _detect(flux2_keys) == "Flux 2 Dev"
+    assert _detect(flux2_keys) == "Flux 2"
+    assert _detect(flux2_keys, {"modelspec.title": "Flux 2 Klein"}) == "Flux 2 Klein"
 
     # Negative: established families keep precedence even alongside generic
     # wq/wo/mlp tokens.
@@ -359,6 +360,24 @@ def test_broad_families_are_not_stolen_by_new_signatures() -> None:
     assert _detect(["model.layers.0.weight"], {"ss_base_model_version": "krea2"}) == "Krea 2"
 
 
+def test_flux_and_sdxl_variant_metadata_uses_declared_identity() -> None:
+    metadata = {
+        "modelspec.implementation": "https://github.com/black-forest-labs/flux",
+        "modelspec.date": "2024-08-01",
+        "modelspec.architecture": "Flux.1-schnell",
+        "modelspec.title": "Flux.1-schnell",
+    }
+    assert _detect([], metadata) == "Flux.1 Schnell"
+    metadata.update(
+        {"modelspec.architecture": "Flux.1-AE", "modelspec.title": "Flux.1 Autoencoder"}
+    )
+    assert _detect([], metadata) == "Flux.1 AE"
+    assert (
+        _detect([], {"modelspec.architecture": "stable-diffusion-xl-turbo-v1"})
+        == "SDXL Turbo"
+    )
+
+
 def test_qwen_image_21_header_layout_handles_safetensors_and_gguf_shapes() -> None:
     keys = [
         "img_in.weight",
@@ -421,6 +440,7 @@ def test_qwen_image_pipeline_routes_diffusion_domain_from_header_only_fixture(
     result = inspect_file(str(qwen21))
 
     assert result["architecture"] == "Qwen Image 2.1"
+    assert result["model_type"] == "Backbone"
     assert result["capability_facts"]["domain"] is None
     assert result["capability_facts"]["capabilities"] == []
 

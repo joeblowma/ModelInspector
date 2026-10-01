@@ -202,10 +202,10 @@ def _detect_from_keys(
             details["double_blocks"] = db
         if sb > 0:
             details["single_blocks"] = sb
-        meta_blob = _build_metadata_blob(metadata)["all_meta"]
-        if "klein" in meta_blob:
+        declared = _build_metadata_blob(metadata)["declared"]
+        if re.search(r"(?<![a-z0-9])klein(?![a-z0-9])", declared):
             return "Flux 2 Klein", details
-        return "Flux 2 Dev", details
+        return "Flux 2", details
 
     if "joint_blocks" in key_blob and (
         "context_block" in key_blob or "x_block" in key_blob

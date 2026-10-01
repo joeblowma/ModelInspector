@@ -53,6 +53,7 @@ from .model_classification import (
     format_params,
     format_size,
     classify_model_type,
+    has_vision_component,
 )
 from .tensor_summary import (
     DTYPE_BITS,
@@ -70,9 +71,6 @@ __all__ = [
     "inspect_file",
     "_resolve_display_path",
 ]
-
-
-from back.model_classification import has_vision_component
 
 
 def _resolve_display_path(filepath: str) -> str:
@@ -212,7 +210,7 @@ def _companion_identity_matches(cached: dict, current: dict) -> bool:
 
 def _attach_sidecars(
     result: dict,
-    filepath: str,
+    _filepath: str,
     options: dict,
     sidecars: tuple[SidecarRecord, ...],
 ) -> None:

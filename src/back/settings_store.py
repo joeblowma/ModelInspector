@@ -48,6 +48,7 @@ def _render_template(payload: str) -> str:
 
 
 class SettingsStore:
+    # pylint: disable=invalid-name
     """Small QSettings-like adapter backed by a documented JSONC file."""
 
     def __init__(

@@ -105,6 +105,8 @@ def detect_components(keys: list[str]):
             "double_blocks." in k
             or "single_blocks." in k
             or "single_transformer_blocks." in k
+            or "transformer_blocks." in k
+            or "double_stream_layers." in k
             or k.startswith("transformer.")
             or k.startswith("model.double_layers.")
             or k.startswith("model.single_layers.")

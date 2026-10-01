@@ -226,7 +226,7 @@ def is_safetensors_index_path(filepath: str | Path) -> bool:
 
 
 def aggregate_shard_headers(
-    requested_path: str,
+    _requested_path: str,
     shard_set: ShardSet,
     read_one: Callable[[str], tuple[dict, dict, int]],
 ) -> tuple[dict, dict, int]:

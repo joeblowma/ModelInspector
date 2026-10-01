@@ -7,7 +7,6 @@ public return value matches the historical reader triple.
 """
 
 import os
-from pathlib import Path
 from typing import Any, Sequence
 
 

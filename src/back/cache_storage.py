@@ -281,8 +281,22 @@ def ensure_sidecar_metadata(data: Mapping[str, Any]) -> dict[str, Any]:
             for index, path in enumerate(paths if isinstance(paths, list) else [])
         ]
         result["sidecar_identities"] = [_record_identity(item) for item in values if isinstance(item, Mapping)]
-    result.setdefault("sidecar_roles", [str(item.get("role") or item.get("sidecar_role")) for item in result["sidecar_identities"] if isinstance(item, Mapping) and (item.get("role") or item.get("sidecar_role"))])
-    result.setdefault("sidecar_paths", [str(item.get("path") or item.get("filepath")) for item in result["sidecar_identities"] if isinstance(item, Mapping) and (item.get("path") or item.get("filepath"))])
+    result.setdefault(
+        "sidecar_roles",
+        [
+            str(item.get("role") or item.get("sidecar_role"))
+            for item in result["sidecar_identities"]
+            if isinstance(item, Mapping) and (item.get("role") or item.get("sidecar_role"))
+        ],
+    )
+    result.setdefault(
+        "sidecar_paths",
+        [
+            str(item.get("path") or item.get("filepath"))
+            for item in result["sidecar_identities"]
+            if isinstance(item, Mapping) and (item.get("path") or item.get("filepath"))
+        ],
+    )
     return result
 
 

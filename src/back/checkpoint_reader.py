@@ -87,7 +87,7 @@ def _read_small_json(
     return _jsonable(value), len(raw)
 
 
-def _zip_metadata(filepath: str, file_size: int) -> dict[str, Any]:
+def _zip_metadata(filepath: str, _file_size: int) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "checkpoint.archive_type": "zip",
         "checkpoint.safety": CHECKPOINT_SAFETY_METADATA,

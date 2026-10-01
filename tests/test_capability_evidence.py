@@ -141,6 +141,19 @@ def test_qwen_image_diffusion_is_not_language_while_qwen35_stays_llm() -> None:
     assert prompt_enhancer["domain"] == "LLM"
 
 
+def test_image_transformer_config_blocks_qwen_edit_language_domain() -> None:
+    facts = build_capability_facts(
+        ["single_transformer_blocks.0.attn.add_q_proj.weight"],
+        {},
+        {"config": {"_class_name": "LongCatImageTransformer2DModel"}},
+        "Qwen Edit",
+        {"transformer": True},
+    )
+
+    assert facts["domain"] is None
+    assert facts["capabilities"] == []
+
+
 def test_false_containers_and_arbitrary_nested_data_are_not_capabilities() -> None:
     companion = {
         "config": {

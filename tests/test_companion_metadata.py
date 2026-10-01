@@ -91,6 +91,50 @@ def test_bad_and_oversized_companions_are_bounded_and_nonfatal(tmp_path: Path) -
     assert any("exceeds" in warning for warning in companion["warnings"])
 
 
+@pytest.mark.parametrize(
+    ("class_name", "keys", "architecture"),
+    [
+        (
+            "LongCatImageTransformer2DModel",
+            [
+                "single_transformer_blocks.0.attn.add_k_proj.weight",
+                "single_transformer_blocks.0.attn.add_q_proj.weight",
+            ],
+            "LongCat Image",
+        ),
+        (
+            "BooguImageTransformer2DModel",
+            [
+                "double_stream_layers.0.img_instruct_attn.weight",
+                "context_refiner.0.attn.weight",
+                "img_in.weight",
+            ],
+            "Boogu Image",
+        ),
+    ],
+)
+def test_image_transformer_class_names_resolve_diffusion_backbones(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    class_name: str,
+    keys: list[str],
+    architecture: str,
+) -> None:
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    model = tmp_path / "model.safetensors"
+    _write_safetensors(model, keys)
+    (tmp_path / "config.json").write_text(
+        json.dumps({"_class_name": class_name}), encoding="utf-8"
+    )
+
+    result = inspect_file(str(model))
+
+    assert result["architecture"] == architecture
+    assert result["model_type"] == "Backbone"
+    assert result["capability_facts"]["domain"] is None
+    assert result["capability_facts"]["capabilities"] == []
+
+
 def test_nested_multimodal_config_normalizes_text_and_vision_counts(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
     model = tmp_path / "vl.safetensors"

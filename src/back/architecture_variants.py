@@ -105,6 +105,60 @@ def _detect_vae_variant(keys, shapes):
     return None
 
 
+def _sshs_meta_from(metadata):
+    """Extract stable SS-HF metadata text from cached JSON blobs."""
+    sshs_meta = ""
+    for cpk in ("sshs_cp0", "sshs_cp1"):
+        cpv = metadata.get(cpk, "")
+        if cpv and len(cpv) > 200:
+            extracted = _extract_sshs_fields(cpv)
+            if extracted:
+                sshs_meta += " " + " ".join(extracted)
+    return sshs_meta
+
+
+def _extract_sshs_fields(cpv):
+    """Parse a cached JSON blob and pull stable SS-HF fields from it."""
+    extracted = []
+    decoded = cpv
+    for _ in range(2):
+        try:
+            parsed = json.loads(decoded)
+        except Exception:
+            break
+        if isinstance(parsed, str):
+            decoded = parsed
+            continue
+        if isinstance(parsed, dict):
+            for field in (
+                "ss_sd_model_name",
+                "ss_output_name",
+                "modelspec.title",
+                "modelspec.description",
+                "ss_base_model_version",
+            ):
+                fv = parsed.get(field)
+                if fv:
+                    extracted.append(str(fv).lower())
+            break
+
+    if not extracted:
+        cpv_l = str(cpv).lower()
+        for field in (
+            "ss_sd_model_name",
+            "ss_output_name",
+            "modelspec.title",
+            "modelspec.description",
+            "ss_base_model_version",
+        ):
+            pat = rf'(?:\\?"{re.escape(field)}\\?"\s*:\s*\\?"([^"\\]+))'
+            m = re.search(pat, cpv_l)
+            if m:
+                extracted.append(m.group(1).lower())
+
+    return extracted
+
+
 def _build_metadata_blob(metadata: dict):
     """Build normalized metadata text plus key fields for variant detection."""
     spec = metadata.get("modelspec.architecture", "").lower()
@@ -124,49 +178,7 @@ def _build_metadata_blob(metadata: dict):
         if len(v) < 200:
             all_meta += " " + v
 
-    sshs_meta = ""
-    for cpk in ("sshs_cp0", "sshs_cp1"):
-        cpv = metadata.get(cpk, "")
-        if cpv and len(cpv) > 200:
-            extracted = []
-            decoded = cpv
-            for _ in range(2):
-                try:
-                    parsed = json.loads(decoded)
-                except Exception:
-                    break
-                if isinstance(parsed, str):
-                    decoded = parsed
-                    continue
-                if isinstance(parsed, dict):
-                    for field in (
-                        "ss_sd_model_name",
-                        "ss_output_name",
-                        "modelspec.title",
-                        "modelspec.description",
-                        "ss_base_model_version",
-                    ):
-                        fv = parsed.get(field)
-                        if fv:
-                            extracted.append(str(fv).lower())
-                    break
-
-            if not extracted:
-                cpv_l = str(cpv).lower()
-                for field in (
-                    "ss_sd_model_name",
-                    "ss_output_name",
-                    "modelspec.title",
-                    "modelspec.description",
-                    "ss_base_model_version",
-                ):
-                    pat = rf'(?:\\?"{re.escape(field)}\\?"\s*:\s*\\?"([^"\\]+))'
-                    m = re.search(pat, cpv_l)
-                    if m:
-                        extracted.append(m.group(1).lower())
-
-            if extracted:
-                sshs_meta += " " + " ".join(extracted)
+    sshs_meta = _sshs_meta_from(metadata)
     all_meta += " " + sshs_meta
     # Declared model-version fields only (no free text such as descriptions
     # or sd_merge_* recipe blobs).  Used for generic family-name checks where
@@ -211,7 +223,7 @@ def _zimage_label(metadata=None, key_blob=""):
     return "Z-Image Turbo"
 
 
-def _detect_flux_variant(keys, key_blob, shapes, total_params, details):
+def _detect_flux_variant(keys, key_blob, _shapes, _total_params, details):
     """Distinguish Flux.1 Dev / Schnell / Kontext and count blocks."""
     db = _max_block_index(keys, "double_blocks.") + 1
     sb = _max_block_index(keys, "single_blocks.") + 1
@@ -248,7 +260,7 @@ def _detect_flux_variant(keys, key_blob, shapes, total_params, details):
 
 
 def _detect_sd_variant(
-    keys, key_blob, shapes, total_params, components, metadata, details
+    keys, key_blob, shapes, _total_params, components, metadata, details
 ):
     """Distinguish SD 1.5 vs SDXL (full checkpoints and LoRAs)."""
     is_sdxl = (
@@ -260,7 +272,7 @@ def _detect_sd_variant(
 
     if not is_sdxl:
         up_dims = _collect_lora_up_dims(keys, shapes)
-        if any(d == 2048 or d == 2816 for d in up_dims):
+        if any(d in (2048, 2816) for d in up_dims):
             is_sdxl = True
 
     if is_sdxl:
@@ -281,7 +293,7 @@ def _detect_sd_variant(
     return arch, details
 
 
-def _detect_sdxl_pony_ilxl(keys, metadata, details):
+def _detect_sdxl_pony_ilxl(_keys, metadata, _details):
     """Distinguish PDXL / ILXL / NAI from generic SDXL where metadata permits."""
     meta_blob = _build_metadata_blob(metadata)["all_meta"]
     if (
@@ -323,7 +335,7 @@ def _detect_zimage_variant(keys, shapes, metadata, details):
                     return _zimage_label(metadata, key_blob), details
                 if 2280 <= max_dim <= 2320:
                     return "Lumina 2", details
-                if max_dim >= 2304 and max_dim < 3840 and has_lumina_marker:
+                if 2304 <= max_dim < 3840 and has_lumina_marker:
                     return "Lumina 2", details
 
     up_dims = _collect_lora_up_dims(keys, shapes)
@@ -404,7 +416,7 @@ def _detect_wan_variant(keys, shapes, total_params, metadata, details):
     return wan_ver, details
 
 
-def _detect_from_dims(keys, shapes, total_params, metadata, details):
+def _detect_from_dims(keys, shapes, _total_params, metadata, details):
     """Last-resort dimension detection for ambiguous ``blocks.N`` models."""
     up_dims = _collect_lora_up_dims(keys, shapes)
     if not up_dims:

@@ -168,7 +168,7 @@ def get_cached_inspection(filepath: str, options: dict | None = None) -> dict | 
         cache = _load_legacy_cache(legacy_path)
         entry = cache["entries"].get(key)
     else:
-        index = _load_index()
+        _ = _load_index()
         entry = _read_entry(entry_id)
     if not entry:
         return None
@@ -468,7 +468,7 @@ def clear_inspection_cache() -> int:
         legacy_sidecars = legacy_path.with_name(legacy_path.stem + ".sidecars")
         if legacy_sidecars.exists():
             paths.append(legacy_sidecars)
-    for cache_path in {cache_dir(), model_cache_dir()}:
+    for cache_path in (cache_dir(), model_cache_dir()):
         if cache_path.exists():
             paths.append(cache_path)
 

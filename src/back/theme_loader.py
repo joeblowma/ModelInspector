@@ -65,15 +65,19 @@ class Theme:
         return "\n".join(
             (
                 "QWidget { background-color: %s; color: %s; }" % (colors["background"], colors["text"]),
-                "QLineEdit, QTextEdit, QPlainTextEdit, QComboBox { background-color: %s; border: 1px solid %s; }" % (colors["surface"], colors["border"]),
-                "QPushButton, QToolButton { background-color: %s; color: %s; border: 1px solid %s; padding: 4px 8px; }" % (colors["accent"], colors["accent_text"], colors["border"]),
+                "QLineEdit, QTextEdit, QPlainTextEdit, QComboBox { background-color: %s; border: 1px solid %s; }"
+                % (colors["surface"], colors["border"]),
+                "QPushButton, QToolButton { background-color: %s; color: %s; border: 1px solid %s; padding: 4px 8px; }"
+                % (colors["accent"], colors["accent_text"], colors["border"]),
                 "QPushButton:hover, QToolButton:hover { background-color: %s; }" % colors["surface_alt"],
-                "QPushButton:disabled, QToolButton:disabled { background-color: %s; color: %s; border-color: %s; }" % (colors["surface"], colors["muted"], colors["border"]),
+                "QPushButton:disabled, QToolButton:disabled { background-color: %s; color: %s; border-color: %s; }"
+                % (colors["surface"], colors["muted"], colors["border"]),
                 "QToolButton:pressed, QToolButton:checked { background-color: %s; }" % colors["surface_alt"],
                 "QToolButton::menu-button { background-color: %s; border-left: 1px solid %s; }" % (colors["accent"], colors["border"]),
                 "QToolButton::menu-button:hover { background-color: %s; }" % colors["surface_alt"],
                 "QToolButton::menu-indicator { padding-left: 4px; }",
-                "QToolTip { background-color: %s; color: %s; border: 1px solid %s; }" % (colors["surface"], colors["text"], colors["border"]),
+                "QToolTip { background-color: %s; color: %s; border: 1px solid %s; }"
+                % (colors["surface"], colors["text"], colors["border"]),
                 "QLabel[themeRole=highlight] { color: %s; }" % colors["highlight"],
                 "QLabel[themeRole=highlight_selected] { color: %s; }" % colors["highlight_selected"],
                 "QLabel[themeRole=stat_label] { color: %s; }" % colors["stat_label"],
@@ -348,19 +352,20 @@ def load_theme_by_id(theme_id: str, directory: str | Path | None = None) -> Them
 # Module-level theme accessor for widget construction
 # This is set by the application layer at startup and provides
 # theme colors to widgets that need them during construction.
-_global_theme_colors: dict[str, str] | None = None
+_GLOBAL_THEME_COLORS: dict[str, str] | None = None
 
 
 def set_global_theme_colors(colors: dict[str, str]) -> None:
     """Set the global theme colors for widget construction."""
-    global _global_theme_colors
-    _global_theme_colors = dict(colors)
+    # pylint: disable=global-statement
+    global _GLOBAL_THEME_COLORS
+    _GLOBAL_THEME_COLORS = dict(colors)
 
 
 def get_global_theme_colors() -> dict[str, str]:
     """Return the current global theme colors, falling back to defaults."""
-    if _global_theme_colors is not None:
-        return _global_theme_colors
+    if _GLOBAL_THEME_COLORS is not None:
+        return _GLOBAL_THEME_COLORS
     return dict(_DEFAULT_COLORS)
 
 

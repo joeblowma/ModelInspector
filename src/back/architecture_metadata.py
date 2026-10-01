@@ -113,12 +113,19 @@ def detect_architecture(
         keys, key_blob, shapes, total_params, components, metadata, details
     )
     companion_result = companion_architecture_hint(companion)
-    if companion_result and key_result[0] in {
-        "Unknown",
-        "Qwen (text encoder)",
-        "Transformer (language)",
-        "GPT-style Transformer",
-    }:
+    if companion_result and (
+        key_result[0]
+        in {
+            "Unknown",
+            "Qwen (text encoder)",
+            "Transformer (language)",
+            "GPT-style Transformer",
+        }
+        or (
+            key_result[0] == "Qwen Edit"
+            and companion_result in {"LongCat Image", "Boogu Image"}
+        )
+    ):
         details["companion_architecture"] = companion_result
         return companion_result, details
     return key_result
@@ -128,11 +135,11 @@ def _detect_from_metadata(metadata: dict):
     """Try to identify architecture purely from safetensors __metadata__."""
     meta = _build_metadata_blob(metadata)
     all_meta = meta["all_meta"]
+    declared = meta["declared"]
     sshs_meta = meta["sshs_meta"]
     gguf_arch = meta["gguf_arch"]
     ss = meta["ss"]
     spec = meta["spec"]
-    output_name = meta["output_name"]
     sd_model = meta["sd_model"]
 
     if not all_meta.strip():
@@ -175,14 +182,21 @@ def _detect_from_metadata(metadata: dict):
     # provenance and must not label a Krea 2 file "Flux Krea".
     if "krea" in meta["declared"]:
         return "Flux Krea"
-    # Flux 2 Klein: must have "klein" explicitly
-    if "klein" in all_meta:
+    # These variants must come from declared identity fields, not adjacent
+    # implementation URLs, dates, descriptions, or other metadata text.
+    if re.search(
+        r"(?<![a-z0-9])flux[._ -]?1[._ -]?(?:ae|autoencoder)(?![a-z0-9])",
+        declared,
+    ):
+        return "Flux.1 AE"
+    # Flux 2 Klein: require a declared identity, not incidental prose.
+    if re.search(r"(?<![a-z0-9])klein(?![a-z0-9])", declared):
         return "Flux 2 Klein"
-    # Flux 2: "flux2" without "klein"
-    if "flux2" in all_meta or "flux.2" in all_meta or "flux 2" in all_meta:
+    # Flux 2: require a complete version token (not e.g. "flux 2024").
+    if re.search(r"(?<![a-z0-9])flux[._ -]?2(?![a-z0-9])", declared):
         return "Flux 2"
-    if "flux" in all_meta:
-        if "schnell" in all_meta:
+    if re.search(r"(?<![a-z0-9])flux(?:[._ -]?1)?(?![a-z0-9])", declared):
+        if re.search(r"(?<![a-z0-9])schnell(?![a-z0-9])", declared):
             return "Flux.1 Schnell"
         return "Flux.1 Dev"
 
@@ -222,6 +236,11 @@ def _detect_from_metadata(metadata: dict):
         return "SD3"
 
     # SDXL variants (specific forks before generic SDXL)
+    if re.search(
+        r"(?<![a-z0-9])(?:stable[-_ ]+diffusion[-_ ]+xl|sdxl)[-_ ]+turbo(?![a-z0-9])",
+        declared,
+    ):
+        return "SDXL Turbo"
     # NAI: check sshs_meta for "illustrious" from training checkpoint name
     if "noob" in all_meta or "nai" in all_meta.split():
         return "NAI"

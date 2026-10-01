@@ -70,7 +70,18 @@ def quantization_bits(value: Any, default: float = 16.0) -> float:
     for token, bits in _GGUF_EFFECTIVE_BITS.items():
         if re.search(_QUANT_TOKEN_RE.format(re.escape(token)), text):
             return bits
-    for token, bits in (("int2", 2), ("int3", 3), ("int4", 4), ("int8", 8), ("uint8", 8), ("float32", 32), ("float16", 16), ("bf16", 16), ("fp32", 32), ("fp16", 16)):
+    for token, bits in (
+        ("int2", 2),
+        ("int3", 3),
+        ("int4", 4),
+        ("int8", 8),
+        ("uint8", 8),
+        ("float32", 32),
+        ("float16", 16),
+        ("bf16", 16),
+        ("fp32", 32),
+        ("fp16", 16),
+    ):
         if token in text:
             return float(bits)
     match = re.search(r"(?<![a-z0-9])q([2-8])(?![a-z0-9])", text)

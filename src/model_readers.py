@@ -8,6 +8,15 @@ from collections import Counter
 from pathlib import Path
 from typing import Iterable
 
+from back.checkpoint_reader import normalize_checkpoint_safety
+from back.reader_registry import get_reader_registry
+from back.shard_discovery import (
+    discover_shard_set,
+    discoverable_primary_path,
+    is_safetensors_index_path,
+)
+from back.sidecar_discovery import is_probable_sidecar_path
+
 
 SUPPORTED_MODEL_EXTENSIONS = (".safetensors", ".gguf", ".onnx")
 CHECKPOINT_MODEL_EXTENSIONS = (".ckpt", ".pt", ".pth")
@@ -146,17 +155,11 @@ def read_model_header(
         options = None
     if checkpoint_safety is None:
         checkpoint_safety = safety or (options or {}).get("checkpoint_safety", "reject")
-    from back.shard_discovery import discover_shard_set, is_safetensors_index_path
-
     if is_safetensors_index_path(filepath) and not discover_shard_set(filepath):
         raise ValueError(
             "Safetensors shard manifest is invalid or has no available in-directory shards"
         )
-    from back.checkpoint_reader import normalize_checkpoint_safety
-
     checkpoint_safety = normalize_checkpoint_safety(checkpoint_safety)
-    from back.reader_registry import get_reader_registry
-
     return get_reader_registry().read(
         filepath,
         options=options,
@@ -442,12 +445,6 @@ def iter_model_paths(
     recursive: bool,
     extensions: tuple[str, ...] = SUPPORTED_MODEL_EXTENSIONS,
 ) -> list[str]:
-    from back.shard_discovery import (
-        discoverable_primary_path,
-        is_safetensors_index_path,
-    )
-    from back.sidecar_discovery import is_probable_sidecar_path
-
     found = []
     seen = set()
     normalized_extensions = tuple(ext.lower() for ext in extensions)

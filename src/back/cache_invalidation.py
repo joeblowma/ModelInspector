@@ -3,10 +3,8 @@
 import json
 import os
 from collections.abc import Callable
-from pathlib import Path
 
 from app_paths import cache_dir
-
 
 def invalidate_raw_dump(
     filepath: str, version: int, path_match_values: Callable[[str], set[str]]

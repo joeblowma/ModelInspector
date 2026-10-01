@@ -124,7 +124,7 @@ _BUILTINS_INSTALLED = False
 
 
 def _install_builtin_readers(registry: ReaderRegistry) -> None:
-    global _BUILTINS_INSTALLED
+    global _BUILTINS_INSTALLED  # pylint: disable=global-statement
     if _BUILTINS_INSTALLED:
         return
 
@@ -174,7 +174,7 @@ def _install_builtin_readers(registry: ReaderRegistry) -> None:
 
 def get_reader_registry() -> ReaderRegistry:
     """Return the process-wide registry with built-ins installed lazily."""
-    global _DEFAULT_REGISTRY
+    global _DEFAULT_REGISTRY  # pylint: disable=global-statement
     if _DEFAULT_REGISTRY is None:
         _DEFAULT_REGISTRY = ReaderRegistry()
     _install_builtin_readers(_DEFAULT_REGISTRY)

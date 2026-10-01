@@ -58,7 +58,8 @@ _PROJECTOR_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 _DIFFUSION_MODEL_RE = re.compile(
-    r"(?:diffusion|stable[-_ ]diffusion|flux|sdxl|sd3|unet|vae|qwen[-_ ]+image)",
+    r"(?:diffusion|stable[-_ ]diffusion|flux|sdxl|sd3|unet|vae|qwen[-_ ]+image|"
+    r"longcat[-_ ]*image|boogu[-_ ]*image)",
     re.IGNORECASE,
 )
 
@@ -195,7 +196,7 @@ def _template_capability_evidence(
 def _vision_evidence(
     config: Mapping[str, Any],
     processor: Mapping[str, Any],
-    keys: list[str],
+    _keys: list[str],
     components: Mapping[str, Any],
     architecture_text: str,
     standalone_projector: bool,
@@ -267,6 +268,7 @@ def build_capability_facts(
             str(architecture or ""),
             str(metadata.get("general.architecture") or ""),
             str(config.get("model_type") or ""),
+            str(config.get("_class_name") or ""),
         ]
     )
     values = list(_walk_values(config, "config.json"))
@@ -288,7 +290,12 @@ def build_capability_facts(
 
     language_evidence: list[str] = []
     text_config = config.get("text_config")
-    if not standalone_projector and not diffusion_checkpoint and isinstance(text_config, Mapping) and _first_positive(text_config, _LAYER_KEYS):
+    if (
+        not standalone_projector
+        and not diffusion_checkpoint
+        and isinstance(text_config, Mapping)
+        and _first_positive(text_config, _LAYER_KEYS)
+    ):
         language_evidence.append("config.json:text_config")
     if (
         not standalone_projector

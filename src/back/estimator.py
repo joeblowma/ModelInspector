@@ -260,7 +260,10 @@ def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
     else:
         vision = bool(re.search(r"vision|image|multimodal|vl|clip|vit", combined))
         multimodal = vision and ("multimodal" in combined or "vl" in architecture_text or bool(components.get("vision")))
-        llm = not diffusion and ("llm" in model_type_text or bool(re.search(r"llama|qwen|mistral|gemma|gpt|transformer|language|decoder", combined)))
+        llm = not diffusion and (
+            "llm" in model_type_text
+            or bool(re.search(r"llama|qwen|mistral|gemma|gpt|transformer|language|decoder", combined))
+        )
         domains = [
             name
             for name, present in (("LLM", llm), ("Multimodal", multimodal), ("Diffusion", diffusion), ("LoRA", lora))

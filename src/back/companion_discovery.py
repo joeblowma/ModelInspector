@@ -293,7 +293,12 @@ def discover_companion_metadata(filepath: str | Path) -> dict[str, Any]:
                 )
     for name, parsed in json_values.items():
         if name in {"tokenizer_config.json", "config.json"}:
-            templates.extend(_template_strings(parsed.get("chat_template") if isinstance(parsed, Mapping) else None, f"{name}:chat_template"))
+            templates.extend(
+                _template_strings(
+                    parsed.get("chat_template") if isinstance(parsed, Mapping) else None,
+                    f"{name}:chat_template",
+                )
+            )
     if templates:
         result["chat_templates"] = [
             {"source": source, "text": text} for source, text in templates
@@ -413,6 +418,12 @@ def companion_architecture_hint(companion: Mapping[str, Any] | None) -> str | No
         text = str(candidate).strip()
         if text and len(text) <= 200 and not text.lower().startswith(("auto", "pretrained")):
             return text
+
+    class_name = str(config.get("_class_name") or "").strip().casefold()
+    if class_name == "longcatimagetransformer2dmodel":
+        return "LongCat Image"
+    if class_name == "booguimagetransformer2dmodel":
+        return "Boogu Image"
 
     model_type = str(config.get("model_type") or "").strip().lower()
     if not model_type and isinstance(text_config, Mapping):

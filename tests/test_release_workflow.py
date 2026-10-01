@@ -35,8 +35,13 @@ def _wheel(path: Path, filename_version: str, metadata_version: str) -> Path:
 def test_build_artifacts_are_revision_named_and_reusable() -> None:
     assert "workflow_call:" in BUILD
     assert 'branches-ignore:\n      - "v*"' in BUILD
-    assert "modelinspector-wheel-${{ matrix.os }}-${{ matrix.python-version }}-${{ github.sha }}" in BUILD
-    assert "modelinspector-windows-${{ github.sha }}" in BUILD
+    assert "benjlevesque/short-sha" not in BUILD + RELEASE
+    assert BUILD.count('$env:GITHUB_SHA.Substring(0, 7)') == 2
+    assert RELEASE.count('$env:GITHUB_SHA.Substring(0, 7)') == 1
+    assert BUILD.count("id: short-sha") == 2
+    assert "id: short-sha" in RELEASE
+    assert "modelinspector-wheel-${{ matrix.os }}-${{ matrix.python-version }}-${{ steps.short-sha.outputs.sha }}" in BUILD
+    assert "modelinspector-windows-${{ steps.short-sha.outputs.sha }}" in BUILD
     assert BUILD.count("if-no-files-found: error") >= 2
 
 
@@ -57,7 +62,7 @@ def test_release_staging_preserves_standard_wheel_and_validates_tag_version() ->
     assert "modelinspector_{version}-win-x86_64.zip" in SCRIPT
     assert "wheel_version(wheel) != version" in SCRIPT
     assert "merge-multiple: true" not in RELEASE
-    assert "modelinspector-wheel-ubuntu-latest-3.12-${{ github.sha }}" in RELEASE
+    assert "modelinspector-wheel-ubuntu-latest-3.12-${{ steps.short-sha.outputs.sha }}" in RELEASE
 
 
 def test_release_staging_rejects_wheel_filename_metadata_version_mismatch(tmp_path: Path) -> None:

@@ -28,12 +28,22 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from .explorer_data import bucket_label, detect_embedded_content, display_count, flatten_metadata, friendly_bytes, natural_name_key, normalize_tensor_descriptors, safe_display
+from .explorer_data import (
+    bucket_label,
+    detect_embedded_content,
+    display_count,
+    flatten_metadata,
+    friendly_bytes,
+    natural_name_key,
+    normalize_tensor_descriptors,
+    safe_display,
+)
 from .explorer_metadata import _inspect_text, perform_metadata_action, raw_metadata_status
 from .tensor_root_summary import TensorRootSummary
 __all__ = ["ExplorerTab", "TENSOR_COLUMNS", "normalize_tensor_descriptors", "detect_embedded_content"]
 TENSOR_COLUMNS = ("Name", "Shape", "Dtype", "Bucket", "Shard", "Size", "Parameters")
 class _TensorProxy(QSortFilterProxyModel):
+    # pylint: disable=invalid-name
     """Proxy that combines free-text filtering, bucket filtering, and sorting."""
 
     def __init__(self, parent: QWidget | None = None):
@@ -120,11 +130,11 @@ class ExplorerTab(QWidget):
         vertical_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.metadata_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.metadata_table.itemSelectionChanged.connect(self._metadata_selection_changed)
-        self.metadata_table.setToolTip("Read-only compact metadata rows. Select a row for the stored bounded preview.")
+        self.metadata_table.setToolTip("Metadata keys with bounded value previews; select a row to inspect decoded metadata text.")
         metadata_layout.addWidget(self.metadata_table)
         self.metadata_detail = QTextEdit()
         self.metadata_detail.setReadOnly(True)
-        self.metadata_detail.setPlaceholderText("Select a metadata row to view its stored bounded preview.")
+        self.metadata_detail.setPlaceholderText("Select a metadata row to inspect its decoded value; compact cached values may be incomplete.")
         metadata_layout.addWidget(self.metadata_detail, 1)
         metadata_page_layout.addWidget(metadata_group)
 
@@ -238,7 +248,13 @@ class ExplorerTab(QWidget):
         self.work_area.setVisible(False)
         return pages
 
-    def set_inspection(self, inspection: Mapping[str, Any] | None, tensor_data: Any = None, *, payload_available: bool | None = None) -> None:
+    def set_inspection(
+        self,
+        inspection: Mapping[str, Any] | None,
+        tensor_data: Any = None,
+        *,
+        payload_available: bool | None = None,
+    ) -> None:
         """Display an inspection result and optional header tensor descriptors."""
         self._loading = False
         self._inspection = dict(inspection or {})
@@ -296,7 +312,11 @@ class ExplorerTab(QWidget):
         sorted_positions = self._order_positions(sorted_tensor_order)
         shard_positions: dict[int, int] = {}
         for index, record in enumerate(self._all_records):
-            record["original_index"] = record["original_index"] if record["original_index"] is not None else original_positions.get(record["name"], index)
+            record["original_index"] = (
+                record["original_index"]
+                if record["original_index"] is not None
+                else original_positions.get(record["name"], index)
+            )
             record["sorted_index"] = sorted_positions.get(record["name"], index)
             record["source_index"] = index
             record["shard_source_index"] = shard_positions.setdefault(int(record["shard_id"]), len(shard_positions))
@@ -321,7 +341,14 @@ class ExplorerTab(QWidget):
     def _render_tensors(self, *_args: Any) -> None:
         original_mode = self.tensor_order_combo.currentData() == "original"
         if original_mode:
-            self._records = sorted(self._all_records, key=lambda row: (int(row["shard_source_index"]), int(row["original_index"]), int(row["source_index"])))
+            self._records = sorted(
+                self._all_records,
+                key=lambda row: (
+                    int(row["shard_source_index"]),
+                    int(row["original_index"]),
+                    int(row["source_index"]),
+                ),
+            )
         else:
             self._records = sorted(self._all_records, key=lambda row: (int(row["sorted_index"]), natural_name_key(row["name"])))
         self.tensor_table.setSortingEnabled(not original_mode)
@@ -338,12 +365,24 @@ class ExplorerTab(QWidget):
             )
             items = [QStandardItem(str(value)) for value in values]
             for index, item in enumerate(items):
-                sort_value = record["parameter_count"] if index == 6 else record["n_bytes"] if index == 5 else record["shard_id"] if index == 4 else values[index]
+                sort_value = (
+                    record["parameter_count"]
+                    if index == 6
+                    else record["n_bytes"]
+                    if index == 5
+                    else record["shard_id"]
+                    if index == 4
+                    else values[index]
+                )
                 item.setData(sort_value, Qt.ItemDataRole.UserRole)
                 item.setData(record["shard_id"], Qt.ItemDataRole.UserRole + 1)
                 item.setData(record["component_bucket"], Qt.ItemDataRole.UserRole + 2)
                 raw_bytes = record["n_bytes"]
-                size_detail = "Raw bytes: unavailable" if raw_bytes is None else f"Raw bytes: {raw_bytes:,} bytes; display: {friendly_bytes(raw_bytes)}"
+                size_detail = (
+                    "Raw bytes: unavailable"
+                    if raw_bytes is None
+                    else f"Raw bytes: {raw_bytes:,} bytes; display: {friendly_bytes(raw_bytes)}"
+                )
                 item.setToolTip(f"{size_detail}. Header-derived value; payload is not loaded.")
                 if original_mode:
                     item.setBackground(QColor("#25303b") if record["shard_id"] % 2 else QColor("#202a34"))
@@ -381,7 +420,8 @@ class ExplorerTab(QWidget):
         for row_index, row in enumerate(self._metadata_rows):
             for column, key in enumerate(("key", "value")):
                 item = QTableWidgetItem(str(row[key]))
-                item.setData(Qt.ItemDataRole.UserRole, row); item.setToolTip("Stored bounded metadata preview; no full source value is loaded.")
+                item.setData(Qt.ItemDataRole.UserRole, row)
+                item.setToolTip("Bounded table preview; select the row to inspect decoded metadata text.")
                 self.metadata_table.setItem(row_index, column, item)
         self.metadata_table.setSortingEnabled(True)
         self._filter_metadata(self.metadata_search.text())
@@ -427,7 +467,8 @@ class ExplorerTab(QWidget):
         for row, candidate in enumerate(self._embedded_candidates):
             for column, key in enumerate(("kind", "name", "summary")):
                 item = QTableWidgetItem(str(candidate.get(key, "")))
-                item.setData(Qt.ItemDataRole.UserRole, candidate); item.setToolTip("Detected from headers or metadata; selecting it does not read payloads.")
+                item.setData(Qt.ItemDataRole.UserRole, candidate)
+                item.setToolTip("Detected from headers or metadata; selecting it does not read payloads.")
                 self.embedded_table.setItem(row, column, item)
         enabled = bool(self._embedded_candidates)
         self.inspect_button.setEnabled(enabled)
@@ -493,8 +534,8 @@ class ExplorerTab(QWidget):
 
             theme_colors = get_global_theme_colors()
         self.status_label.setStyleSheet(
-            "color: %(muted)s; font-size: 11px;" % dict(theme_colors)
+            f"color: {theme_colors['muted']}; font-size: 11px;"
         )
         self.tensor_detail.setStyleSheet(
-            "background-color: %(background)s; color: %(text)s;" % dict(theme_colors)
+            f"background-color: {theme_colors['background']}; color: {theme_colors['text']};"
         )

@@ -37,11 +37,11 @@ __all__ = ["build_advanced_viewer_ui"]
 
 
 def _muted_style(colors: dict[str, str]) -> str:
-    return "color: %(muted)s; font-size: 11px;" % colors
+    return f"color: {colors['muted']}; font-size: 11px;"
 
 
 def _value_style(colors: dict[str, str]) -> str:
-    return "color: %(text)s; font-size: 13px; font-weight: bold;" % colors
+    return f"color: {colors['text']}; font-size: 13px; font-weight: bold;"
 
 
 def _disable_tab_scroll_buttons(work_area: Any) -> None:
@@ -52,6 +52,7 @@ def _disable_tab_scroll_buttons(work_area: Any) -> None:
 
 def build_advanced_viewer_ui(dialog: Any) -> None:
     """Build and connect all widgets owned by an advanced viewer dialog."""
+    # pylint: disable=protected-access
     root = QVBoxLayout(dialog)
     root.setContentsMargins(14, 14, 14, 14)
     root.setSpacing(10)
@@ -179,7 +180,9 @@ def build_advanced_viewer_ui(dialog: Any) -> None:
     dialog.weight_bits_spin.setDecimals(2)
     dialog.weight_bits_spin.setSingleStep(0.10)
     dialog.weight_bits_spin.setSuffix(" bits")
-    dialog.weight_bits_spin.setToolTip("Effective resident weight precision. Auto uses inspected tensor bytes when complete; presets or edits override it.")
+    dialog.weight_bits_spin.setToolTip(
+        "Effective resident weight precision. Auto uses inspected tensor bytes when complete; presets or edits override it."
+    )
     projection_form.addRow("Weight bits", dialog.weight_bits_spin)
 
     dialog.batch_spin = QSpinBox()
@@ -198,11 +201,18 @@ def build_advanced_viewer_ui(dialog: Any) -> None:
     result_grid = QGridLayout()
     result_grid.setHorizontalSpacing(14)
     result_grid.setVerticalSpacing(6)
-    for index, (key, title) in enumerate((("weight", "Weights"), ("kv_cache", "KV cache"), ("vram", "Estimated VRAM"), ("ram", "Estimated RAM"))):
+    for index, (key, title) in enumerate(
+        (
+            ("weight", "Weights"),
+            ("kv_cache", "KV cache"),
+            ("vram", "Estimated VRAM"),
+            ("ram", "Estimated RAM"),
+        )
+    ):
         label = QLabel(title)
         label.setStyleSheet(_muted_style(colors))
         value = QLabel("Unknown")
-        value.setStyleSheet("color: %(accent_display)s; font-size: 13px; font-weight: bold;" % colors)
+        value.setStyleSheet(f"color: {colors['accent_display']}; font-size: 13px; font-weight: bold;")
         value.setToolTip(f"Estimator result for {title.lower()}.")
         row, column = divmod(index, 2)
         result_grid.addWidget(label, row, column * 2)
@@ -216,7 +226,7 @@ def build_advanced_viewer_ui(dialog: Any) -> None:
     dialog.assumptions_label = QLabel()
     dialog.assumptions_label.setWordWrap(True)
     dialog.assumptions_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-    dialog.assumptions_label.setStyleSheet("color: %(warning)s; font-size: 11px;" % colors)
+    dialog.assumptions_label.setStyleSheet(f"color: {colors['warning']}; font-size: 11px;")
     dialog.assumptions_label.setToolTip("Estimator assumptions used when inspected metadata is incomplete.")
     projection_form.addRow("Assumptions", dialog.assumptions_label)
     overview_layout.addWidget(projection)

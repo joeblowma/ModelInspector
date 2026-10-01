@@ -33,6 +33,7 @@ from front.settings_data_support import (
 
 
 class SettingsDataTab(QWidget):
+    # pylint: disable=invalid-name
     """Edit Data-column visibility, ordering, and widths.
 
     Parameters
@@ -352,7 +353,7 @@ class SettingsDataTab(QWidget):
         """Replace Qt-owned cell controls after a row move or configuration load."""
         selected_key = self._selected_key()
         if not widgets_detached:
-            self.column_tree._detach_item_widgets()
+            self.column_tree._detach_item_widgets()  # pylint: disable=protected-access
         self._checks.clear()
         self._widths.clear()
         self._rows.clear()
@@ -405,7 +406,7 @@ class SettingsDataTab(QWidget):
         selected_key = self._selected_key()
         self._updating = True
         try:
-            self.column_tree._detach_item_widgets()
+            self.column_tree._detach_item_widgets()  # pylint: disable=protected-access
             self._reorder_keys(ordered)
             for key, column in self._columns_by_key.items():
                 entry = by_key.get(key, {})
@@ -456,7 +457,7 @@ class SettingsDataTab(QWidget):
             previous_updating = self._updating
             self._updating = True
             try:
-                self.column_tree._detach_item_widgets()
+                self.column_tree._detach_item_widgets()  # pylint: disable=protected-access
                 self._reorder_keys(keys)
                 self._rebuild_row_controls(widgets_detached=True)
             finally:
@@ -471,7 +472,7 @@ class SettingsDataTab(QWidget):
         selected_key = self._selected_key()
         self._updating = True
         try:
-            self.column_tree._detach_item_widgets()
+            self.column_tree._detach_item_widgets()  # pylint: disable=protected-access
             self.column_tree.clear()
             self._rows.clear()
             self._checks.clear()

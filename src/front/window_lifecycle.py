@@ -1,5 +1,6 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false
 # pylint: disable=no-member
+"""Window construction, lifecycle, and startup sequencing."""
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
@@ -15,6 +16,7 @@ def _combo_data_str(value) -> str | None:
 
 
 class WindowLifecycleMixin:
+    # pylint: disable=invalid-name
     """Window shutdown and raw-view lifecycle helpers."""
 
     _card_rebuild_generation: int

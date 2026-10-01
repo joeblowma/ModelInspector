@@ -10,8 +10,6 @@ overwritten.
 """
 
 from __future__ import annotations
-
-import os
 from pathlib import Path
 from typing import cast
 
@@ -41,7 +39,7 @@ class FileOperationControllerMixin:
                 return True
         return False
 
-    def _begin_file_operation(self, title: str, label: str, total: int) -> bool:
+    def _begin_file_operation(self, title: str, label: str, _total: int) -> bool:
         if self._file_operation_running():
             return False
         # Indeterminate range (0, 0): per-file work is opaque, so a determinate

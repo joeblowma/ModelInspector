@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 # Set before Qt is imported so packaged Windows launches stay quiet.
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
+# pylint: disable=C0413  # QT_LOGGING_RULES must be set before Qt is imported
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import QApplication, QSplashScreen, QMessageBox, QWidget
@@ -21,6 +22,7 @@ from app_paths import asset_path
 from back.theme_loader import BUILTIN_THEME, Theme, ThemeLoadResult, load_theme
 from front.help_window import show_help_window
 from front.startup_arguments import format_help, help_requested, parse_startup_arguments
+# pylint: enable=C0413
 
 try:
     import pyi_splash  # type: ignore[import-not-found]
@@ -235,7 +237,7 @@ def configure_application(application: QApplication) -> None:
         )
     except (ImportError, AttributeError, OSError, TypeError, ValueError):
         selected = "default"
-    theme_id, diagnostics = apply_theme(application, selected, notify=False)
+    _theme_id, diagnostics = apply_theme(application, selected, notify=False)
     application.setWindowIcon(QIcon(str(asset_path("icon.ico"))))
     if diagnostics and selected.lower() not in {"default", "builtin"}:
         # The persisted theme failed to load; the safe default is already
@@ -300,7 +302,7 @@ def _stdout_unavailable() -> bool:
 
 def _run_frozen_help() -> int:
     """Show ``--help`` in a window when there is no console to print to."""
-    application = QApplication.instance() or QApplication(sys.argv)
+    _application = QApplication.instance() or QApplication(sys.argv)
     close_startup_splash()
     show_help_window(format_help())
     return 0
@@ -350,12 +352,12 @@ def _queue_startup_targets(window: MainWindow, targets: list[str]) -> None:
         if path.is_dir():
             _queue_when_window_ready(
                 window,
-                lambda p=str(path): window._start_discovery([p]),
+                lambda p=str(path): window._start_discovery([p]),  # pylint: disable=protected-access
             )
         elif is_supported_model_path(str(path)) or is_checkpoint_model_path(str(path)):
             _queue_when_window_ready(
                 window,
-                lambda p=str(path): window._add_files([p]),
+                lambda p=str(path): window._add_files([p]),  # pylint: disable=protected-access
             )
         else:
             QMessageBox.warning(

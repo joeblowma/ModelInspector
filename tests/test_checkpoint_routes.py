@@ -154,25 +154,29 @@ def test_reporting_and_modelinfo_forward_explicit_header_policy(monkeypatch) -> 
     assert header_seen == [options]
 
 
-def test_advanced_header_loader_uses_metadata_only_checkpoint_policy(monkeypatch) -> None:
+def test_advanced_header_loader_uses_metadata_only_checkpoint_policy(tmp_path, monkeypatch) -> None:
+    checkpoint = tmp_path / "model.pt"
+    checkpoint.write_bytes(b"\x80\x04never deserialize this")
     options_seen = []
-    monkeypatch.setattr(
-        metadata_ui,
-        "get_cached_model_data",
-        lambda _filepath, options=None: options_seen.append(options) or None,
-    )
-    monkeypatch.setattr(
-        metadata_ui,
-        "read_model_header",
-        lambda _filepath, options=None: options_seen.append(options) or ({}, {}, 0),
-    )
+    read_model_header = metadata_ui.read_model_header
 
-    metadata_ui.load_header_only("model.pt")
+    def record_header_policy(filepath, options=None):
+        options_seen.append(options)
+        return read_model_header(filepath, options=options)
 
-    assert options_seen == [
-        {"checkpoint_safety": CHECKPOINT_SAFETY_METADATA},
-        {"checkpoint_safety": CHECKPOINT_SAFETY_METADATA},
-    ]
+    def unexpected_cache_read(*_args, **_kwargs):
+        raise AssertionError("an existing checkpoint must be read from its live header")
+
+    monkeypatch.setattr(metadata_ui, "read_model_header", record_header_policy)
+    monkeypatch.setattr(metadata_ui, "get_cached_model_data", unexpected_cache_read)
+
+    payload = metadata_ui.load_header_only(str(checkpoint))
+
+    assert options_seen == [{"checkpoint_safety": CHECKPOINT_SAFETY_METADATA}]
+    assert payload["metadata"]["checkpoint.safety"] == CHECKPOINT_SAFETY_METADATA
+    assert payload["metadata"]["checkpoint.signature"] == "pickle"
+    assert payload["tensor_info"] == {}
+    assert payload["header_metadata_complete"] is True
 
 
 def test_modelinfo_api_default_still_rejects_raw_pickle_checkpoint(tmp_path: Path) -> None:

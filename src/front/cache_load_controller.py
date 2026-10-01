@@ -156,6 +156,7 @@ class CacheLoadControllerMixin:
             return
         self._cache_load_worker = None
         self._restore_table_sorting()
+        self._apply_arch_filter()
         outcome = worker.outcome
         if outcome.was_cancelled:
             message = "Cache loading cancelled; partial summaries remain visible"

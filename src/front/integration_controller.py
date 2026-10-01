@@ -27,7 +27,7 @@ def _run_deferred_settings_rebuild(window_ref, generation: int, apply_layout: bo
     """Run a queued rebuild only while its Python window wrapper is alive."""
     window = window_ref()
     if window is not None:
-        window._run_settings_rebuild(generation, apply_layout)
+        window._run_settings_rebuild(generation, apply_layout)  # pylint: disable=protected-access
 
 
 class IntegrationMixin(CacheLoadControllerMixin):
@@ -222,10 +222,10 @@ class IntegrationMixin(CacheLoadControllerMixin):
         for name in ("progress_label", "selected_count_label", "table_selected_count_label"):
             label = getattr(self, name, None)
             if label is not None:
-                label.setStyleSheet("color: %(muted)s; font-size: 11px;" % tc)
+                label.setStyleSheet(f"color: {tc['muted']}; font-size: 11px;")
         placeholder = getattr(self, "cards_placeholder", None)
         if placeholder is not None:
-            placeholder.setStyleSheet("color: %(surface_alt)s; font-size: 14px; padding: 60px;" % tc)
+            placeholder.setStyleSheet(f"color: {tc['surface_alt']}; font-size: 14px; padding: 60px;")
         settings_dialog = getattr(self, "_settings_dialog", None)
         if settings_dialog is not None:
             try:
@@ -236,7 +236,7 @@ class IntegrationMixin(CacheLoadControllerMixin):
         for cards in ("_path_to_card", "_path_to_simple_card"):
             for card in getattr(self, cards, {}).values():
                 try:
-                    card._refresh_style()
+                    card._refresh_style()  # pylint: disable=protected-access
                 except RuntimeError:
                     pass
         # Refresh embedded Explorer stylesheets.

@@ -107,7 +107,10 @@ class ThemeTab(QWidget):
         root.addWidget(selection_group)
 
         colors_group = QGroupBox("Theme colors")
-        colors_group.setToolTip("Edit every required theme color as #RRGGBB or #RRGGBBAA. Invalid edits are previewed nowhere and are never saved.")
+        colors_group.setToolTip(
+            "Edit every required theme color as #RRGGBB or #RRGGBBAA. "
+            "Invalid edits are previewed nowhere and are never saved."
+        )
         colors_group_layout = QVBoxLayout(colors_group)
         colors_group_layout.setContentsMargins(8, 8, 8, 8)
         scroll = QScrollArea()
@@ -357,14 +360,14 @@ class ThemeTab(QWidget):
             " QLabel#themePreviewText { color: %(text)s; }"
             " QLabel#themePreviewStatus { color: %(muted)s; }" % colors
         )
-        self.preview_title.setStyleSheet("color: %s; font-weight: bold;" % colors["accent"])
-        self.preview_text.setStyleSheet("color: %s;" % colors["text"])
+        self.preview_title.setStyleSheet(f"color: {colors['accent']}; font-weight: bold;")
+        self.preview_text.setStyleSheet(f"color: {colors['text']};")
         self.preview_status.setText(
-            "<span style='color:%s'>Success</span>  " % colors["success"]
-            + "<span style='color:%s'>Warning</span>  " % colors["warning"]
-            + "<span style='color:%s'>Error</span>" % colors["error"]
+            f"<span style='color:{colors['success']}>Success</span>  "
+            + f"<span style='color:{colors['warning']}>Warning</span>  "
+            + f"<span style='color:{colors['error']}>Error</span>"
         )
-        self.preview_status.setStyleSheet("background-color: %s;" % colors["surface_alt"])
+        self.preview_status.setStyleSheet(f"background-color: {colors['surface_alt']};")
 
     # -------------------------------------------------------------- actions
     def current_theme_id(self) -> str:
@@ -438,7 +441,14 @@ class ThemeTab(QWidget):
         return self._persist_theme(candidate)
 
     def _persist_theme(self, theme: Theme) -> bool:
-        valid, errors = validate_theme({"id": theme.id, "name": theme.name, "colors": dict(theme.colors), "variables": dict(theme.variables)})
+        valid, errors = validate_theme(
+            {
+                "id": theme.id,
+                "name": theme.name,
+                "colors": dict(theme.colors),
+                "variables": dict(theme.variables),
+            }
+        )
         if not valid:
             self._report("Theme was not saved: " + "; ".join(errors))
             return False

@@ -9,6 +9,8 @@ import struct
 import sys
 import time
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -218,3 +220,179 @@ def test_tensor_tab_loads_header_only_descriptors_from_compact_summary(tmp_path:
     assert dialog.explorer_tab.tensor_model.item(0, 0).text() == "model.embed_tokens.weight"
     assert "payload is not loaded" in dialog.explorer_tab.tensor_model.item(0, 0).toolTip()
     dialog.close()
+
+
+@pytest.mark.parametrize("suffix", (".safetensors", ".gguf"))
+def test_metadata_tab_prefers_full_live_header_over_compact_summary(
+    tmp_path: Path, monkeypatch, suffix: str
+) -> None:
+    _app()
+    raw_value = "live-header-value-" + "x" * 1400 + "full-value-tail"
+    live_metadata = {
+        "header.only": f"raw-{suffix}-key",
+        "shared": f"live-{suffix}-value",
+        "long": raw_value,
+    }
+    tokens = [f"token-{index}" for index in range(60)]
+    model = tmp_path / f"live{suffix}"
+    header_size = None
+    if suffix == ".safetensors":
+        header = json.dumps(
+            {
+                "__metadata__": live_metadata,
+                "live.tensor": {
+                    "dtype": "F16",
+                    "shape": [2],
+                    "data_offsets": [0, 4],
+                },
+            }
+        ).encode("utf-8")
+        header_size = len(header)
+        model.write_bytes(struct.pack("<Q", header_size) + header + b"TENSOR_PAYLOAD_MUST_NOT_BE_READ")
+
+        import model_readers
+
+        real_open = open
+        payload_reads: list[int] = []
+
+        class TrackedFile:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+
+            def read(self, size: int = -1):
+                offset = self.stream.tell()
+                value = self.stream.read(size)
+                if offset + len(value) > 8 + header_size:
+                    payload_reads.append(offset)
+                return value
+
+        def tracked_open(path, *args, **kwargs):
+            stream = real_open(path, *args, **kwargs)
+            return TrackedFile(stream) if Path(path) == model else stream
+
+        real_path_open = Path.open
+
+        def tracked_path_open(path, *args, **kwargs):
+            stream = real_path_open(path, *args, **kwargs)
+            return TrackedFile(stream) if path == model else stream
+
+        monkeypatch.setattr(model_readers, "open", tracked_open, raising=False)
+        monkeypatch.setattr(Path, "open", tracked_path_open)
+    else:
+        def gguf_string(value: str) -> bytes:
+            encoded = value.encode("utf-8")
+            return struct.pack("<Q", len(encoded)) + encoded
+
+        gguf_metadata = live_metadata | {"tokenizer.tokens": tokens}
+        header = bytearray(b"GGUF" + struct.pack("<IQQ", 3, 0, len(gguf_metadata)))
+        for key, value in gguf_metadata.items():
+            header.extend(gguf_string(key))
+            if isinstance(value, list):
+                header.extend(struct.pack("<I", 9))
+                header.extend(struct.pack("<IQ", 8, len(value)))
+                for token in value:
+                    header.extend(gguf_string(token))
+            else:
+                header.extend(struct.pack("<I", 8))
+                header.extend(gguf_string(value))
+        model.write_bytes(header)
+
+    summary = {
+        "filepath": str(model),
+        "metadata": {
+            "header.only": "compact-summary-preview",
+            "shared": "compact-summary-value",
+            "summary.only": "not raw header data",
+        },
+        "tensor_info": {"cached.tensor": {"dtype": "F32", "shape": [9]}},
+    }
+    dialog = AdvancedViewerDialog(summary)
+    try:
+        metadata_index = dialog.work_area.indexOf(dialog.explorer_tab.metadata_page)
+        dialog.work_area.setCurrentIndex(metadata_index)
+        deadline = time.monotonic() + 4
+        while (
+            dialog._inspection.get("header_metadata_complete") is not True
+            and time.monotonic() < deadline
+        ):
+            _app().processEvents()
+            time.sleep(0.01)
+
+        assert dialog._inspection["metadata"]["header.only"] == f"raw-{suffix}-key"
+        assert dialog._inspection["metadata"]["shared"] == f"live-{suffix}-value"
+        assert "summary.only" not in dialog._inspection["metadata"]
+        assert list(dialog._inspection["tensor_info"]) == (["live.tensor"] if suffix == ".safetensors" else [])
+        assert dialog.work_area.tabText(metadata_index) == "Metadata"
+        displayed_keys = {
+            dialog.explorer_tab.metadata_table.item(index, 0).text()
+            for index in range(dialog.explorer_tab.metadata_table.rowCount())
+        }
+        assert {"header.only", "shared", "long"} <= displayed_keys
+        if suffix == ".safetensors":
+            assert payload_reads == []
+
+        row = next(
+            index
+            for index in range(dialog.explorer_tab.metadata_table.rowCount())
+            if dialog.explorer_tab.metadata_table.item(index, 0).text() == "long"
+        )
+        assert "full-value-tail" not in dialog.explorer_tab.metadata_table.item(row, 1).text()
+        dialog.explorer_tab.metadata_table.selectRow(row)
+        assert "full-value-tail" in dialog.explorer_tab.metadata_detail.toPlainText()
+        if suffix == ".safetensors":
+            assert payload_reads == []
+        else:
+            token_row = next(
+                index
+                for index in range(dialog.explorer_tab.metadata_table.rowCount())
+                if dialog.explorer_tab.metadata_table.item(index, 0).text() == "tokenizer.tokens"
+            )
+            assert "token-59" not in dialog.explorer_tab.metadata_table.item(token_row, 1).text()
+            dialog.explorer_tab.metadata_table.selectRow(token_row)
+            assert "token-59" in dialog.explorer_tab.metadata_detail.toPlainText()
+    finally:
+        dialog.close()
+
+
+def test_missing_model_cached_metadata_is_labeled_incomplete(tmp_path: Path, monkeypatch) -> None:
+    _app()
+    missing = tmp_path / "missing.safetensors"
+    cached = {
+        "metadata": {"cached.only": "cached summary"},
+        "tensor_info": {"cached.tensor": {"dtype": "F16", "shape": [1]}},
+    }
+    monkeypatch.setattr(metadata_ui, "get_cached_model_data", lambda *_args, **_kwargs: cached)
+
+    def unexpected_live_read(*_args, **_kwargs):
+        raise AssertionError("a missing model must not be read")
+
+    monkeypatch.setattr(metadata_ui, "read_model_header", unexpected_live_read)
+    payload = metadata_ui.load_header_only(str(missing))
+    assert payload["metadata"] == cached["metadata"]
+    assert payload["header_metadata_complete"] is False
+
+    dialog = AdvancedViewerDialog(
+        {"filepath": str(missing), "metadata": cached["metadata"], "tensor_info": cached["tensor_info"]}
+    )
+    try:
+        metadata_index = dialog.work_area.indexOf(dialog.explorer_tab.metadata_page)
+        assert "Incomplete data" in dialog.work_area.tabText(metadata_index)
+        dialog.work_area.setCurrentIndex(metadata_index)
+        deadline = time.monotonic() + 4
+        while (
+            dialog._inspection.get("header_metadata_path") != str(missing)
+            and time.monotonic() < deadline
+        ):
+            _app().processEvents()
+            time.sleep(0.01)
+        assert dialog._inspection["header_metadata_complete"] is False
+        assert "Incomplete data" in dialog.work_area.tabText(metadata_index)
+        assert "cached inspection metadata only" in dialog.explorer_tab.metadata_table.toolTip()
+    finally:
+        dialog.close()

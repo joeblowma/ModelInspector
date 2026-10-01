@@ -9,16 +9,17 @@ cache test seams, and the standalone Qt entry point.
 
 import sys
 
+from PyQt6.QtWidgets import QApplication, QMainWindow
+
 from app_paths import asset_path as _asset
 from front.application import (
     DARK_STYLE,
     close_startup_splash,
     configure_application,
     finish_startup_splash,
+    run,
     show_startup_splash,
 )
-from PyQt6.QtWidgets import QApplication, QMainWindow
-
 from front.analysis_controller import AnalysisMixin
 from front.discovery_controller import DiscoveryMixin
 from front.filter_widgets import CheckFilterButton, SortableTableWidgetItem
@@ -45,12 +46,21 @@ from model_cache import (
 )
 
 __all__ = [
+    "QApplication",
     "CheckFilterButton",
     "DARK_STYLE",
+    "close_startup_splash",
+    "configure_application",
+    "finish_startup_splash",
+    "show_startup_splash",
     "MainWindow",
     "ModelCard",
     "SettingsDialog",
     "SortableTableWidgetItem",
+    "_clipboard",
+    "_combo_data_str",
+    "_model_file_filter",
+    "_settings",
     "main",
 ]
 
@@ -87,8 +97,6 @@ class MainWindow(
 
 def main() -> int:
     """Launch the desktop application (thin delegation to front.application)."""
-    from front.application import run
-
     return run()
 
 

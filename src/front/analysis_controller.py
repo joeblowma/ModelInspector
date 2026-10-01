@@ -3,11 +3,13 @@
 
 from pathlib import Path
 
+from PyQt6.QtCore import QTimer
+
 from back.checkpoint_reader import CHECKPOINT_SAFETY_METADATA
 from back.inspection_summary import compact_inspection_summary
 from back.model_classification import format_params, format_size
 from background_tasks import AnalysisWorker
-from front.scan_projection import ProjectionEvent, ScanProjectionBuffer
+from front.scan_projection import ProjectionEvent
 
 
 MODEL_FORMAT_FILTERS = (".safetensors", ".gguf", ".ckpt", ".onnx", ".pt", ".pth")
@@ -19,8 +21,25 @@ class AnalysisControllerMixin:
     def _analyze_all(
         self, paths: list[str] | None = None, *, clear_existing: bool = True
     ):
-        paths = list(self._queued_files) if paths is None else paths
+        if paths is None:
+            result_paths = {
+                str(data.get("filepath") or "")
+                for data in self._results
+                if data.get("filepath")
+            }
+            paths = [path for path in self._queued_files if path not in result_paths]
+            clear_existing = clear_existing and not self._results
+        else:
+            paths = list(paths)
         if not paths:
+            return
+        if self._worker and self._worker.isRunning():
+            self._pending_analysis_clear_existing = (
+                bool(clear_existing)
+                if self._pending_analysis_clear_existing is None
+                else self._pending_analysis_clear_existing or bool(clear_existing)
+            )
+            self._update_analyze_slot()
             return
         self._start_analysis(paths, clear_existing=clear_existing)
 
@@ -119,7 +138,35 @@ class AnalysisControllerMixin:
         worker.all_done.connect(
             lambda g=generation, w=worker: self._on_all_done(g, w)
         )
+        finished = getattr(worker, "finished", None)
+        if finished is not None:
+            finished.connect(lambda w=worker: self._on_analysis_worker_finished(w))
         worker.start()
+
+    def _on_analysis_worker_finished(self, worker: AnalysisWorker):
+        QTimer.singleShot(0, lambda w=worker: self._drain_queued_analysis(w))
+
+    def _drain_queued_analysis(self, worker: AnalysisWorker):
+        if (
+            worker is not self._worker
+            or worker.isRunning()
+            or getattr(self, "_close_pending", False)
+            or getattr(self, "_lifecycle_closed", False)
+            or self._pending_analysis_clear_existing is None
+        ):
+            return
+        result_paths = {
+            str(data.get("filepath") or "")
+            for data in self._results
+            if data.get("filepath")
+        }
+        paths = [path for path in self._queued_files if path not in result_paths]
+        clear_existing = self._pending_analysis_clear_existing
+        self._pending_analysis_clear_existing = None
+        if paths:
+            self._start_analysis(paths, clear_existing=clear_existing)
+        else:
+            self._update_analyze_slot()
 
     def _on_result(self, *args):
         if len(args) == 1:
@@ -272,6 +319,8 @@ class AnalysisControllerMixin:
         self.analyze_btn.setEnabled(True)
         self._set_cancel_available(False)
         was_cancelled = bool(worker.was_cancelled)
+        if was_cancelled:
+            self._pending_analysis_clear_existing = None
         error_text = (
             f" | Errors: {self._analysis_error_count}"
             if self._analysis_error_count
@@ -288,6 +337,8 @@ class AnalysisControllerMixin:
                 f"Bytes scanned: {self._format_bytes(self._analysis_bytes_scanned)}{error_text}"
             )
         self._clear_progress_status(delay_ms=4000)
+        if not was_cancelled:
+            self._drain_queued_analysis(worker)
 
     def _restore_table_sorting(self):
         if self._table_sort_restore is None:

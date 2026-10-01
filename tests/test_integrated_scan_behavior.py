@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import cast
@@ -213,5 +214,53 @@ def test_replace_and_additive_queue_modes(tmp_path, monkeypatch):
         assert window._queue_files(["third", "fourth"]) == ["fourth"]
         assert window._queued_files == ["third", "fourth"]
     finally:
+        window.close()
+        app.processEvents()
+
+
+def test_additive_busy_add_drains_without_replacing_results(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    first = "R:/synthetic/first.safetensors"
+    second = "R:/synthetic/second.safetensors"
+    started = threading.Event()
+    release = threading.Event()
+
+    def inspect(filepath: str, options=None):
+        if filepath == first:
+            started.set()
+            assert release.wait(5)
+        return _full_result(filepath, 0 if filepath == first else 1)
+
+    monkeypatch.setattr(background_tasks, "inspect_file", inspect)
+    app = _app()
+    window = gui.MainWindow()
+    window._add_mode = "additive"
+    try:
+        window._add_files([first])
+        deadline = time.monotonic() + 5
+        while not started.is_set() and time.monotonic() < deadline:
+            app.processEvents()
+        assert started.is_set()
+
+        window._add_files([second])
+        assert window._queued_files == [first, second]
+        assert window._pending_analysis_clear_existing is False
+        release.set()
+
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            app.processEvents()
+            if (
+                {data["filepath"] for data in window._results} == {first, second}
+                and not window._has_unanalyzed_queue()
+                and window._worker is not None
+                and not window._worker.isRunning()
+            ):
+                break
+        assert {data["filepath"] for data in window._results} == {first, second}
+        assert not window._has_unanalyzed_queue()
+    finally:
+        release.set()
         window.close()
         app.processEvents()

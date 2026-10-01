@@ -1,5 +1,7 @@
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportCallIssue=false, reportGeneralTypeIssues=false, reportOperatorIssue=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportCallIssue=false
+# pyright: reportGeneralTypeIssues=false, reportOperatorIssue=false
 # pylint: disable=no-member
+"""Selection synchronization between the model table and UI state."""
 from pathlib import Path
 
 from PyQt6.QtCore import QMimeData, Qt
@@ -118,7 +120,7 @@ class SelectionControllerMixin(FileOperationControllerMixin):
             self._selected_paths.discard(filepath)
         self._sync_selection_visuals()
 
-    def _on_table_cell_clicked(self, row: int, col: int):
+    def _on_table_cell_clicked(self, row: int, _col: int):
         if self._syncing_selection:
             return
         if row < 0 or row >= self.table.rowCount():

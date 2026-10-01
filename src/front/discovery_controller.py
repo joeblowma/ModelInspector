@@ -149,7 +149,9 @@ class DiscoveryControllerMixin:
         if unique_paths:
             added = self._queue_files(unique_paths)
             if added:
-                self._analyze_all()
+                self._analyze_all(
+                    paths=added, clear_existing=self._add_mode == "replace"
+                )
                 return
         self._clear_progress_status(delay_ms=3000)
 
@@ -173,7 +175,10 @@ class DiscoveryControllerMixin:
         added = self._queue_files(paths, preserve_existing=preserve_existing)
         if not added:
             return
-        self._analyze_all(paths=added, clear_existing=not preserve_existing)
+        self._analyze_all(
+            paths=added,
+            clear_existing=not preserve_existing and self._add_mode == "replace",
+        )
 
     def _update_file_count(self):
         if not self.progress.isVisible():

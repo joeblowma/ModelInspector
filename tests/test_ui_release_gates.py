@@ -75,6 +75,39 @@ def test_new_files_always_start_analysis_and_legacy_toggle_is_not_loaded(tmp_pat
         window.close()
 
 
+def test_analyze_slot_and_selected_action_defaults(tmp_path, monkeypatch):
+    window = _window(tmp_path, monkeypatch)
+    try:
+        assert window._selected_action == "dump_modelinfo"
+        assert window.selected_action_btn.text() == "Dump .modelinfo"
+        assert window.selected_action_btn.toolTip() == (
+            "Dump .modelinfo for visible selected models"
+        )
+        window._select_selected_action("copy_paths")
+        assert window.selected_action_btn.toolTip() == (
+            "Copy Paths for visible selected models"
+        )
+
+        window._queued_files = ["pending.safetensors"]
+        window._update_analyze_slot()
+        assert not window.analyze_btn.isHidden()
+        assert not window.action_slot.isHidden()
+
+        window._pending_analysis_clear_existing = False
+        window._update_analyze_slot()
+        assert window.analyze_btn.isHidden()
+        assert window.action_slot.isHidden()
+
+        window._pending_analysis_clear_existing = None
+        window._results.append(_summary(0))
+        window._queued_files = ["R:/synthetic/card-0.safetensors"]
+        window._update_analyze_slot()
+        assert window.analyze_btn.isHidden()
+        assert window.action_slot.isHidden()
+    finally:
+        window.close()
+
+
 def test_unchanged_settings_cancel_does_not_reapply_the_theme(tmp_path, monkeypatch):
     window = _window(tmp_path, monkeypatch)
     try:

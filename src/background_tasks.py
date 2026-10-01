@@ -12,9 +12,9 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from back.inspection_summary import compact_inspection_summary
 from back.inspection_pipeline import inspect_file
-from model_readers import CHECKPOINT_MODEL_EXTENSIONS, SUPPORTED_MODEL_EXTENSIONS
 from back.shard_discovery import discoverable_primary_path, is_safetensors_index_path
 from back.sidecar_discovery import is_probable_sidecar_path
+from model_readers import CHECKPOINT_MODEL_EXTENSIONS, SUPPORTED_MODEL_EXTENSIONS
 
 
 class DiscoveryWorker(QThread):

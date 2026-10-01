@@ -138,7 +138,7 @@ def test_viewer_is_parent_owned_window_modal_and_hosts_explorer():
     assert [dialog.work_area.tabText(index) for index in range(dialog.work_area.count())] == [
         "Overview",
         "Card Details",
-        "Metadata",
+        "Metadata (Incomplete data)",
         "Tensors",
         "Embedded Content",
     ]

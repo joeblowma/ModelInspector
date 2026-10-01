@@ -15,8 +15,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .metadata_ui import domain_tag_description, inspection_domain
 from back.theme_loader import get_global_theme_colors
+
+from .metadata_ui import domain_tag_description, inspection_domain
 
 __all__ = [
     "ADVANCED_CARD_FIELDS",
@@ -100,6 +101,7 @@ def card_stat_items(
 
 
 class ModelCard(QFrame):
+    # pylint: disable=invalid-name
     CARD_HEIGHT = 168
     advanced_requested = pyqtSignal(str)
     checkbox_toggled = pyqtSignal(str, bool)
@@ -145,8 +147,7 @@ class ModelCard(QFrame):
         name_label = QLabel(data.get("filename", "Unknown model"))
         name_label.setWordWrap(True)
         name_label.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: %(accent_display)s; background: transparent; border: none;"
-            % self._theme_colors
+            f"font-size: 14px; font-weight: bold; color: {self._theme_colors['accent_display']}; background: transparent; border: none;"
         )
         header_row.addWidget(name_label, stretch=1)
         layout.addLayout(header_row)
@@ -169,6 +170,8 @@ class ModelCard(QFrame):
         model_type = str(data.get("model_type", "Unknown"))
         if not (domain and model_type.strip().casefold() == "unknown"):
             arch_row.addWidget(self._make_tag(model_type, self._theme_colors["success"], self._theme_colors["surface"]))
+        if data.get("cache_status") == "historic":
+            arch_row.addWidget(self._make_tag("Historic", self._theme_colors["warning"], self._theme_colors["surface"]))
         quantization = data.get("quantization")
         if quantization:
             arch_row.addWidget(self._make_tag(str(quantization), self._theme_colors["accent_adapter"], self._theme_colors["surface"]))
@@ -217,15 +220,13 @@ class ModelCard(QFrame):
         for i, (label, value) in enumerate(card_stat_items(data, bool(simple_view))):
             lbl = QLabel(label)
             lbl.setStyleSheet(
-                "color: %(stat_label)s; font-size: 11px; background: transparent; border: none;"
-                % self._theme_colors
+                f"color: {self._theme_colors['stat_label']}; font-size: 11px; background: transparent; border: none;"
             )
             val = QLabel(str(value))
             if "Precision" in label:
                 val.setWordWrap(True)
             val.setStyleSheet(
-                "color: %(text)s; font-size: 13px; font-weight: bold; background: transparent; border: none;"
-                % self._theme_colors
+                f"color: {self._theme_colors['text']}; font-size: 13px; font-weight: bold; background: transparent; border: none;"
             )
             row, column = (i, 0) if vertical_stats else divmod(i, 2)
             grid.addWidget(lbl, row, column * 2)

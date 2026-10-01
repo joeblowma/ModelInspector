@@ -11,7 +11,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from PyQt6.QtCore import QThread
+from PyQt6.QtCore import QMimeData, QPoint, QPointF, QUrl, Qt, QThread
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import QApplication
 
 import gui
@@ -91,6 +92,42 @@ def test_discovery_runs_asynchronously_and_queues_terminal_paths(
         assert str(second_model) in window._queued_files
         assert window._discovery_worker is not None
         assert not window._discovery_worker.isRunning()
+    finally:
+        window.close()
+
+
+def test_cards_surface_accepts_model_drops(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    model = tmp_path / "dropped.safetensors"
+    model.write_bytes(b"")
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    monkeypatch.setattr(window, "_analyze_all", lambda *args, **kwargs: None)
+    try:
+        window.show()
+        app.processEvents()
+        mime_data = QMimeData()
+        mime_data.setUrls([QUrl.fromLocalFile(str(model))])
+        enter = QDragEnterEvent(
+            QPoint(),
+            Qt.DropAction.CopyAction,
+            mime_data,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(window.cards_container, enter)
+        assert enter.isAccepted()
+        event = QDropEvent(
+            QPointF(),
+            Qt.DropAction.CopyAction,
+            mime_data,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(window.cards_container, event)
+        assert event.isAccepted()
+        assert [Path(path) for path in window._queued_files] == [model]
     finally:
         window.close()
 

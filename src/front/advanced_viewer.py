@@ -14,6 +14,21 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from back.estimator import (
+    ModelFacts,
+    ResourceProjection,
+    facts_from_inspection,
+    project_resources,
+    runtime_configuration,
+)
+from back.theme_loader import get_global_theme_colors
+from front.advanced_viewer_layout import build_advanced_viewer_ui
+from front.explorer_tab import ExplorerTab, normalize_tensor_descriptors
+from front.metadata_ui import (
+    HeaderInspectionController, capability_badge_values, domain_badge_values,
+)
+from front.model_card import ModelCard
+
 if TYPE_CHECKING:
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import (
@@ -46,9 +61,9 @@ else:
     # from the two bindings cannot be mixed in one QApplication.
     _prefer_pyqt = "PyQt6.QtWidgets" in sys.modules and "PySide6.QtWidgets" not in sys.modules
     try:
-        _binding = "PyQt6" if _prefer_pyqt else "PySide6"
-        _qt_core = importlib.import_module(f"{_binding}.QtCore")
-        _qt_widgets = importlib.import_module(f"{_binding}.QtWidgets")
+        _BINDING = "PyQt6" if _prefer_pyqt else "PySide6"
+        _qt_core = importlib.import_module(f"{_BINDING}.QtCore")
+        _qt_widgets = importlib.import_module(f"{_BINDING}.QtWidgets")
     except ImportError:  # pragma: no cover - exercised on the project's PyQt6 env.
         _qt_core = importlib.import_module("PyQt6.QtCore")
         _qt_widgets = importlib.import_module("PyQt6.QtWidgets")
@@ -94,21 +109,6 @@ else:
     QVBoxLayout = _qt_widgets.QVBoxLayout
     QWidget = _qt_widgets.QWidget
 
-from back.estimator import (
-    ModelFacts,
-    ResourceProjection,
-    facts_from_inspection,
-    project_resources,
-    runtime_configuration,
-)
-from back.theme_loader import get_global_theme_colors
-from front.advanced_viewer_layout import build_advanced_viewer_ui
-from front.explorer_tab import ExplorerTab, normalize_tensor_descriptors
-from front.metadata_ui import (
-    HeaderInspectionController, capability_badge_values, domain_badge_values,
-)
-from front.model_card import ModelCard
-
 if TYPE_CHECKING:
     from front.model_path_label import ModelPathLabel
 
@@ -120,6 +120,7 @@ _ADVANCED_VIEWER_COLORS: dict[str, tuple[str, str]] | None = None
 
 def _get_advanced_viewer_colors() -> dict[str, tuple[str, str]]:
     """Return badge colors derived from the current theme."""
+    # pylint: disable=global-statement
     global _ADVANCED_VIEWER_COLORS
     if _ADVANCED_VIEWER_COLORS is None:
         tc = get_global_theme_colors()
@@ -208,7 +209,12 @@ class AdvancedViewerDialog(QDialog):
         )
         self._header_controller.request_if_needed()
         self._update_summary()
-        self._replace_badges(self._capability_row, self._capability_badges, capability_badge_values(self._inspection, self._facts.capabilities), "capability")
+        self._replace_badges(
+            self._capability_row,
+            self._capability_badges,
+            capability_badge_values(self._inspection, self._facts.capabilities),
+            "capability",
+        )
         self._replace_badges(self._domain_row, self._domain_badges, domain_badge_values(self._inspection, self._facts.domains), "domain")
 
         context = self._facts.max_context or 4096
@@ -315,7 +321,12 @@ class AdvancedViewerDialog(QDialog):
             kv_cache_dtype=self.kv_cache_bits_combo.currentText(),
         )
         projection = self._projection
-        for key, value in (("weight", projection.weight_display), ("kv_cache", projection.kv_cache_display), ("vram", projection.vram_display), ("ram", projection.ram_display)):
+        for key, value in (
+            ("weight", projection.weight_display),
+            ("kv_cache", projection.kv_cache_display),
+            ("vram", projection.vram_display),
+            ("ram", projection.ram_display),
+        ):
             self._projection_values[key].setText(value)
         self.assumptions_label.setText("; ".join(projection.assumptions) if projection.assumptions else "None")
 
@@ -384,23 +395,34 @@ class AdvancedViewerDialog(QDialog):
         """Re-apply theme colors to summary/projection labels."""
         tc = theme_colors or get_global_theme_colors()
         for label in getattr(self, "_overview_muted_labels", ()):
-            label.setStyleSheet("color: %(muted)s; font-size: 11px;" % tc)
+            label.setStyleSheet(f"color: {tc['muted']}; font-size: 11px;")
         for key, value in self._summary_values.items():
-            if key in ("architecture", "layer_count", "block_counts", "experts_total", "experts_active", "trained_context", "max_context", "rope", "mtp"):
-                value.setStyleSheet("color: %(text)s; font-size: 13px; font-weight: bold;" % tc)
+            if key in (
+                "architecture",
+                "layer_count",
+                "block_counts",
+                "experts_total",
+                "experts_active",
+                "trained_context",
+                "max_context",
+                "rope",
+                "mtp",
+            ):
+                value.setStyleSheet(f"color: {tc['text']}; font-size: 13px; font-weight: bold;")
         for key, value in self._projection_values.items():
             if key == "weight":
-                value.setStyleSheet("color: %(accent_display)s; font-size: 13px; font-weight: bold;" % tc)
+                value.setStyleSheet(f"color: {tc['accent_display']}; font-size: 13px; font-weight: bold;")
             elif key == "kv_cache":
-                value.setStyleSheet("color: %(accent_display)s; font-size: 13px; font-weight: bold;" % tc)
+                value.setStyleSheet(f"color: {tc['accent_display']}; font-size: 13px; font-weight: bold;")
             elif key == "vram":
-                value.setStyleSheet("color: %(accent_display)s; font-size: 13px; font-weight: bold;" % tc)
+                value.setStyleSheet(f"color: {tc['accent_display']}; font-size: 13px; font-weight: bold;")
             elif key == "ram":
-                value.setStyleSheet("color: %(accent_display)s; font-size: 13px; font-weight: bold;" % tc)
-        self.assumptions_label.setStyleSheet("color: %(warning)s; font-size: 11px;" % tc)
+                value.setStyleSheet(f"color: {tc['accent_display']}; font-size: 13px; font-weight: bold;")
+        self.assumptions_label.setStyleSheet(f"color: {tc['warning']}; font-size: 11px;")
 
     def refresh_theme(self) -> None:
         """Refresh cached viewer colors, badges, inline labels, and Explorer."""
+        # pylint: disable=global-statement
         global _ADVANCED_VIEWER_COLORS
         _ADVANCED_VIEWER_COLORS = None
         theme_colors = get_global_theme_colors()
@@ -410,7 +432,7 @@ class AdvancedViewerDialog(QDialog):
             self._refresh_badge_style(badge, kind)
         card = self._card_details_card
         if card is not None and hasattr(card, "_refresh_style"):
-            card._refresh_style()
+            card._refresh_style()  # pylint: disable=protected-access
         explorer = getattr(self, "explorer_tab", None)
         if explorer is not None and hasattr(explorer, "refresh_theme"):
             explorer.refresh_theme(theme_colors)

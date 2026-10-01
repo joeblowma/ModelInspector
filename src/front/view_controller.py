@@ -1,12 +1,16 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false, reportOperatorIssue=false
 # pylint: disable=no-member
-from pathlib import Path; from time import perf_counter
+"""Table view wiring, filtering, and row selection handling."""
+from pathlib import Path
+from time import perf_counter
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QCheckBox, QLabel
 from back.capability_evidence import evidence_backed_capabilities
-from front.filter_widgets import SortableTableWidgetItem; from front.model_card import ModelCard
 from back.theme_loader import get_global_theme_colors
-def _combo_data_str(value): return str(value) if value else None
+from front.filter_widgets import SortableTableWidgetItem
+from front.model_card import ModelCard
+def _combo_data_str(value):
+    return str(value) if value else None
 def _capability_domain(data):
     facts = data.get("capability_facts")
     return facts.get("domain") if isinstance(facts, dict) else None
@@ -66,7 +70,7 @@ class ViewControllerMixin:
         )
         self.cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cards_placeholder.setStyleSheet(
-            "color: %(surface_alt)s; font-size: 14px; padding: 60px;" % get_global_theme_colors()
+            f"color: {get_global_theme_colors()['surface_alt']}; font-size: 14px; padding: 60px;"
         )
         self.cards_layout.insertWidget(0, self.cards_placeholder)
         self._refresh_card_layout_geometry()
@@ -93,20 +97,26 @@ class ViewControllerMixin:
     def _rebuild_active_cards_time_sliced(self):
         self._card_rebuild_generation += 1
         generation = self._card_rebuild_generation
-        self._cards.clear(); self._path_to_card.clear()
-        pending = list(self._results); index = 0
+        self._cards.clear()
+        self._path_to_card.clear()
+        pending = list(self._results)
+        index = 0
         def build_batch():
             nonlocal index
             if generation != self._card_rebuild_generation or getattr(self, "_lifecycle_closed", False):
                 return
-            started = perf_counter(); built = 0
+            started = perf_counter()
+            built = 0
             while index < len(pending) and built < 8:
-                data = pending[index]; self._add_card(data)
+                data = pending[index]
+                self._add_card(data)
                 filepath = str(data.get("filepath") or "")
                 card = self._path_to_card.get(filepath)
                 if card:
-                    card.set_selected(filepath in self._selected_paths); card.set_filter_visible(self._is_data_visible(data))
-                index += 1; built += 1
+                    card.set_selected(filepath in self._selected_paths)
+                    card.set_filter_visible(self._is_data_visible(data))
+                index += 1
+                built += 1
                 if (perf_counter() - started) * 1000.0 >= 12.0:
                     break
             self._refresh_card_layout_geometry()
@@ -116,18 +126,22 @@ class ViewControllerMixin:
             nonlocal index
             if generation != self._card_rebuild_generation or getattr(self, "_lifecycle_closed", False):
                 return
-            started = perf_counter(); removed = 0
+            started = perf_counter()
+            removed = 0
             while self.cards_layout.count() and removed < 8:
                 item = self.cards_layout.takeAt(0)
                 if item is None:
                     continue
                 widget = item.widget()
-                if widget is not None: widget.deleteLater()
+                if widget is not None:
+                    widget.deleteLater()
                 removed += 1
                 if (perf_counter() - started) * 1000.0 >= 12.0:
                     break
             self._refresh_card_layout_geometry()
-            if self.cards_layout.count(): QTimer.singleShot(0, clear_batch); return
+            if self.cards_layout.count():
+                QTimer.singleShot(0, clear_batch)
+                return
             self._clear_cards()
             QTimer.singleShot(0, build_batch)
         QTimer.singleShot(0, clear_batch)
@@ -201,8 +215,11 @@ class ViewControllerMixin:
         expert_used_count_str = (
             str(expert_used_count) if expert_used_count is not None else "-"
         )
+        format_label = data.get("format", "-")
+        if data.get("cache_status") == "historic":
+            format_label = f"{format_label} · Historic"
         values = [
-            data["filename"], data.get("format", "-"), data["file_size_friendly"],
+            data["filename"], format_label, data["file_size_friendly"],
             data["architecture"], _canonical_model_type(data.get("model_type"), _capability_domain(data)), data.get("adapter_type") or "-",
             _data_quantization_display(data), data.get("precision_summary", "-"),
             unet_str, vae_str, text_enc_str, trans_str, data["total_params_friendly"],
@@ -315,17 +332,39 @@ class ViewControllerMixin:
         self, *, refresh_raw: bool = True, refresh_geometry: bool = True,
         update_selection: bool = True,
     ):
+        arch_counts: dict[str, int] = {}
+        tag_counts: dict[str, int] = {}
+        format_counts: dict[str, int] = {}
         for data in self._results:
             fp = str(data.get("filepath") or "")
             if not fp:
                 continue
-            visible = self._is_data_visible(data)
+            arch = data.get("architecture", "")
+            tags = self._filter_tags_for_data(data)
+            tag_set = set(tags)
+            file_format = self._format_filter_for_data(data)
+            arch_match = self._active_arch_filter is None or arch in self._active_arch_filter
+            tag_match = self._active_tag_filter is None or bool(tag_set & self._active_tag_filter)
+            format_match = self._active_format_filter is None or file_format in self._active_format_filter
+            visible = (
+                arch_match and tag_match and format_match
+            )
+            if tag_match and format_match:
+                arch_counts[arch] = arch_counts.get(arch, 0) + 1
+            if arch_match and format_match:
+                for tag in tags:
+                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
+            if arch_match and tag_match:
+                format_counts[file_format] = format_counts.get(file_format, 0) + 1
             card = self._path_to_card.get(fp)
             if card:
                 card.set_filter_visible(visible)
             row = self._row_for_filepath(fp)
             if row is not None and 0 <= row < self.table.rowCount():
                 self.table.setRowHidden(row, not visible)
+        self.arch_filter_btn.set_counts(arch_counts)
+        self.tag_filter_btn.set_counts(tag_counts)
+        self.format_filter_btn.set_counts(format_counts)
         self._sync_order_from_table(refresh_raw=refresh_raw, refresh_geometry=refresh_geometry)
         if update_selection:
             self._update_selection_ui_state()
@@ -343,6 +382,8 @@ class ViewControllerMixin:
         )
     def _filter_tags_for_data(self, data: dict) -> list[str]:
         tags = []
+        if data.get("cache_status") == "historic":
+            tags.append("Historic")
         if data.get("architecture") == "ERROR":
             tags.append("ERROR")
             return list(dict.fromkeys(tags))
@@ -416,9 +457,7 @@ class ViewControllerMixin:
         count = self.raw_combo.count()
         if count <= 0:
             return
-        current = self.raw_combo.currentIndex()
-        if current < 0:
-            current = 0
+        current = max(self.raw_combo.currentIndex(), 0)
         next_index = max(0, min(count - 1, current + delta))
         if next_index != current:
             self.raw_combo.setCurrentIndex(next_index)

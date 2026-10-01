@@ -7,8 +7,8 @@ controllers can be composed around it without importing :mod:`gui`.
 controller state.
 """
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtCore import QEvent, QObject, Qt
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -33,6 +33,23 @@ from front.data_columns import DATA_COLUMN_LABELS, DATA_COLUMNS
 from front.filter_widgets import CheckFilterButton
 from front.smart_column_controller import SMART_COLUMN_GROUPS
 from back.theme_loader import get_global_theme_colors
+
+
+class _CardDropRelay(QObject):
+    """Forward Card-surface drops to the window's existing queue controller."""
+
+    def __init__(self, window):
+        super().__init__(window)
+        self._window = window
+
+    def eventFilter(self, _watched, event: QEvent | None) -> bool:
+        if isinstance(event, QDragEnterEvent):
+            self._window.dragEnterEvent(event)
+            return event.isAccepted()
+        if isinstance(event, QDropEvent):
+            self._window.dropEvent(event)
+            return event.isAccepted()
+        return False
 
 
 class WindowLayoutMixin:
@@ -82,7 +99,7 @@ class WindowLayoutMixin:
         btn_row_1.addWidget(self.cancel_btn)
 
         self.progress_label = QLabel("")
-        self.progress_label.setStyleSheet("color: %(muted)s; font-size: 11px;" % get_global_theme_colors())
+        self.progress_label.setStyleSheet(f"color: {get_global_theme_colors()['muted']}; font-size: 11px;")
         self.progress_label.setWordWrap(False)
         self.progress_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -137,7 +154,7 @@ class WindowLayoutMixin:
         self.cards_select_all_cb.stateChanged.connect(self._on_cards_select_all_changed)
         cards_toolbar.addWidget(self.cards_select_all_cb)
         self.selected_count_label = QLabel("0 selected")
-        self.selected_count_label.setStyleSheet("color: %(muted)s; font-size: 11px;" % get_global_theme_colors())
+        self.selected_count_label.setStyleSheet(f"color: {get_global_theme_colors()['muted']}; font-size: 11px;")
         cards_toolbar.addWidget(self.selected_count_label)
         cards_toolbar.addStretch()
         cards_tab_layout.addLayout(cards_toolbar)
@@ -154,13 +171,22 @@ class WindowLayoutMixin:
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.cards_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.cards_scroll.setWidget(self.cards_container)
+        self._cards_drop_relay = _CardDropRelay(self)
+        for drop_target in (
+            cards_tab,
+            self.cards_scroll,
+            self.cards_scroll.viewport(),
+            self.cards_container,
+        ):
+            drop_target.setAcceptDrops(True)
+            drop_target.installEventFilter(self._cards_drop_relay)
 
         self.cards_placeholder = QLabel(
             "No models analyzed yet.\nDrop files anywhere or click Open."
         )
         self.cards_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cards_placeholder.setStyleSheet(
-            "color: %(surface_alt)s; font-size: 14px; padding: 60px;" % get_global_theme_colors()
+            f"color: {get_global_theme_colors()['surface_alt']}; font-size: 14px; padding: 60px;"
         )
         self.cards_layout.insertWidget(0, self.cards_placeholder)
 
@@ -185,7 +211,7 @@ class WindowLayoutMixin:
         self.show_full_path_cb.stateChanged.connect(self._on_show_full_path_changed)
         data_toolbar.addWidget(self.show_full_path_cb)
         self.table_selected_count_label = QLabel("0 selected")
-        self.table_selected_count_label.setStyleSheet("color: %(muted)s; font-size: 11px;" % get_global_theme_colors())
+        self.table_selected_count_label.setStyleSheet(f"color: {get_global_theme_colors()['muted']}; font-size: 11px;")
         data_toolbar.addWidget(self.table_selected_count_label)
         data_toolbar.addStretch()
         # Pinned smart-column group toggles (right side of the Data toolbar).

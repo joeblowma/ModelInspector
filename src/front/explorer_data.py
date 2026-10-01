@@ -9,7 +9,16 @@ from collections.abc import Mapping, Sequence
 from math import prod
 from typing import Any
 
-__all__ = ["normalize_tensor_descriptors", "detect_embedded_content", "flatten_metadata", "bucket_label", "natural_name_key", "safe_display", "friendly_bytes", "display_count"]
+__all__ = [
+    "normalize_tensor_descriptors",
+    "detect_embedded_content",
+    "flatten_metadata",
+    "bucket_label",
+    "natural_name_key",
+    "safe_display",
+    "friendly_bytes",
+    "display_count",
+]
 
 _MAX_TEXT = 1200
 _MAX_METADATA_ROWS = 2000
@@ -203,7 +212,20 @@ def _one_tensor(name: Any, descriptor: Any) -> dict[str, Any]:
     tensor_name = _safe_text(actual_name, 500) or "(unnamed tensor)"
     shape = _coerce_shape(fields.get("shape", fields.get("dims", fields.get("dimensions", fields.get("tensor_shape")))))
     explicit_count = next(
-        (fields.get(key) for key in ("parameter_count", "num_parameters", "numel", "n_elements", "n_params", "elements", "params", "size") if key in fields),
+        (
+            fields.get(key)
+            for key in (
+                "parameter_count",
+                "num_parameters",
+                "numel",
+                "n_elements",
+                "n_params",
+                "elements",
+                "params",
+                "size",
+            )
+            if key in fields
+        ),
         None,
     )
     parameter_count = _safe_int(explicit_count)
@@ -243,7 +265,7 @@ def normalize_tensor_descriptors(data: Any) -> list[dict[str, Any]]:
             return [_one_tensor(data.get("name", ""), data)]
         result = []
         for name, descriptor in data.items():
-            if isinstance(descriptor, Mapping) or isinstance(descriptor, Sequence):
+            if isinstance(descriptor, (Mapping, Sequence)):
                 result.append(_one_tensor(name, descriptor))
         return result
     if isinstance(data, Sequence) and not isinstance(data, (str, bytes, bytearray)):
@@ -307,15 +329,41 @@ def detect_embedded_content(inspection: Mapping[str, Any] | None, records: Seque
     def collect(value: Any, path: tuple[str, ...] = (), embedded: bool = False) -> None:
         if isinstance(value, Mapping):
             if embedded and _is_truncated_metadata_preview(value):
-                candidates.append({"kind": "Embedded metadata", "name": ".".join(path), "summary": _safe_text(value, 300), "source": "metadata", "value": value, "raw_path": path})
+                candidates.append(
+                    {
+                        "kind": "Embedded metadata",
+                        "name": ".".join(path),
+                        "summary": _safe_text(value, 300),
+                        "source": "metadata",
+                        "value": value,
+                        "raw_path": path,
+                    }
+                )
                 return
             for key, item in value.items():
                 key_text = str(key)
                 key_lower = key_text.casefold()
-                collect(item, path + (key_text,), embedded or any(marker in key_lower for marker in ("tokenizer", "token_type", "merges", "chat_template", "chat.template", "template", "tags")))
+                collect(
+                    item,
+                    path + (key_text,),
+                    embedded
+                    or any(
+                        marker in key_lower
+                        for marker in ("tokenizer", "token_type", "merges", "chat_template", "chat.template", "template", "tags")
+                    ),
+                )
             return
         if embedded:
-            candidates.append({"kind": "Embedded metadata", "name": ".".join(path), "summary": _safe_text(value, 300), "source": "metadata", "value": value, "raw_path": path})
+            candidates.append(
+                {
+                    "kind": "Embedded metadata",
+                    "name": ".".join(path),
+                    "summary": _safe_text(value, 300),
+                    "source": "metadata",
+                    "value": value,
+                    "raw_path": path,
+                }
+            )
 
     collect(metadata)
     return candidates

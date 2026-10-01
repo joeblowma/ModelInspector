@@ -1,9 +1,9 @@
 """Read-only metadata projections and asynchronous header loading for the UI.
 
-The Cards view receives compact inspection summaries by design.  This module
+The Cards view receives compact inspection summaries by design. This module
 keeps the presentation rules for the structured facts in one place and owns
-the optional, header-only follow-up read used by the Advanced Viewer's tensor
-page.  No worker here opens tensor payloads or writes to the model/cache.
+the optional, header-only follow-up read used by the Advanced Viewer's Metadata
+and Tensors pages. No worker here opens tensor payloads or writes to the model/cache.
 """
 
 from __future__ import annotations
@@ -13,13 +13,14 @@ import re
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
+from PyQt6.QtCore import Qt, QObject, QRunnable, QThreadPool, pyqtSignal
 
 from back.capability_evidence import evidence_backed_capabilities
 from model_cache import get_cached_model_data
 from model_readers import read_model_header
 
 from .explorer_data import normalize_tensor_descriptors
+from .explorer_metadata import _inspect_text, full_metadata_value
 
 __all__ = [
     "HeaderInspectionController",
@@ -110,8 +111,8 @@ def _natural_key(value: str) -> tuple[str | int, ...]:
 
 
 def load_header_only(filepath: str) -> dict[str, Any]:
-    """Load a live model header, falling back to cached descriptors if absent."""
-    if Path(filepath).exists():
+    """Load a live header, or return explicitly incomplete cached data if absent."""
+    if Path(filepath).is_file():
         metadata, tensor_info, file_size = read_model_header(
             filepath, options={"checkpoint_safety": "metadata"}
         )
@@ -121,49 +122,58 @@ def load_header_only(filepath: str) -> dict[str, Any]:
             "tensor_info": descriptors,
             "file_size": int(file_size),
             "original_tensor_order": list(descriptors),
+            "header_metadata_loaded": True,
+            "header_metadata_complete": True,
+            "header_metadata_path": str(filepath),
         }
 
     cached = get_cached_model_data(filepath, options={"checkpoint_safety": "metadata"})
-    if isinstance(cached, Mapping) and isinstance(cached.get("tensor_info"), Mapping):
-        tensor_info = dict(cached["tensor_info"])
+    if isinstance(cached, Mapping):
+        raw_tensor_info = cached.get("tensor_info")
+        tensor_info = dict(raw_tensor_info) if isinstance(raw_tensor_info, Mapping) else {}
         original = cached.get("original_tensor_order")
         original_order = (
             [str(name) for name in original]
             if isinstance(original, list)
             else list(tensor_info)
         )
+        raw_metadata = cached.get("metadata")
         return {
-            "metadata": dict(cached.get("metadata") or {}),
+            "metadata": dict(raw_metadata) if isinstance(raw_metadata, Mapping) else {},
             "tensor_info": tensor_info,
             "file_size": int(cached.get("file_size") or 0),
             "original_tensor_order": original_order,
+            "header_metadata_loaded": True,
+            "header_metadata_complete": False,
+            "header_metadata_path": str(filepath),
         }
 
-    metadata, tensor_info, file_size = read_model_header(
-        filepath, options={"checkpoint_safety": "metadata"}
-    )
-    descriptors = dict(tensor_info) if isinstance(tensor_info, Mapping) else {}
-    original_order = list(descriptors)
     return {
-        "metadata": dict(metadata) if isinstance(metadata, Mapping) else {},
-        "tensor_info": descriptors,
-        "file_size": int(file_size),
-        "original_tensor_order": original_order,
+        "metadata": {},
+        "tensor_info": {},
+        "file_size": 0,
+        "original_tensor_order": [],
+        "header_metadata_loaded": True,
+        "header_metadata_complete": False,
+        "header_metadata_path": str(filepath),
     }
 
 
 def merge_header_inspection(
     inspection: Mapping[str, Any], payload: Mapping[str, Any]
 ) -> dict[str, Any]:
-    """Attach header descriptors to a compact result without changing facts."""
+    """Attach header data to a compact result without changing its derived facts."""
     result = dict(inspection)
     header_metadata = payload.get("metadata")
-    existing_metadata = result.get("metadata")
     if isinstance(header_metadata, Mapping):
-        merged_metadata = dict(header_metadata)
-        if isinstance(existing_metadata, Mapping):
-            merged_metadata.update(existing_metadata)
-        result["metadata"] = merged_metadata
+        # Compact cache metadata is a preview; the directly read header is the
+        # source of truth for this tab, including values hidden by that preview.
+        result["metadata"] = dict(header_metadata)
+    result["header_metadata_loaded"] = bool(payload.get("header_metadata_loaded", True))
+    result["header_metadata_complete"] = bool(payload.get("header_metadata_complete", False))
+    result["header_metadata_path"] = str(
+        payload.get("header_metadata_path") or inspection.get("filepath") or ""
+    )
     tensor_info = payload.get("tensor_info")
     descriptors = dict(tensor_info) if isinstance(tensor_info, Mapping) else {}
     original = payload.get("original_tensor_order")
@@ -257,7 +267,7 @@ class HeaderInspectionLoader(QObject):
 
 
 class HeaderInspectionController(QObject):
-    """Connect a tensor tab to safe, stale-result-checked header loading."""
+    """Load full header metadata and missing tensor descriptors on demand."""
 
     def __init__(
         self,
@@ -271,12 +281,14 @@ class HeaderInspectionController(QObject):
         super().__init__(parent)
         self._tabs = tabs
         self._tensor_page = tensor_page
+        self._metadata_page = getattr(explorer, "metadata_page", None)
         self._explorer = explorer
         self._inspection_getter = inspection_getter
         self._apply_inspection = apply_inspection
         self._loader = HeaderInspectionLoader(self)
         self._pending_path: str | None = None
         tabs.currentChanged.connect(self._tab_changed)
+        explorer.metadata_table.itemSelectionChanged.connect(self._show_full_metadata_detail)
         self._loader.result_ready.connect(self._loaded)
         self._loader.error_occurred.connect(self._failed)
 
@@ -284,35 +296,85 @@ class HeaderInspectionController(QObject):
         self._pending_path = None
         self._loader.cancel()
         self._explorer.set_loading(False)
+        self._update_metadata_tab()
 
     def cancel(self) -> None:
         self.replace_inspection()
 
     def _tab_changed(self, index: int) -> None:
-        if self._tabs.widget(index) is self._tensor_page:
+        if self._tabs.widget(index) in (self._metadata_page, self._tensor_page):
             self._request_if_needed()
 
     def request_if_needed(self) -> None:
-        """Request headers when the tensor page is already the active page.
+        """Request headers when a metadata or tensor page is already active.
 
         ``currentChanged`` only fires when the index changes.  Replacing the
         inspected model while the Tensors page is open therefore needs this
         explicit entry point as well.
         """
-        if self._tabs.currentWidget() is self._tensor_page:
+        if self._tabs.currentWidget() in (self._metadata_page, self._tensor_page):
             self._request_if_needed()
 
     def _request_if_needed(self) -> None:
         inspection = self._inspection_getter()
-        for key in ("tensor_info", "tensors", "tensor_data", "descriptors", "headers"):
-            if normalize_tensor_descriptors(inspection.get(key)):
-                return
         filepath = str(inspection.get("filepath") or "")
+        active_page = self._tabs.currentWidget()
+        metadata_active = active_page is self._metadata_page
         if not filepath or filepath == self._pending_path:
+            return
+        if str(inspection.get("header_metadata_path") or "") == filepath:
+            return
+        if not metadata_active and any(
+            normalize_tensor_descriptors(inspection.get(key))
+            for key in ("tensor_info", "tensors", "tensor_data", "descriptors", "headers")
+        ):
             return
         self._pending_path = filepath
         self._explorer.set_loading(True)
         self._loader.request(filepath)
+
+    def _update_metadata_tab(self) -> None:
+        if self._metadata_page is None:
+            return
+        index = self._tabs.indexOf(self._metadata_page)
+        if index < 0:
+            return
+        inspection = self._inspection_getter()
+        filepath = str(inspection.get("filepath") or "")
+        loaded = str(inspection.get("header_metadata_path") or "") == filepath
+        complete = loaded and inspection.get("header_metadata_complete") is True
+        incomplete = not filepath or not complete
+        if incomplete:
+            self._tabs.setTabText(index, "Metadata (Incomplete data)")
+            self._tabs.setTabToolTip(
+                index,
+                "Incomplete data: the live header is unavailable or has not been loaded; displayed values may be a compact summary."
+                if not loaded
+                else "Incomplete data: the model file is unavailable; showing cached inspection metadata only.",
+            )
+        elif complete:
+            self._tabs.setTabText(index, "Metadata")
+            self._tabs.setTabToolTip(
+                index,
+                "Full metadata read from the live model header. Table values are bounded previews; select a row for decoded text.",
+            )
+        self._explorer.metadata_table.setToolTip(self._tabs.tabToolTip(index))
+
+    def _show_full_metadata_detail(self) -> None:
+        inspection = self._inspection_getter()
+        if inspection.get("header_metadata_complete") is not True:
+            return
+        selection_model = self._explorer.metadata_table.selectionModel()
+        rows = selection_model.selectedRows() if selection_model is not None else []
+        item = self._explorer.metadata_table.item(rows[0].row(), 0) if rows else None
+        candidate = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if not isinstance(candidate, Mapping):
+            return
+        try:
+            value = full_metadata_value(inspection, candidate)
+        except (OSError, RecursionError, TypeError, ValueError):
+            return
+        self._explorer.metadata_detail.setPlainText(_inspect_text({"value": value}))
 
     def _is_current(self, generation: int) -> bool:
         return (
@@ -332,6 +394,11 @@ class HeaderInspectionController(QObject):
             return
         self._pending_path = None
         self._explorer.set_loading(False)
+        index = self._tabs.indexOf(self._metadata_page) if self._metadata_page is not None else -1
+        if index >= 0:
+            self._tabs.setTabText(index, "Metadata (Incomplete data)")
+            self._tabs.setTabToolTip(index, f"Incomplete data: live header read failed: {str(message)[:240]}")
+            self._explorer.metadata_table.setToolTip(self._tabs.tabToolTip(index))
         self._explorer.status_label.setText(
             f"Read-only header view. Tensor descriptors unavailable: {str(message)[:240]}"
         )

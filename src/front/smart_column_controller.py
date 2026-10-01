@@ -18,7 +18,7 @@ from PyQt6.QtCore import QTimer
 from front.data_columns import LOCKED_COLUMN_KEYS, column_key, default_column_width
 
 
-_GROUP_COLUMNS = tuple[str, ...]
+_GroupColumns = tuple[str, ...]
 
 
 _DIFFUSION_PARTS = ("unet", "vae", "text_encoder", "text_encoder_2", "transformer")
@@ -56,7 +56,7 @@ def _group_tooltip(summary: str) -> str:
     )
 
 
-SMART_COLUMN_GROUPS: dict[str, dict[str, str | _GROUP_COLUMNS]] = {
+SMART_COLUMN_GROUPS: dict[str, dict[str, str | _GroupColumns]] = {
     "llm": {
         "label": "LLM",
         "columns": ("MoE", "Experts", "Exp Act"),

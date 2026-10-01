@@ -74,13 +74,14 @@ def _settings():
 def _asset(name: str) -> str:
     """Resolve an asset in development and in a PyInstaller bundle."""
     if getattr(sys, "_MEIPASS", None):
-        base = Path(sys._MEIPASS)
+        base = Path(sys._MEIPASS)  # pylint: disable=protected-access
     else:
         base = Path(__file__).parent.parent.parent
     return str(base / "assets" / name)
 
 
 class WindowCoreMixin:
+    # pylint: disable=invalid-name
     """Initialize shared state and implement shell-level window behavior."""
 
     def __init__(self):
@@ -134,9 +135,10 @@ class WindowCoreMixin:
         self._dump_json_modelinfo = False
         self._auto_load_raw_dump = False
         self._cache_full_data_on_analyze = False
-        self._selected_action = "copy_files"
+        self._selected_action = "dump_modelinfo"
         self._analysis_threads = 2
         self._add_mode = "replace"
+        self._pending_analysis_clear_existing: bool | None = None
         self._default_tab = "cards"
         self._table_column_visibility_pref: dict[str, bool] = {}
         self._load_ui_settings()
@@ -215,9 +217,7 @@ class WindowCoreMixin:
             self._selected_action, self._selected_actions()["copy_files"]
         )
         self.selected_action_btn.setText(label)
-        self.selected_action_btn.setToolTip(
-            "Run the selected action on visible selected models"
-        )
+        self.selected_action_btn.setToolTip(f"{label} for visible selected models")
 
     def _run_selected_action(self):
         if (
@@ -412,8 +412,13 @@ class WindowCoreMixin:
     def _update_analyze_slot(self):
         busy = bool(self._worker and self._worker.isRunning()) or self.progress.isVisible()
         self.progress.setVisible(busy)
-        self.analyze_btn.setVisible(not busy and self._has_unanalyzed_queue())
-        self.action_slot.setVisible(True)
+        show_analyze = (
+            not busy
+            and self._pending_analysis_clear_existing is None
+            and self._has_unanalyzed_queue()
+        )
+        self.analyze_btn.setVisible(show_analyze)
+        self.action_slot.setVisible(busy or show_analyze)
 
     def _set_cancel_available(self, available: bool):
         self.cancel_btn.setEnabled(available)

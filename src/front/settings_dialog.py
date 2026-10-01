@@ -74,6 +74,7 @@ def _clamp_size_to_screen(size: tuple[int, int], screen) -> tuple[int, int]:
 
 
 class SettingsDialog(QDialog):
+    # pylint: disable=invalid-name
     themeChanged = pyqtSignal(str)
     themePreviewChanged = pyqtSignal(object)
 
@@ -154,7 +155,8 @@ class SettingsDialog(QDialog):
         self.alias_checkbox.setChecked(allow_filename_alias_detection)
         alias_cell = make_general_cell(
             self.alias_checkbox,
-            "Fallback alias matching by filename for special naming cases. Supports ILXL, Illustrious, Illu, PDXL, Pony, Pony7, NAI, and Qwen Edit.",
+            "Fallback alias matching by filename for special naming cases. "
+            "Supports ILXL, Illustrious, Illu, PDXL, Pony, Pony7, NAI, and Qwen Edit.",
         )
 
         self.dump_json_checkbox = QCheckBox("Also save JSON metadata")
@@ -255,10 +257,16 @@ class SettingsDialog(QDialog):
         self.clear_cache_btn.setToolTip("Permanently remove cached inspection data after confirmation.")
         cache_layout.addWidget(self.clear_cache_btn)
         self.verify_cache_btn = QPushButton("Verify Cached File Paths")
-        self.verify_cache_btn.setToolTip("Check cached file paths for availability and changes; no inspection is started for missing files.")
+        self.verify_cache_btn.setToolTip(
+            "Check cached file paths for availability and changes; "
+            "no inspection is started for missing files."
+        )
         cache_layout.addWidget(self.verify_cache_btn)
         self.cache_counts_label = QLabel("Total: 0  Active: 0  Historic: 0")
-        self.cache_counts_label.setToolTip("Cached summaries by file availability. Historic files remain viewable without loading model payloads.")
+        self.cache_counts_label.setToolTip(
+            "Cached summaries by file availability. "
+            "Historic files remain viewable without loading model payloads."
+        )
         cache_layout.addWidget(self.cache_counts_label)
         general_tab_layout.addWidget(cache_group)
 
@@ -432,10 +440,10 @@ class SettingsDialog(QDialog):
         """Reapply inline title and explanatory-label colors after a live preview."""
         colors = dict(theme_colors or get_global_theme_colors())
         self._theme_title.setStyleSheet(
-            "font-size: 16px; font-weight: bold; color: %(accent_display)s;" % colors
+            f"font-size: 16px; font-weight: bold; color: {colors['accent_display']};"
         )
         for label in self._muted_theme_labels:
-            label.setStyleSheet("color: %(muted)s; font-size: 11px;" % colors)
+            label.setStyleSheet(f"color: {colors['muted']}; font-size: 11px;")
 
     def _on_theme_tab_changed(self, theme_id: str) -> None:
         self._theme_previewed = theme_id != self._theme_restore_id

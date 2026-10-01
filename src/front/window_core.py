@@ -16,6 +16,7 @@ from PyQt6.QtGui import (
     QAction,
     QClipboard,
     QDragEnterEvent,
+    QDragMoveEvent,
     QDropEvent,
     QIcon,
     QKeyEvent,
@@ -266,11 +267,18 @@ class WindowCoreMixin:
         return super().eventFilter(a0, a1)
 
     def dragEnterEvent(self, a0: QDragEnterEvent | None):
-        if a0 is None:
+        self._accept_url_drop(a0)
+
+    def dragMoveEvent(self, a0: QDragMoveEvent | None):
+        self._accept_url_drop(a0)
+
+    @staticmethod
+    def _accept_url_drop(event: QDropEvent | None):
+        if event is None:
             return
-        mime_data = a0.mimeData()
+        mime_data = event.mimeData()
         if mime_data is not None and mime_data.hasUrls():
-            a0.acceptProposedAction()
+            event.acceptProposedAction()
 
     def dropEvent(self, a0: QDropEvent | None):
         if a0 is None:

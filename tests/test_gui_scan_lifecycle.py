@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from PyQt6.QtCore import QMimeData, QPoint, QPointF, QUrl, Qt, QThread
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent
+from PyQt6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PyQt6.QtWidgets import QApplication
 
 import gui
@@ -96,28 +96,49 @@ def test_discovery_runs_asynchronously_and_queues_terminal_paths(
         window.close()
 
 
-def test_cards_surface_accepts_model_drops(tmp_path, monkeypatch):
+def test_card_and_window_drops_wait_for_release(tmp_path, monkeypatch):
     monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
     monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
     model = tmp_path / "dropped.safetensors"
     model.write_bytes(b"")
+    folder = tmp_path / "dropped-folder"
+    folder.mkdir()
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
-    monkeypatch.setattr(window, "_analyze_all", lambda *args, **kwargs: None)
-    try:
-        window.show()
-        app.processEvents()
+    added = []
+    discoveries = []
+    monkeypatch.setattr(window, "_add_files", lambda paths: added.append(paths))
+    monkeypatch.setattr(
+        window,
+        "_start_discovery",
+        lambda folders, paths, **kwargs: discoveries.append((folders, paths, kwargs)),
+    )
+
+    def send_drag_events(target, path):
+        added_before = len(added)
+        discoveries_before = len(discoveries)
         mime_data = QMimeData()
-        mime_data.setUrls([QUrl.fromLocalFile(str(model))])
-        enter = QDragEnterEvent(
-            QPoint(),
-            Qt.DropAction.CopyAction,
-            mime_data,
-            Qt.MouseButton.NoButton,
-            Qt.KeyboardModifier.NoModifier,
-        )
-        QApplication.sendEvent(window.cards_container, enter)
-        assert enter.isAccepted()
+        mime_data.setUrls([QUrl.fromLocalFile(str(path))])
+        for event in (
+            QDragEnterEvent(
+                QPoint(),
+                Qt.DropAction.CopyAction,
+                mime_data,
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+            QDragMoveEvent(
+                QPoint(),
+                Qt.DropAction.CopyAction,
+                mime_data,
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        ):
+            QApplication.sendEvent(target, event)
+            assert event.isAccepted()
+        assert len(added) == added_before
+        assert len(discoveries) == discoveries_before
         event = QDropEvent(
             QPointF(),
             Qt.DropAction.CopyAction,
@@ -125,9 +146,29 @@ def test_cards_surface_accepts_model_drops(tmp_path, monkeypatch):
             Qt.MouseButton.NoButton,
             Qt.KeyboardModifier.NoModifier,
         )
-        QApplication.sendEvent(window.cards_container, event)
+        QApplication.sendEvent(target, event)
         assert event.isAccepted()
-        assert [Path(path) for path in window._queued_files] == [model]
+
+    try:
+        window.show()
+        app.processEvents()
+        for target in (
+            window.tabs.widget(0),
+            window.cards_scroll,
+            window.cards_scroll.viewport(),
+            window.cards_container,
+        ):
+            added_before = len(added)
+            send_drag_events(target, model)
+            assert len(added) == added_before + 1
+            assert [Path(path) for path in added[-1]] == [model]
+            assert not discoveries
+        added_before = len(added)
+        send_drag_events(window, folder)
+        assert len(added) == added_before
+        assert len(discoveries) == 1
+        assert [Path(path) for path in discoveries[0][0]] == [folder]
+        assert discoveries[0][1] == []
     finally:
         window.close()
 

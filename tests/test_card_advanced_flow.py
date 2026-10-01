@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import struct
+import time
 from pathlib import Path
 from typing import Any, cast
 
@@ -118,6 +119,97 @@ def test_advanced_viewer_reuses_existing_dialog_for_repeat_entry(tmp_path, monke
 
         assert window._advanced_dialog is first
         assert first.explorer_tab.dump_json_modelinfo is False
+    finally:
+        window.close()
+        app.processEvents()
+
+
+def test_persisted_cache_headers_are_reloaded_live_after_restart(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    paths = []
+    live_values = {}
+    for index in range(3):
+        path = tmp_path / f"cached-{index}.safetensors"
+        live_value = f"live-header-{index}-" + "x" * 900 + "-full-tail"
+        metadata = {f"raw.only.{index}": live_value}
+        header = json.dumps(
+            {
+                "__metadata__": metadata,
+                "live.tensor": {"dtype": "F16", "shape": [1], "data_offsets": [0, 2]},
+            }
+        ).encode("utf-8")
+        path.write_bytes(struct.pack("<Q", len(header)) + header + b"payload")
+        filepath = str(path)
+        paths.append(filepath)
+        live_values[filepath] = live_value
+        cached = _summary(filepath) | {
+            "resolved_filepath": str(path.resolve()),
+            "file_size": path.stat().st_size,
+            "metadata": {f"raw.only.{index}": "cached snippet"},
+            "tensor_info": {"cached.tensor": {"dtype": "F32", "shape": [9]}},
+            # Old persisted inspection state must not stand in for a live read.
+            "header_metadata_loaded": True,
+            "header_metadata_complete": index % 2 == 0,
+            "header_metadata_path": filepath,
+        }
+        store_cached_inspection(filepath, cached)
+
+    monkeypatch.setattr(AdvancedViewerDialog, "exec", lambda _dialog: 0)
+    window = MainWindow()
+
+    def load_from_persisted_cache() -> None:
+        window._load_cache_all()
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            app.processEvents()
+            if window._cache_load_worker is None and len(window._results) == len(paths):
+                break
+            time.sleep(0.01)
+        assert window._cache_load_worker is None
+        assert {result["filepath"] for result in window._results} == set(paths)
+        assert window.table.rowCount() == len(paths)
+        assert set(window._path_to_card) == set(paths)
+
+    def inspect_live_metadata() -> None:
+        for filepath in paths:
+            window._show_advanced_viewer_for_path(filepath)
+            dialog = window._advanced_dialog
+            metadata_index = dialog.work_area.indexOf(dialog.explorer_tab.metadata_page)
+            dialog.work_area.setCurrentIndex(metadata_index)
+            key = f"raw.only.{paths.index(filepath)}"
+            deadline = time.monotonic() + 4
+            while (
+                dialog._inspection.get("metadata", {}).get(key) != live_values[filepath]
+                and time.monotonic() < deadline
+            ):
+                app.processEvents()
+                time.sleep(0.01)
+
+            assert dialog._inspection["metadata"][key] == live_values[filepath]
+            assert dialog._inspection["header_metadata_path"] == filepath
+            assert dialog._inspection["header_metadata_complete"] is True
+            row = next(
+                row
+                for row in range(dialog.explorer_tab.metadata_table.rowCount())
+                if dialog.explorer_tab.metadata_table.item(row, 0).text() == key
+            )
+            dialog.explorer_tab.metadata_table.selectRow(row)
+            assert "full-tail" in dialog.explorer_tab.metadata_detail.toPlainText()
+
+    try:
+        load_from_persisted_cache()
+        inspect_live_metadata()
+
+        window._clear_all()
+        assert window._results == []
+        assert window.table.rowCount() == 0
+        assert not window._path_to_card
+        assert set(window._list_cached_inspection_paths()) == set(paths)
+
+        load_from_persisted_cache()
+        inspect_live_metadata()
     finally:
         window.close()
         app.processEvents()

@@ -8,7 +8,7 @@ controller state.
 """
 
 from PyQt6.QtCore import QEvent, QObject, Qt
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
+from PyQt6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -43,10 +43,15 @@ class _CardDropRelay(QObject):
         self._window = window
 
     def eventFilter(self, _watched, event: QEvent | None) -> bool:
-        if isinstance(event, QDragEnterEvent):
+        if event is None:
+            return False
+        if event.type() == QEvent.Type.DragEnter and isinstance(event, QDragEnterEvent):
             self._window.dragEnterEvent(event)
             return event.isAccepted()
-        if isinstance(event, QDropEvent):
+        if event.type() == QEvent.Type.DragMove and isinstance(event, QDragMoveEvent):
+            self._window.dragMoveEvent(event)
+            return event.isAccepted()
+        if event.type() == QEvent.Type.Drop and isinstance(event, QDropEvent):
             self._window.dropEvent(event)
             return event.isAccepted()
         return False

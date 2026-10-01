@@ -46,10 +46,12 @@ the follow-up list below.
 
 ### Release validation still open
 
-- [x] Final canonical suite: 484 passed, 4 skipped in 105.54 seconds, exit 0.
-  Command:
-  `$env:PYTHONPATH='src';
-  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`.
+- [x] Current canonical suite: 487 passed, 4 skipped in 135.80 seconds, exit
+  0. Command: `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen';
+  python -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-regression-2026-10-01.log`.
+- [x] Prior canonical suite: 484 passed, 4 skipped in 105.54 seconds, exit 0;
+  its original milestone evidence remains recorded in `DONE.md`.
 - [x] Focused Explorer/metadata/Advanced regression: 55 passed. Real-header
   Qwen smokes passed
   in human-readable and JSON modes; the generic Qwen Image2.1 false positive
@@ -106,6 +108,15 @@ the follow-up list below.
 - [x] Metadata UI live-file header loading now bypasses full-data cache scans;
   missing-file cache fallback and the capability/domain boundary are covered
   by regression tests. Keep the `test_ui_release_gates.py` catalog current.
+- [x] Persisted cache records no longer let stale header-path/completeness flags
+  suppress an Advanced Viewer live-header reload after Clear Cache or restart.
+  The controller records its local read provenance and selects the first existing
+  requested, filepath, or resolved path; regression coverage round-trips three
+  models through two windows and verifies full metadata detail.
+- [x] Card-surface drag relaying dispatches only exact DragEnter, DragMove, and
+  Drop event types. Move accepts URL drags without queueing work; release alone
+  queues files or starts folder discovery across the Cards tab, scroll, viewport,
+  card container, and main window.
 
 ### Advanced Viewer refinements — non-release
 

@@ -341,6 +341,7 @@ class IntegrationMixin(CacheLoadControllerMixin):
         dialog.explorer_tab.dump_json_modelinfo = bool(
             getattr(self, "_dump_json_modelinfo", False)
         )
+        dialog._header_controller.request_if_needed()
         if dialog.isVisible():
             dialog.raise_()
             dialog.activateWindow()

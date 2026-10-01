@@ -38,6 +38,23 @@ completed foundation does not imply that every refinement in `TODO.md` is done.
   (exit 0): `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python
   -m pytest tests`. Log:
   `R:\Temp\opencode\modelinspector-final-canonical-20261001.log`.
+- [x] Follow-up regressions: card-surface relay distinguishes exact drag event
+  types, so accepted DragMove events never load files before Drop; Drop reaches
+  all four Cards surfaces and the main window. Advanced Viewer header reloads
+  retain controller-local provenance rather than trusting persisted
+  `header_metadata_path`/completeness flags, selecting an existing requested,
+  filepath, then resolved model path.
+- [x] Full-suite validation before the supplemental existing-test extension:
+  **487 passed, 4 skipped in 135.80 seconds** (exit 0): `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-regression-2026-10-01.log`.
+- [x] The subsequent `test_persisted_cache_headers_are_reloaded_live_after_restart`
+  extension adds no test count. It covers three models through actual
+  `_clear_all`, `_load_cache_all`/`_load_cache_status`, `CacheLoadWorker`, and
+  summary projection before two-window live-header/detail verification.
+  Targeted validation after that extension: **7 passed in 0.73 seconds** (exit
+  0): `PYTHONPATH=src QT_QPA_PLATFORM=offscreen python -m pytest
+  tests/test_card_advanced_flow.py -q`.
 - [x] A user reported that locally built binaries/wheels and the Windows
   executable work on GitHub Python 3.12 and local Python 3.15a2. This is
   user-reported package evidence, not independent packaged visual QA.

@@ -159,6 +159,17 @@ def load_header_only(filepath: str) -> dict[str, Any]:
     }
 
 
+def _header_inspection_filepath(inspection: Mapping[str, Any]) -> str:
+    """Prefer the requested live path, then cached and resolved alternatives."""
+    requested = str(inspection.get("requested_filepath") or "")
+    filepath = str(inspection.get("filepath") or "")
+    resolved = str(inspection.get("resolved_filepath") or "")
+    for candidate in dict.fromkeys((requested, filepath, resolved)):
+        if candidate and Path(candidate).is_file():
+            return candidate
+    return filepath or requested or resolved
+
+
 def merge_header_inspection(
     inspection: Mapping[str, Any], payload: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -287,6 +298,9 @@ class HeaderInspectionController(QObject):
         self._apply_inspection = apply_inspection
         self._loader = HeaderInspectionLoader(self)
         self._pending_path: str | None = None
+        self._loaded_path: str | None = None
+        self._loaded_complete = False
+        self._applying_loaded_inspection = False
         tabs.currentChanged.connect(self._tab_changed)
         explorer.metadata_table.itemSelectionChanged.connect(self._show_full_metadata_detail)
         self._loader.result_ready.connect(self._loaded)
@@ -294,6 +308,9 @@ class HeaderInspectionController(QObject):
 
     def replace_inspection(self) -> None:
         self._pending_path = None
+        if not self._applying_loaded_inspection:
+            self._loaded_path = None
+            self._loaded_complete = False
         self._loader.cancel()
         self._explorer.set_loading(False)
         self._update_metadata_tab()
@@ -317,12 +334,13 @@ class HeaderInspectionController(QObject):
 
     def _request_if_needed(self) -> None:
         inspection = self._inspection_getter()
-        filepath = str(inspection.get("filepath") or "")
+        filepath = _header_inspection_filepath(inspection)
         active_page = self._tabs.currentWidget()
         metadata_active = active_page is self._metadata_page
         if not filepath or filepath == self._pending_path:
             return
-        if str(inspection.get("header_metadata_path") or "") == filepath:
+        exists = Path(filepath).is_file()
+        if self._loaded_path == filepath and self._loaded_complete == exists:
             return
         if not metadata_active and any(
             normalize_tensor_descriptors(inspection.get(key))
@@ -340,9 +358,9 @@ class HeaderInspectionController(QObject):
         if index < 0:
             return
         inspection = self._inspection_getter()
-        filepath = str(inspection.get("filepath") or "")
-        loaded = str(inspection.get("header_metadata_path") or "") == filepath
-        complete = loaded and inspection.get("header_metadata_complete") is True
+        filepath = _header_inspection_filepath(inspection)
+        loaded = self._loaded_path == filepath
+        complete = loaded and self._loaded_complete
         incomplete = not filepath or not complete
         if incomplete:
             self._tabs.setTabText(index, "Metadata (Incomplete data)")
@@ -362,7 +380,8 @@ class HeaderInspectionController(QObject):
 
     def _show_full_metadata_detail(self) -> None:
         inspection = self._inspection_getter()
-        if inspection.get("header_metadata_complete") is not True:
+        filepath = _header_inspection_filepath(inspection)
+        if self._loaded_path != filepath or not self._loaded_complete:
             return
         selection_model = self._explorer.metadata_table.selectionModel()
         rows = selection_model.selectedRows() if selection_model is not None else []
@@ -377,17 +396,25 @@ class HeaderInspectionController(QObject):
         self._explorer.metadata_detail.setPlainText(_inspect_text({"value": value}))
 
     def _is_current(self, generation: int) -> bool:
+        inspection = self._inspection_getter()
         return (
             generation == self._loader.generation
             and self._pending_path
-            == str(self._inspection_getter().get("filepath") or "")
+            == _header_inspection_filepath(inspection)
         )
 
     def _loaded(self, generation: int, payload: object) -> None:
         if not self._is_current(generation) or not isinstance(payload, Mapping):
             return
+        filepath = self._pending_path
         self._pending_path = None
-        self._apply_inspection(merge_header_inspection(self._inspection_getter(), payload))
+        self._loaded_path = filepath
+        self._loaded_complete = payload.get("header_metadata_complete") is True
+        self._applying_loaded_inspection = True
+        try:
+            self._apply_inspection(merge_header_inspection(self._inspection_getter(), payload))
+        finally:
+            self._applying_loaded_inspection = False
 
     def _failed(self, generation: int, message: str) -> None:
         if not self._is_current(generation):

@@ -360,6 +360,55 @@ def test_metadata_tab_prefers_full_live_header_over_compact_summary(
         dialog.close()
 
 
+@pytest.mark.parametrize("requested_exists", (True, False))
+def test_metadata_header_prefers_live_requested_then_resolved_path(
+    tmp_path: Path, requested_exists: bool
+) -> None:
+    _app()
+    requested = tmp_path / "requested.safetensors"
+    resolved = tmp_path / "resolved.safetensors"
+    expected_path = requested if requested_exists else resolved
+    for path in (requested, resolved):
+        if path == requested and not requested_exists:
+            continue
+        metadata = {"live.path": path.stem}
+        header = json.dumps(
+            {
+                "__metadata__": metadata,
+                "live.tensor": {"dtype": "F16", "shape": [1], "data_offsets": [0, 2]},
+            }
+        ).encode("utf-8")
+        path.write_bytes(struct.pack("<Q", len(header)) + header + b"payload")
+
+    dialog = AdvancedViewerDialog(
+        {
+            "filepath": str(requested),
+            "requested_filepath": str(requested),
+            "resolved_filepath": str(resolved),
+            "metadata": {"live.path": "cached snippet"},
+            "tensor_info": {"cached.tensor": {"dtype": "F32", "shape": [9]}},
+            "header_metadata_path": str(requested),
+            "header_metadata_complete": True,
+        }
+    )
+    try:
+        metadata_index = dialog.work_area.indexOf(dialog.explorer_tab.metadata_page)
+        dialog.work_area.setCurrentIndex(metadata_index)
+        deadline = time.monotonic() + 4
+        while (
+            dialog._inspection.get("metadata", {}).get("live.path") != expected_path.stem
+            and time.monotonic() < deadline
+        ):
+            _app().processEvents()
+            time.sleep(0.01)
+
+        assert dialog._inspection["metadata"]["live.path"] == expected_path.stem
+        assert dialog._inspection["header_metadata_path"] == str(expected_path)
+        assert dialog._inspection["header_metadata_complete"] is True
+    finally:
+        dialog.close()
+
+
 def test_missing_model_cached_metadata_is_labeled_incomplete(tmp_path: Path, monkeypatch) -> None:
     _app()
     missing = tmp_path / "missing.safetensors"

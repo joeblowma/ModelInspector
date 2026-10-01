@@ -3,6 +3,48 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-10-01 — Metadata, scan flow, filtering, and release wiring
+
+- [x] Scan append preserves the selected list one file at a time; additions
+  arriving while busy drain after completion, while cancellation or close does
+  not drain them. Analyze hides when automatic analysis is active or no work is
+  pending, and card drops relay through the existing scan path.
+- [x] Modelinfo is the default dump artifact, and the associated controls have
+  explicit tooltips. The Raw Metadata tab requests a live, header-only read
+  when activated even if cached descriptors exist; compact previews remain
+  bounded, while existing detail access exposes every raw key and full long
+  value. Missing files retain cached fallback and explicitly show
+  `Metadata (Incomplete data)`.
+- [x] Historic cached records remain visible and tagged in Cards/Data; cache
+  filtering, visible facet counts, and preserved filter choices respect the
+  other active filters. Filter popups choose upward placement when needed and
+  expose above/below scroll indicators.
+- [x] Removed the duplicate `sshs_meta` architecture-variant append. The build
+  and release workflows use a native PowerShell seven-character SHA instead of
+  three third-party SHA-action uses; this was committed as `b5254b4` by the
+  integration lead.
+- [x] Worker-reported focused regressions passed: 63 combined metadata/Advanced
+  checks after correcting the two stale contracts, and 21 architecture-variant
+  checks after removing the duplicate append.
+- [x] Header-only CLI model evidence passed in human-readable and JSON modes
+  (all commands exit 0) for Flux1 Compact, Flux1 Schnell, Flux1 autoencoder/VAE,
+  Flux2 key-only headers, SDXL Turbo, QwenImage2.1 Backbone, Boogu Image,
+  LongCat Image, and Klein/Krea LoRA rank-32 inputs. Schnell no longer collides
+  with `flux2024`; Flux2 remains an unknown variant rather than unsupported;
+  Boogu and LongCat project null domain and no capabilities without false LLM
+  classification. Filename-only Klein/Base/Turbo/Edit distinctions are not
+  claimed where metadata did not evidence them.
+- [x] Final canonical validation: **484 passed, 4 skipped in 105.54 seconds**
+  (exit 0): `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python
+  -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-final-canonical-20261001.log`.
+- [x] A user reported that locally built binaries/wheels and the Windows
+  executable work on GitHub Python 3.12 and local Python 3.15a2. This is
+  user-reported package evidence, not independent packaged visual QA.
+- [ ] Packaged visual QA, hosted/tagged native-SHA workflow validation, the
+  existing strict-pylint blocker, the unbaselined mypy gate, and full Graphify
+  refresh remain open in `TODO.md`.
+
 ## 2026-09-21 — b8c0645 follow-up fixes
 
 - [x] Uniform Cards scroll sizing now leaves only viewport whitespace for fixed

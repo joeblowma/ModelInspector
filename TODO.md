@@ -46,7 +46,7 @@ the follow-up list below.
 
 ### Release validation still open
 
-- [x] Final canonical suite: 470 passed, 4 skipped in 52.11 seconds, exit 0.
+- [x] Final canonical suite: 484 passed, 4 skipped in 105.54 seconds, exit 0.
   Command:
   `$env:PYTHONPATH='src';
   $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`.
@@ -55,14 +55,12 @@ the follow-up list below.
   in human-readable and JSON modes; the generic Qwen Image2.1 false positive
   is guarded, unsupported diffusion projects a null domain and empty
   capabilities, and Qwen35 prompt enhancers remain LLM with thinking/tools.
-- [ ] Verify hosted CI Windows executable checks and actual revision-named
-  artifacts.
-- [ ] Validate the tagged GitHub release: tag/source/wheel version agreement
-  and both release asset types.
-- [ ] Mypy is not a configured clean gate: the first UI pass reported 187
-  errors without a baseline, and the targeted metadata pass reported four
-  import-resolution errors (`back.capability_evidence`, `model_cache`,
-  `model_readers`, `.explorer_data`).
+- [ ] Verify the hosted Windows executable workflow end to end with the native
+  seven-character SHA artifact naming (the third-party SHA action was removed).
+- [ ] Validate the tagged GitHub release end to end: tag/source/wheel version
+  agreement and both release asset types.
+- [ ] Mypy is not a configured clean gate: the current unbaselined run reports
+  211 errors. Do not treat it as a release pass until a scoped baseline exists.
 
 ## Deferred product work
 

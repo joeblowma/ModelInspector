@@ -25,7 +25,9 @@ This is a growing Python desktop/CLI utility for inspecting various language and
   and supported loaded-model Inspect must not add files or trigger reanalysis.
   Sorted/filterable metadata and embedded rows retain Qt payload mappings; Save
   and Extract prefer an existing requested path, then resolved/legacy paths, so
-  cached previews never replace live metadata or require a cache purge.
+  cached previews never replace live metadata or require a cache purge. Metadata
+  tab activation requests a live header even when cached descriptors exist;
+  missing files retain cached fallback and are explicitly incomplete.
 - `requirements.txt` lists runtime dependencies.
 - `requirements-dev.txt` lists build dependencies.
 - `win_compile.bat`, `win_clean.bat`, `ModelInspector.spec`, `build/`, and `dist/` support PyInstaller packaging.
@@ -66,7 +68,7 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
-Current validation is 470 passed, 4 skipped in 52.11 seconds with exit 0 on the canonical suite; focused Explorer/metadata/Advanced coverage is 55 passed. The live-file header loader now reads directly and retains cache fallback only for missing files. Generic Qwen Image2.1 no longer produces a diffusion-as-LLM false positive; unsupported diffusion projects a null domain and empty capabilities, while Qwen35 prompt enhancers remain LLM with thinking/tools. Keep packaged visual QA, the existing strict-pylint blocker, hosted/tagged validation, and Graphify refresh open. Mypy is not a configured clean gate: the first UI pass had 187 errors without a baseline, and targeted metadata had four import-resolution errors.
+Current validation is 484 passed, 4 skipped in 105.54 seconds with exit 0 on the canonical suite. The live-file header loader reads directly and retains cached fallback only for missing files. Header-only CLI evidence covers the current Flux/SDXL/Qwen/Boogu/LongCat/LoRA cases; preserve unknown or null-domain/capability results where metadata is insufficient. Keep packaged visual QA, the existing strict-pylint blocker, hosted/tagged native-SHA workflow validation, and Graphify refresh open. Mypy is not a configured clean gate: the current unbaselined run reports 211 errors.
 
 `.\tests\AGENTS.md` - contains a list of existing tests and their uses. Read before creating new tests, update when tests change.
 
@@ -89,3 +91,6 @@ Current validation is 470 passed, 4 skipped in 52.11 seconds with exit 0 on the 
 - **Hard Module Ceiling (500 Lines)**: Any generated or extracted file exceeding 500 lines is automatically flagged as an invalid God Node. It must immediately be queued for a second split by a worker before progressing to linkage repair. No "cohesive file exceptions" without explicit Lead Architect approval.
 - **Model Type Enforcement**: Before spawning subagents, verify that requested subagent models map strictly to models documented in `.opencode/agents/*.md`. If a model alias resolves incorrectly or defaults to `gpt-6-astra`, halt execution immediately.
 - **Wrapper Boundary Policy**: Entry-point wrappers (`gui.py`, `inspect_model.py`) may contain thin re-exports, MRO composition, and compatibility hooks, but zero domain logic.
+- **Existing legacy ceiling follow-up**: `explorer_tab.py` (541 lines),
+  `settings_dialog.py` (501), and `theme_tab.py` (510) predate this batch;
+  do not expand them, but leave splitting to a scoped maintenance owner.

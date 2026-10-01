@@ -122,6 +122,7 @@ class ExplorerTab(QWidget):
             meta_header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
         self.metadata_table.setColumnWidth(0, 300)
         self.metadata_table.setColumnWidth(1, 2000)
+        self.metadata_table.setMinimumHeight(320)
         self.metadata_table.setSortingEnabled(False)
         self.metadata_table.setWordWrap(True)
         self.metadata_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)

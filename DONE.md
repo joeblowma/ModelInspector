@@ -3,6 +3,35 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-10-03 — Reader bounds and archive/shard preflight
+
+- [x] Safetensors header reads now reject short prefix/header reads instead of
+  accepting truncated data. Native GGUF parsing was extracted to
+  `back.gguf_reader`, with fixed caps for header bytes, strings, metadata and
+  tensor counts, arrays, tensor dimensions, and parse work; malformed or unsafe
+  native input never falls back to an optional GGUF library. `read_gguf_header`
+  calls the bounded native reader directly and authoritatively for every result
+  or error; the private library helper remains unused for compatibility only.
+- [x] Shard discovery rejects impractically large or unconvertible numeric
+  filename tokens and preserves partial filename-set indices while surfacing the
+  missing-index warning through the inspection pipeline.
+- [x] Checkpoint metadata ZIP inspection preflights up to 2 MiB of end records
+  and its central directory before constructing `ZipFile`, including ZIP64 and
+  SFX-compatible layouts. The private-`zipfile` helper compatibility risk is
+  retained as an explicit follow-up in `TODO.md`.
+- [x] Canonical integration validation before the subsequent GGUF fallback fix:
+  **502 passed, 4 skipped in 56.03 seconds** (exit 0):
+  `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest
+  tests`. Log: `R:\Temp\opencode\modelinspector-qodo-2026-10-03.log`.
+- [x] Affected validation after that follow-up fix: **16 passed** (exit 0):
+  `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest
+  tests/test_model_readers_bounds.py tests/test_ptq_precision.py`. This includes
+  OSError, RuntimeError, and unsupported-version GGUF failure coverage. The
+  canonical full suite was not rerun after this focused follow-up, per
+  validation cadence.
+- [x] CLI wiring smoke: `py src/inspect_model.py --help` exited 0 and displayed
+  the parser help without starting Qt.
+
 ## 2026-10-01 — Metadata, scan flow, filtering, and release wiring
 
 - [x] Scan append preserves the selected list one file at a time; additions

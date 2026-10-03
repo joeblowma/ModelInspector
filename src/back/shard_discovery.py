@@ -9,6 +9,8 @@ from typing import Callable
 
 
 SUPPORTED_SHARD_SUFFIXES = (".gguf", ".safetensors")
+MAX_SHARD_NUMBER_DIGITS = 9
+MAX_MISSING_SHARD_PREVIEW = 8
 _SHARD_RE = re.compile(
     r"^(?P<prefix>.*?)(?P<index>\d+)-of-(?P<count>\d+)(?P<suffix>\.gguf|\.safetensors)$",
     re.IGNORECASE,
@@ -76,8 +78,15 @@ def _parse_shard_name(path: Path) -> tuple[str, int, int, str] | None:
     if not match:
         return None
     groups = match.groupdict()
-    count = int(groups["count"])
-    index = int(groups["index"])
+    raw_count = groups["count"]
+    raw_index = groups["index"]
+    if len(raw_count) > MAX_SHARD_NUMBER_DIGITS or len(raw_index) > MAX_SHARD_NUMBER_DIGITS:
+        return None
+    try:
+        count = int(raw_count)
+        index = int(raw_index)
+    except ValueError:
+        return None
     suffix = groups["suffix"].lower()
     if count < 2 or index < 1 or index > count or suffix not in SUPPORTED_SHARD_SUFFIXES:
         return None
@@ -235,6 +244,21 @@ def aggregate_shard_headers(
     tensor_info: dict = {}
     total_size = 0
     warnings = []
+    if shard_set.manifest_path is None:
+        discovered_ids = {member.shard_id for member in shard_set.members}
+        missing_count = max(0, shard_set.expected_count - len(discovered_ids))
+        if missing_count:
+            preview_limit = min(shard_set.expected_count, MAX_MISSING_SHARD_PREVIEW)
+            preview = [
+                str(index)
+                for index in range(1, preview_limit + 1)
+                if index not in discovered_ids
+            ]
+            preview_text = f" (including {', '.join(preview)})" if preview else ""
+            warnings.append(
+                f"{missing_count} shard indices are missing from the filename-discovered "
+                f"set (found {len(discovered_ids)} of {shard_set.expected_count}){preview_text}"
+            )
     for member in shard_set.members:
         try:
             member_metadata, member_tensors, member_size = read_one(member.path)

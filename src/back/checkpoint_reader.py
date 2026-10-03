@@ -23,6 +23,7 @@ CHECKPOINT_SAFETY_CHOICES = (
 CheckpointSafety = Literal["reject", "metadata"]
 MAX_SAFE_JSON_BYTES = 2_000_000
 MAX_ARCHIVE_ENTRIES = 256
+MAX_ARCHIVE_DIRECTORY_BYTES = 2_000_000
 MAX_METADATA_BYTES = 2_000_000
 
 
@@ -87,11 +88,36 @@ def _read_small_json(
     return _jsonable(value), len(raw)
 
 
+def _preflight_zip_directory(filepath: str, file_size: int) -> None:
+    """Reject central directories that ZipFile would allocate beyond our budget.
+
+    This relies on CPython's bounded EOCD reader, including its ZIP64 and
+    prepended-data handling; multi-disk ZIP archives remain unsupported.
+    """
+    with open(filepath, "rb") as stream:
+        end_record = zipfile._EndRecData(stream)
+    if not end_record:
+        raise zipfile.BadZipFile("File is not a ZIP file")
+    directory_size = end_record[zipfile._ECD_SIZE]
+    directory_offset, prepended_size = zipfile._handle_prepended_data(end_record)
+    directory_start = directory_offset + prepended_size
+    if (
+        directory_size < 0
+        or directory_size > MAX_ARCHIVE_DIRECTORY_BYTES
+        or directory_start < 0
+        or directory_start + directory_size > file_size
+    ):
+        raise zipfile.BadZipFile(
+            f"ZIP central directory exceeds {MAX_ARCHIVE_DIRECTORY_BYTES} byte safety limit"
+        )
+
+
 def _zip_metadata(filepath: str, _file_size: int) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "checkpoint.archive_type": "zip",
         "checkpoint.safety": CHECKPOINT_SAFETY_METADATA,
     }
+    _preflight_zip_directory(filepath, _file_size)
     with zipfile.ZipFile(filepath, "r") as archive:
         infos = archive.infolist()
         examined = infos[:MAX_ARCHIVE_ENTRIES]
@@ -179,6 +205,7 @@ __all__ = [
     "CHECKPOINT_SAFETY_METADATA",
     "CHECKPOINT_SAFETY_REJECT",
     "CheckpointSafety",
+    "MAX_ARCHIVE_DIRECTORY_BYTES",
     "MAX_ARCHIVE_ENTRIES",
     "MAX_METADATA_BYTES",
     "UnsafeCheckpointError",

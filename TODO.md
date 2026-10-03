@@ -46,10 +46,13 @@ the follow-up list below.
 
 ### Release validation still open
 
-- [x] Current canonical suite: 487 passed, 4 skipped in 135.80 seconds, exit
-  0. Command: `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen';
-  python -m pytest tests`. Log:
-  `R:\Temp\opencode\modelinspector-regression-2026-10-01.log`.
+- [x] Canonical suite before the subsequent GGUF fallback fix: 502 passed, 4
+  skipped in 56.03 seconds, exit 0. Command: `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-qodo-2026-10-03.log`. The follow-up's
+  affected command, `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen';
+  python -m pytest tests/test_model_readers_bounds.py tests/test_ptq_precision.py`,
+  passed 16 tests; the full suite was not rerun per validation cadence.
 - [x] Prior canonical suite: 484 passed, 4 skipped in 105.54 seconds, exit 0;
   its original milestone evidence remains recorded in `DONE.md`.
 - [x] Focused Explorer/metadata/Advanced regression: 55 passed. Real-header
@@ -127,6 +130,10 @@ the follow-up list below.
 
 ### CLI, packaging, and developer maintenance
 
+- [ ] Verify the checkpoint ZIP central-directory preflight on every supported
+  Python minor version and representative ZIP64/SFX archives. It currently uses
+  private `zipfile` helpers for compatibility with those layouts; stdlib API
+  changes are the remaining concrete compatibility risk.
 - Keep legacy `-cli` executable passthrough optional and deferred; it is
   distinct from the GUI positional startup target in the pre-release checklist.
 - Wheel release metadata and artifact validation are under repair; local,

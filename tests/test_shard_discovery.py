@@ -5,8 +5,10 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from back.shard_discovery import discover_shard_set
+from back import shard_discovery
+from back.shard_discovery import _parse_shard_name, discover_shard_set
 from model_readers import iter_model_paths, read_model_header
+from back.inspection_pipeline import inspect_file
 
 
 def _write_safetensors(path: Path, name: str, size: int = 4) -> None:
@@ -69,6 +71,35 @@ def test_shard_ids_preserve_filename_indices_and_manifest_order_with_gaps(tmp_pa
     metadata, tensors, _ = read_model_header(str(index))
     assert [item["shard_id"] for item in tensors.values()] == [1, 3]
     assert [item["source_index"] for item in metadata["smi.shard_manifest"]["members"]] == [2, 1]
+
+
+def test_filename_partial_shards_warn_through_inspection_without_expanding_indices(tmp_path):
+    first = tmp_path / "model-00001-of-00003.safetensors"
+    third = tmp_path / "model-00003-of-00003.safetensors"
+    _write_safetensors(first, "alpha")
+    _write_safetensors(third, "gamma", 6)
+
+    result = inspect_file(str(third), {"include_sidecars": False})
+
+    assert result["file_size"] == first.stat().st_size + third.stat().st_size
+    assert result["metadata"]["smi.shard_manifest"]["expected_count"] == 3
+    assert result["shard_identity"]["expected_count"] == 3
+    assert any("1 shard indices are missing" in warning for warning in result["warnings"])
+
+
+def test_shard_parser_rejects_huge_or_unconvertible_numeric_tokens(monkeypatch, tmp_path):
+    huge = "9" * 10_000
+    assert _parse_shard_name(tmp_path / f"model-{huge}-of-{huge}.safetensors") is None
+    if not hasattr(sys, "set_int_max_str_digits"):
+        return
+    previous_limit = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(640)
+    try:
+        monkeypatch.setattr(shard_discovery, "MAX_SHARD_NUMBER_DIGITS", 641)
+        limited = "9" * 641
+        assert _parse_shard_name(tmp_path / f"model-{limited}-of-{limited}.safetensors") is None
+    finally:
+        sys.set_int_max_str_digits(previous_limit)
 
 
 def test_stale_safetensors_index_is_not_discovered_or_canonicalized(tmp_path):

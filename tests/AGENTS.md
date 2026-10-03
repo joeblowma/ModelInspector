@@ -22,9 +22,18 @@
 - `.\tests\test_cache_sync_ui.py`
 - `.\tests\test_cache_menu_integration.py`
 - `.\tests\test_smart_column_groups.py`
-- `.\tests\test_reader_registry.py`
+- `.\tests\test_reader_registry.py` — safe reader registration/dispatch,
+  checkpoint policy, metadata ZIP bounds, and ZIP/ZIP64 central-directory
+  preflight before `ZipFile` construction.
+- `.\tests\test_model_readers_bounds.py` — exact safetensors header reads and
+  bounded native GGUF parsing: hostile counts, strings, aggregate header bytes,
+  arrays, dimensions, work, truncation, header-only valid reads, and no optional
+  library fallback for malformed, unsafe, OSError, RuntimeError, or
+  unsupported-version input.
 - `.\tests\test_onnx_reader.py`
-- `.\tests\test_shard_discovery.py`
+- `.\tests\test_shard_discovery.py` — filename/index shard aggregation, bounded
+  numeric-token parsing, and partial-shard missing-index warnings propagated by
+  the inspection pipeline.
 - `.\tests\test_sidecar_discovery.py`
 - `.\tests\test_cache_sidecar_integration.py`
 - `.\tests\test_reporting_shards.py`
@@ -57,12 +66,18 @@
 
 ## Current validation note
 
-- Canonical full suite: **487 passed, 4 skipped in 135.80 seconds**, exit 0:
+- Canonical full suite before the subsequent GGUF fallback fix: **502 passed, 4
+  skipped in 56.03 seconds**, exit 0:
   `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`.
-  Log: `R:\Temp\opencode\modelinspector-regression-2026-10-01.log`. This run
-  preceded the supplemental existing-test extension below.
+  Log: `R:\Temp\opencode\modelinspector-qodo-2026-10-03.log`. This run includes
+  the reader-bound, shard, checkpoint, and packaging-contract coverage.
+- Affected follow-up: **16 passed**, exit 0:
+  `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest
+  tests/test_model_readers_bounds.py tests/test_ptq_precision.py`. This covers
+  the OSError, RuntimeError, and unsupported-version native-GGUF failures; the
+  canonical full suite was not rerun per validation cadence.
 - Supplemental post-extension test: **7 passed in 0.73 seconds**, exit 0:
   `PYTHONPATH=src QT_QPA_PLATFORM=offscreen python -m pytest
-  tests/test_card_advanced_flow.py -q`. No full suite was rerun.
+  tests/test_card_advanced_flow.py -q`.
 - Header-only model CLI smokes passed in human-readable and JSON modes; retain
   null-domain/empty-capability or Unknown outcomes where metadata lacks evidence.

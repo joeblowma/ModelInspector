@@ -9,6 +9,16 @@ from pathlib import Path
 from typing import Iterable
 
 from back.checkpoint_reader import normalize_checkpoint_safety
+from back.gguf_reader import (
+    _read_exact,
+    _read_gguf_header_fast as _read_gguf_header_fast_impl,
+    _read_gguf_value,
+    _read_scalar,
+    _read_string,
+    _read_u32,
+    _read_u64,
+    _skip_scalar,
+)
 from back.reader_registry import get_reader_registry
 from back.shard_discovery import (
     discover_shard_set,
@@ -115,7 +125,12 @@ def read_safetensors_header(filepath: str, *, options: dict | None = None):
         header_size = struct.unpack("<Q", raw)[0]
         if header_size > 200_000_000:
             raise ValueError(f"Header size ({header_size}) seems unreasonably large")
-        header = json.loads(f.read(header_size))
+        if header_size > file_size - 8:
+            raise ValueError("Safetensors header extends past end of file")
+        header_bytes = f.read(header_size)
+        if len(header_bytes) != header_size:
+            raise ValueError("Unexpected end of safetensors header")
+        header = json.loads(header_bytes)
 
     metadata = header.pop("__metadata__", {})
     _add_common_metadata(metadata, filepath)
@@ -208,10 +223,7 @@ def _to_jsonable(value):
 def read_gguf_header(filepath: str, *, options: dict | None = None):
     """Read GGUF metadata and tensor descriptors without touching tensor payloads."""
     del options
-    try:
-        return _read_gguf_header_fast(filepath)
-    except Exception:
-        return _read_gguf_header_with_library(filepath)
+    return _read_gguf_header_fast(filepath)
 
 
 def _read_gguf_header_with_library(filepath: str):
@@ -244,181 +256,14 @@ def _read_gguf_header_with_library(filepath: str):
     return metadata, tensor_info, os.path.getsize(filepath)
 
 
-def _read_exact(f, size: int) -> bytes:
-    data = f.read(size)
-    if len(data) != size:
-        raise ValueError("Unexpected end of GGUF header")
-    return data
-
-
-def _read_u32(f) -> int:
-    return struct.unpack("<I", _read_exact(f, 4))[0]
-
-
-def _read_u64(f) -> int:
-    return struct.unpack("<Q", _read_exact(f, 8))[0]
-
-
-def _read_scalar(f, value_type: int):
-    scalar_formats = {
-        0: ("<B", 1),  # UINT8
-        1: ("<b", 1),  # INT8
-        2: ("<H", 2),  # UINT16
-        3: ("<h", 2),  # INT16
-        4: ("<I", 4),  # UINT32
-        5: ("<i", 4),  # INT32
-        6: ("<f", 4),  # FLOAT32
-        7: ("<?", 1),  # BOOL
-        10: ("<Q", 8),  # UINT64
-        11: ("<q", 8),  # INT64
-        12: ("<d", 8),  # FLOAT64
-    }
-    fmt_size = scalar_formats.get(value_type)
-    if not fmt_size:
-        raise ValueError(f"Unsupported GGUF scalar value type: {value_type}")
-    fmt, size = fmt_size
-    return struct.unpack(fmt, _read_exact(f, size))[0]
-
-
-def _read_string(f) -> str:
-    length = _read_u64(f)
-    return _read_exact(f, length).decode("utf-8", errors="replace")
-
-
-def _skip_scalar(f, value_type: int, count: int):
-    scalar_sizes = {
-        0: 1,
-        1: 1,
-        2: 2,
-        3: 2,
-        4: 4,
-        5: 4,
-        6: 4,
-        7: 1,
-        10: 8,
-        11: 8,
-        12: 8,
-    }
-    size = scalar_sizes.get(value_type)
-    if not size:
-        raise ValueError(f"Unsupported GGUF scalar value type: {value_type}")
-    f.seek(size * count, os.SEEK_CUR)
-
-
-def _read_gguf_value(f, value_type: int):
-    if value_type == 8:  # STRING
-        return _read_string(f)
-    if value_type == 9:  # ARRAY
-        item_type = _read_u32(f)
-        count = _read_u64(f)
-        preview_count = min(count, MAX_METADATA_ARRAY_ITEMS)
-        values = []
-        if item_type == 8:
-            for idx in range(count):
-                value = _read_string(f)
-                if idx < preview_count:
-                    values.append(value)
-        else:
-            for _ in range(preview_count):
-                values.append(_read_scalar(f, item_type))
-            _skip_scalar(f, item_type, count - preview_count)
-        if count > MAX_METADATA_ARRAY_ITEMS:
-            return {
-                "count": count,
-                "preview": values,
-                "truncated": True,
-            }
-        return values
-    return _read_scalar(f, value_type)
-
-
 def _read_gguf_header_fast(filepath: str):
-    try:
-        from gguf import GGMLQuantizationType
-        from gguf.constants import GGUF_DEFAULT_ALIGNMENT, GGUF_MAGIC
-    except ImportError as exc:
-        raise ValueError("GGUF support requires the gguf package") from exc
-
-    metadata = {}
-    tensor_records = []
-
-    with open(filepath, "rb") as f:
-        magic = _read_u32(f)
-        if magic != GGUF_MAGIC:
-            raise ValueError("GGUF magic invalid")
-        version = _read_u32(f)
-        if version not in (2, 3):
-            raise ValueError(f"Unsupported GGUF version: {version}")
-        tensor_count = _read_u64(f)
-        kv_count = _read_u64(f)
-
-        for _ in range(kv_count):
-            key = _read_string(f)
-            value_type = _read_u32(f)
-            metadata[key] = _read_gguf_value(f, value_type)
-
-        for _ in range(tensor_count):
-            name = _read_string(f)
-            dims_count = _read_u32(f)
-            dims = [_read_u64(f) for _ in range(dims_count)]
-            raw_dtype = _read_u32(f)
-            relative_offset = _read_u64(f)
-            tensor_records.append((name, dims, raw_dtype, relative_offset))
-
-        alignment = int(metadata.get("general.alignment") or GGUF_DEFAULT_ALIGNMENT)
-        data_offset = f.tell()
-        padding = data_offset % alignment
-        if padding:
-            data_offset += alignment - padding
-
-    tensor_info = {}
-    file_size = os.path.getsize(filepath)
-    sorted_records = sorted(
-        tensor_records,
-        key=lambda record: record[3],
+    return _read_gguf_header_fast_impl(
+        filepath,
+        add_common_metadata=_add_common_metadata,
+        infer_quantization=_infer_quantization_from_tensor_dtypes,
+        quant_names=GGML_QUANT_NAMES,
+        obsolete_quant_ids=OBSOLETE_GGML_QUANT_IDS,
     )
-    relative_sizes = {}
-    for idx, (name, _, _, relative_offset) in enumerate(sorted_records):
-        if idx + 1 < len(sorted_records):
-            relative_sizes[name] = max(0, sorted_records[idx + 1][3] - relative_offset)
-        else:
-            relative_sizes[name] = max(0, file_size - (data_offset + relative_offset))
-
-    for name, dims, raw_dtype, relative_offset in tensor_records:
-        try:
-            dtype_name = GGMLQuantizationType(raw_dtype).name
-        except ValueError:
-            dtype_name = GGML_QUANT_NAMES.get(raw_dtype, f"GGML_TYPE_{raw_dtype}")
-        n_bytes = relative_sizes.get(name, 0)
-        start = data_offset + relative_offset
-        tensor_info[name] = {
-            "dtype": dtype_name,
-            "shape": [int(dim) for dim in dims],
-            "n_bytes": int(n_bytes),
-            "shard_id": 0,
-            "data_offsets": [int(start), int(start + n_bytes)],
-        }
-
-    obsolete_dtype_names = sorted(
-        {
-            GGML_QUANT_NAMES[raw_dtype]
-            for _, _, raw_dtype, _ in tensor_records
-            if raw_dtype in OBSOLETE_GGML_QUANT_IDS
-        }
-    )
-    if obsolete_dtype_names:
-        metadata["smi.warnings"] = [
-            "File contains obsolete or removed GGML quantization type(s): "
-            + ", ".join(obsolete_dtype_names)
-        ]
-    _add_common_metadata(metadata, filepath)
-    quantization = str(metadata.get("smi.quantization") or "")
-    if quantization.startswith("FILE_TYPE_"):
-        inferred = _infer_quantization_from_tensor_dtypes(tensor_info)
-        if inferred:
-            metadata["smi.quantization"] = inferred
-
-    return metadata, tensor_info, file_size
 
 
 def analyze_tensors(tensor_info: dict):

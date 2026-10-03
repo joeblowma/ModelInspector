@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import struct
 import sys
 import zipfile
 
@@ -70,3 +71,42 @@ def test_checkpoint_zip_scan_bounds_entries_and_total_metadata_bytes(monkeypatch
     metadata, _, _ = read_model_header(str(path), checkpoint_safety="metadata")
     assert metadata["checkpoint.metadata_bytes_examined"] <= 16
     assert "checkpoint.config" not in metadata
+
+
+def test_checkpoint_rejects_oversized_directory_before_constructing_zipfile(monkeypatch, tmp_path):
+    path = tmp_path / "forged-count.pt"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("metadata.json", '{"safe": true}')
+    raw = bytearray(path.read_bytes())
+    end_record = raw.rfind(b"PK\x05\x06")
+    struct.pack_into("<HH", raw, end_record + 8, 0, 0)
+    path.write_bytes(raw)
+
+    monkeypatch.setattr(checkpoint_reader, "MAX_ARCHIVE_DIRECTORY_BYTES", 1)
+    monkeypatch.setattr(
+        checkpoint_reader.zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("ZipFile constructed")),
+    )
+    metadata, _, _ = read_model_header(str(path), checkpoint_safety="metadata")
+
+    assert "central directory exceeds" in metadata["checkpoint.archive_error"]
+
+
+def test_checkpoint_zip64_directory_preflight_when_supported(tmp_path):
+    if not hasattr(zipfile, "_EndRecData"):
+        return
+    path = tmp_path / "empty-zip64.pt"
+    zip64_end = struct.pack(
+        "<4sQ2H2L4Q", b"PK\x06\x06", 44, 45, 45, 0, 0, 0, 0, 0, 0
+    )
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, 0, 1)
+    end = struct.pack(
+        "<4s4H2LH", b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0
+    )
+    path.write_bytes(zip64_end + locator + end)
+
+    metadata, tensors, _ = read_model_header(str(path), checkpoint_safety="metadata")
+
+    assert metadata["checkpoint.entry_count"] == 0
+    assert tensors == {}

@@ -33,10 +33,12 @@ class CacheLoadControllerMixin:
         self._cache_load_worker = worker
         self._cache_load_generation = generation
         self._cache_load_wanted = wanted
+        self._cache_load_projected_count = 0
+        self._cache_load_progress_total = 0
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
         self._set_cancel_available(True)
-        self._set_progress_status("Loading cached summaries...")
+        self._set_progress_status("Finding cached entries...")
         for name in (
             "_cache_load_active_action",
             "_cache_load_all_action",
@@ -47,6 +49,11 @@ class CacheLoadControllerMixin:
                 action.setEnabled(False)
         worker.report_ready.connect(
             lambda report, g=generation, w=worker: self._on_cache_load_report(g, w, report)
+        )
+        worker.progress_ready.connect(
+            lambda phase, done, total, g=generation, w=worker: self._on_cache_load_progress(
+                g, w, phase, done, total
+            )
         )
         worker.summary_ready.connect(
             lambda data, g=generation, w=worker: self._on_cache_load_summary(g, w, data)
@@ -104,6 +111,29 @@ class CacheLoadControllerMixin:
             return
         self._schedule_cache_sync(report)
 
+    def _on_cache_load_progress(
+        self, generation: int, worker, phase: str, completed: int, total: int
+    ) -> None:
+        if (
+            generation != self._cache_load_generation
+            or worker is not self._cache_load_worker
+            or getattr(self, "_lifecycle_closed", False)
+        ):
+            return
+        if phase == "scan":
+            self.progress.setRange(0, 0)
+            self._set_progress_status("Finding cached entries...")
+        elif phase == "verify":
+            self.progress.setRange(0, max(1, total))
+            self.progress.setValue(completed)
+            self._set_progress_status(f"Verifying cached entries ({completed}/{total})")
+        elif phase == "load":
+            self._cache_load_progress_total = total
+            self._cache_load_projected_count = 0
+            self.progress.setRange(0, max(1, total + 1))
+            self.progress.setValue(0)
+            self._set_progress_status(f"Loading cached summaries (0/{total})")
+
     def _on_cache_load_summary(self, generation: int, worker, data: dict) -> None:
         if (
             generation != self._cache_load_generation
@@ -128,6 +158,8 @@ class CacheLoadControllerMixin:
         filepath = str(data.get("filepath") or "")
         if not filepath or self._result_for_filepath(filepath):
             return
+        data.pop("_cache_key", None)
+        data.pop("_cache_options", None)
         data["filename"] = str(data.get("filename") or Path(filepath).name)
         self._normalize_result_data(data)
         self._queued_files.append(filepath)
@@ -135,6 +167,13 @@ class CacheLoadControllerMixin:
         self._add_card(data)
         self._add_table_row(data)
         self._apply_visibility_to_projected_item(data)
+        if hasattr(self, "_cache_load_projected_count"):
+            self._cache_load_projected_count += 1
+            total = self._cache_load_progress_total
+            self.progress.setValue(min(self._cache_load_projected_count, total))
+            self._set_progress_status(
+                f"Loading cached summaries ({self._cache_load_projected_count}/{total})"
+            )
 
     def _disable_table_sorting_for_cache_load(self) -> None:
         """Disable live sorting while batch-inserting cached rows.
@@ -161,6 +200,7 @@ class CacheLoadControllerMixin:
         if outcome.was_cancelled:
             message = "Cache loading cancelled; partial summaries remain visible"
         else:
+            self.progress.setValue(max(1, getattr(self, "_cache_load_progress_total", 0) + 1))
             count = len(self._results)
             message = f"Loaded {count} cached summaries"
             if outcome.stale_count:

@@ -42,42 +42,39 @@ def calc_target_sz(cur_width, cur_height, max_width, max_height):
 
 
 def alter_image(inFilePath, outFilePath, max_width=0, max_height=0):
-    image = Image.open(inFilePath)
-    #check if we need to resize
-    if max_width != 0 and max_height != 0:
-        target_width, target_height = calc_target_sz(image.width, image.height, max_width, max_height)
-        print (f"[INFO] resizing {image.width}x{image.height} to {target_width}x{target_height}")
-        try:
+    try:
+        image = Image.open(inFilePath)
+        #check if we need to resize
+        if max_width != 0 and max_height != 0:
+            target_width, target_height = calc_target_sz(image.width, image.height, max_width, max_height)
+            print (f"[INFO] resizing {image.width}x{image.height} to {target_width}x{target_height}")
             resized_image = image.resize((target_width, target_height), resample=Image.Resampling.NEAREST)
             print (f"[INFO] image {inFilePath} resized successfully to {target_width}x{target_height}")
             resized_image.save(outFilePath)
             print (f"[INFO] output image {outFilePath} saved")
-        except Exception:
-            print ("[ERROR] resizing image {inFilePath} failed!")
-            return False
-    else:
-        image.save(outFilePath)
-        return True
-    return False
+        else:
+            image.save(outFilePath)
+    except Exception:
+        print (f"[ERROR] resizing image {inFilePath} failed!")
+        return False
+    return True
 
 
 def main():
-    ret_val = 0
     if len(sys.argv) == 3:
-        if alter_image(sys.argv[1], sys.argv[2]):
-            ret_val = 1
-    elif len(sys.argv) == 5:
+        return int(not alter_image(sys.argv[1], sys.argv[2]))
+    if len(sys.argv) == 5:
         try:
-            if alter_image(sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])):
-                ret_val = 1
+            return int(not alter_image(
+                sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+            ))
         except Exception:
             print ("[ERROR] invalid command line!")
             print (f"[ERROR] parsing 'python {sys.argv[0]} {sys.argv[1]} {sys.argv[2]} {sys.argv[3]} {sys.argv[4]}'")
-    else:
-        print ("[ERROR] invalid command line! Not enough args!")
-        print (f"[INFO] Usage: python {sys.argv[0]} infile outfile maxwidth maxheight")
-
-    return ret_val
+        return 1
+    print ("[ERROR] invalid command line! Not enough args!")
+    print (f"[INFO] Usage: python {sys.argv[0]} infile outfile maxwidth maxheight")
+    return 1
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

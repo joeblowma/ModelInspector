@@ -200,6 +200,7 @@ def main(argv=None):
         # header triple lets its existing cache fallback remain metadata-only.
         inspect_options["cache_full_data"] = True
     if args.dump_keys:
+        dump_failed = False
         for filepath in paths:
             try:
                 if filepath.lower().endswith(CHECKPOINT_MODEL_EXTENSIONS):
@@ -211,10 +212,11 @@ def main(argv=None):
                         filepath, metadata, tensor_info, file_size, inspection=inspection
                     )
                 else:
-                    print(generate_modelinfo_dump(filepath))
+                    print(generate_modelinfo_dump(filepath, options=inspect_options))
             except Exception as error:
                 print(f"[ERROR] {filepath}: {error}", file=sys.stderr)
-        return 0
+                dump_failed = True
+        return int(dump_failed)
 
     thread_count = max(1, min(int(args.threads or 1), len(paths)))
     results_by_input_path = {}

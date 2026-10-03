@@ -8,7 +8,7 @@ action plan after presenting it to the user.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -43,6 +43,8 @@ class CacheEntryVerification:
     current_mtime_ns: int | None = None
     shard_identity_changed: bool = False
     sidecar_identity_changed: bool = False
+    cache_key: str = ""
+    cache_options: Mapping[str, Any] | None = None
 
     @property
     def is_active(self) -> bool:
@@ -278,7 +280,7 @@ def _companion_identity_changes(
     )
 
 
-def verify_cache_entry(
+def _verify_cache_entry_details(
     entry: Mapping[str, Any],
     *,
     path: str | None = None,
@@ -382,14 +384,45 @@ def verify_cache_entry(
     )
 
 
+def verify_cache_entry(
+    entry: Mapping[str, Any],
+    *,
+    path: str | None = None,
+    filesystem: Mapping[str, Any] | None = None,
+    stat_provider: StatProvider | None = None,
+) -> CacheEntryVerification:
+    """Verify an entry while preserving its stable key and option identity."""
+    verification = _verify_cache_entry_details(
+        entry, path=path, filesystem=filesystem, stat_provider=stat_provider
+    )
+    options = entry.get("cache_options") if isinstance(entry, Mapping) else None
+    return replace(
+        verification,
+        cache_key=str(entry.get("cache_key") or "") if isinstance(entry, Mapping) else "",
+        cache_options=dict(options) if isinstance(options, Mapping) else None,
+    )
+
+
 def verify_cache_entries(
     entries: Iterable[Mapping[str, Any]],
     *,
     filesystem: Mapping[str, Any] | None = None,
     stat_provider: StatProvider | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> CacheVerificationReport:
     """Verify a batch and return counts plus a non-mutating action plan."""
-    verified = tuple(verify_cache_entry(entry, filesystem=filesystem, stat_provider=stat_provider) for entry in (entries or ()))
+    entries = tuple(entries or ())
+    verified_items = []
+    for completed, entry in enumerate(entries, 1):
+        if should_cancel is not None and should_cancel():
+            break
+        verified_items.append(
+            verify_cache_entry(entry, filesystem=filesystem, stat_provider=stat_provider)
+        )
+        if progress_callback is not None:
+            progress_callback(completed, len(entries))
+    verified = tuple(verified_items)
     active = sum(item.classification == "active" for item in verified)
     historic = sum(item.classification == "historic" for item in verified)
     refresh = sum(item.action == "refresh" for item in verified)

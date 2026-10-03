@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QCheckBox, QLabel
 from back.capability_evidence import evidence_backed_capabilities
 from back.theme_loader import get_global_theme_colors
+from front.filter_projection import apply_filter_projection
 from front.filter_widgets import SortableTableWidgetItem
 from front.model_card import ModelCard
 def _combo_data_str(value):
@@ -332,42 +333,12 @@ class ViewControllerMixin:
         self, *, refresh_raw: bool = True, refresh_geometry: bool = True,
         update_selection: bool = True,
     ):
-        arch_counts: dict[str, int] = {}
-        tag_counts: dict[str, int] = {}
-        format_counts: dict[str, int] = {}
-        for data in self._results:
-            fp = str(data.get("filepath") or "")
-            if not fp:
-                continue
-            arch = data.get("architecture", "")
-            tags = self._filter_tags_for_data(data)
-            tag_set = set(tags)
-            file_format = self._format_filter_for_data(data)
-            arch_match = self._active_arch_filter is None or arch in self._active_arch_filter
-            tag_match = self._active_tag_filter is None or bool(tag_set & self._active_tag_filter)
-            format_match = self._active_format_filter is None or file_format in self._active_format_filter
-            visible = (
-                arch_match and tag_match and format_match
-            )
-            if tag_match and format_match:
-                arch_counts[arch] = arch_counts.get(arch, 0) + 1
-            if arch_match and format_match:
-                for tag in tags:
-                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
-            if arch_match and tag_match:
-                format_counts[file_format] = format_counts.get(file_format, 0) + 1
-            card = self._path_to_card.get(fp)
-            if card:
-                card.set_filter_visible(visible)
-            row = self._row_for_filepath(fp)
-            if row is not None and 0 <= row < self.table.rowCount():
-                self.table.setRowHidden(row, not visible)
-        self.arch_filter_btn.set_counts(arch_counts)
-        self.tag_filter_btn.set_counts(tag_counts)
-        self.format_filter_btn.set_counts(format_counts)
-        self._sync_order_from_table(refresh_raw=refresh_raw, refresh_geometry=refresh_geometry)
-        if update_selection:
-            self._update_selection_ui_state()
+        apply_filter_projection(
+            self,
+            refresh_raw=refresh_raw,
+            refresh_geometry=refresh_geometry,
+            update_selection=update_selection,
+        )
     def _is_data_visible(self, data: dict) -> bool:
         active_arch = self._active_arch_filter
         active_tags = self._active_tag_filter

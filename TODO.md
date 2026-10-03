@@ -29,6 +29,13 @@ the follow-up list below.
 - [ ] Manually launch and visually inspect the packaged windowed executable.
   The source GUI was visually audited (commit abd1ed4), but packaged-exe visual
   and render QA remains pending; the current frozen-help check is headless.
+- [ ] Exercise the packaged build manually with 420+ representative real model
+  files. Independent review approved the backend/GUI safety boundary; a live
+  420-model `MainWindow` filter run reached one visible result in 38 ms with a
+  5.57 ms maximum observed stall. This does not close the reported five-second
+  responsiveness case: the exact no-filter-to-all-filter path remains under
+  independent reader testing, and a 1.34 s synchronous full-view rebuild
+  remains. Synthetic coverage cannot close this live-model/render QA.
 
 ### Review gates
 
@@ -44,8 +51,18 @@ the follow-up list below.
   pre-existing. No rejected behavior is claimed or accepted by this lint
   status; the recommended follow-up is scoped cleanup to the configured gate.
 
-### Release validation still open
+### Release validation
 
+- [x] Current canonical integration run: **518 passed, 4 skipped in 76.61
+  seconds** (exit 0). Command: `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-qodo-isolated-2026-10-03.log`. The shared
+  autouse fixture isolates `SMI_CACHE_DIR`, `SMI_MODEL_CACHE_DIR`, and legacy
+  `SMI_CACHE_PATH` for every test.
+- [x] Historical pre-isolation integration run: **512 passed, 4 skipped, 6
+  failed in 85.37 seconds** (exit 1). Its cache-root environment leakage is
+  superseded by the current canonical pass. Log:
+  `R:\Temp\opencode\modelinspector-qodo-followup-2026-10-03.log`.
 - [x] Canonical suite before the subsequent GGUF fallback fix: 502 passed, 4
   skipped in 56.03 seconds, exit 0. Command: `$env:PYTHONPATH='src';
   $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:

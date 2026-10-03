@@ -3,12 +3,13 @@
 
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import Qt, QTimer
 
 from back.checkpoint_reader import CHECKPOINT_SAFETY_METADATA
 from back.inspection_summary import compact_inspection_summary
 from back.model_classification import format_params, format_size
 from background_tasks import AnalysisWorker
+from front.filter_projection import path_identity
 from front.scan_projection import ProjectionEvent
 
 
@@ -58,11 +59,9 @@ class AnalysisControllerMixin:
             self._clear_progress_status(delay_ms=4000)
             return
         if replace_existing:
-            path_set = set(paths)
-            self._results = [
-                data for data in self._results if data.get("filepath") not in path_set
-            ]
-            self._rebuild_views_from_results()
+            self._active_rescan_paths = {path_identity(path) for path in paths}
+        else:
+            self._active_rescan_paths = set()
         includes_checkpoint = any(
             Path(path).suffix.lower() in {".ckpt", ".pt", ".pth"} for path in paths
         )
@@ -212,7 +211,15 @@ class AnalysisControllerMixin:
 
     def _project_result(self, data: dict):
         self._normalize_result_data(data)
-        self._results.append(data)
+        filepath = str(data.get("filepath") or "")
+        is_rescan = bool(
+            filepath
+            and path_identity(filepath) in getattr(self, "_active_rescan_paths", set())
+        )
+        if is_rescan:
+            self._replace_rescanned_result(data)
+        else:
+            self._results.append(data)
         self._analysis_done_count += 1
         self._analysis_bytes_scanned += int(data.get("file_size") or 0)
         self._update_analysis_progress(data.get("filepath", ""))
@@ -223,6 +230,53 @@ class AnalysisControllerMixin:
         self._pending_filter_tags.extend(self._filter_tags_for_data(data))
         self._pending_filter_formats.append(self._format_filter_for_data(data))
 
+    def _replace_rescanned_result(self, data: dict):
+        filepath = str(data.get("filepath") or "")
+        identity = path_identity(filepath)
+        new_results = []
+        matched = []
+        inserted = False
+        for result in self._results:
+            old_path = str(result.get("filepath") or "")
+            if old_path and path_identity(old_path) == identity:
+                matched.append(old_path)
+                if not inserted:
+                    new_results.append(data)
+                    inserted = True
+                continue
+            new_results.append(result)
+        if not inserted:
+            new_results.append(data)
+        self._results = new_results
+
+        for old_path in matched:
+            card = self._path_to_card.pop(old_path, None)
+            if card:
+                self.cards_layout.removeWidget(card)
+                card.deleteLater()
+                if card in self._cards:
+                    self._cards.remove(card)
+            self._path_to_simple_card.pop(old_path, None)
+
+        removed_rows = []
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 1)
+            old_path = item.data(Qt.ItemDataRole.UserRole) if item else None
+            if old_path in matched:
+                removed_rows.append(row)
+        for row in reversed(removed_rows):
+            self.table.removeRow(row)
+        for old_path in matched:
+            self._path_to_row.pop(old_path, None)
+        shifts = sorted(removed_rows)
+        for old_path, row in list(self._path_to_row.items()):
+            self._path_to_row[old_path] = row - sum(removed < row for removed in shifts)
+
+        was_selected = any(path in self._selected_paths for path in matched)
+        self._selected_paths.difference_update(matched)
+        if was_selected:
+            self._selected_paths.add(filepath)
+
     def _project_error(self, filepath: str, error: str):
         self._analysis_done_count += 1
         self._analysis_error_count += 1
@@ -231,6 +285,8 @@ class AnalysisControllerMixin:
         except OSError:
             pass
         self._update_analysis_progress(filepath)
+        if path_identity(filepath) in getattr(self, "_active_rescan_paths", set()):
+            return
         # Add an error card
         err_data = {
             "filepath": filepath,
@@ -321,6 +377,7 @@ class AnalysisControllerMixin:
         was_cancelled = bool(worker.was_cancelled)
         if was_cancelled:
             self._pending_analysis_clear_existing = None
+        self._active_rescan_paths = set()
         error_text = (
             f" | Errors: {self._analysis_error_count}"
             if self._analysis_error_count

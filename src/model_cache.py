@@ -27,6 +27,11 @@ from back.cache_storage import (
     store_sidecar_records,
     write_entry as _write_storage_entry,
 )
+from back.cache_entries import (
+    iter_cache_records as _iter_cache_records,
+    list_cache_paths as _list_cache_paths,
+    select_cache_entries as _select_cache_entries,
+)
 from back.inspection_summary import compact_inspection_summary
 from back.companion_discovery import companion_identities_match
 from back.shard_discovery import discover_shard_set
@@ -96,33 +101,10 @@ def _read_data_entry(entry_id: str) -> dict | None:
 def _write_data_entry(entry_id: str, entry: dict):
     _write_storage_entry(_data_path(entry_id), entry)
 def _iter_cached_entries():
-    legacy_path = _legacy_cache_path()
-    if legacy_path:
-        cache = _load_legacy_cache(legacy_path)
-        for entry in cache["entries"].values():
-            if isinstance(entry, dict):
-                yield entry
-        return
-
-    seen = set()
-    try:
-        entry_paths = sorted((model_cache_dir() / "entries").glob("*.json"))
-    except Exception:
-        entry_paths = []
-    for path in entry_paths:
-        entry_id = path.stem
-        entry = _read_entry(entry_id)
-        if isinstance(entry, dict):
-            seen.add(entry_id)
-            yield entry
-
-    index = _load_index()
-    for entry_id in index["entries"].keys():
-        if entry_id in seen:
-            continue
-        entry = _read_entry(entry_id)
-        if isinstance(entry, dict):
-            yield entry
+    for _, entry in _iter_cache_records(
+        _legacy_cache_path(), _load_legacy_cache, model_cache_dir(), _load_index, _read_entry
+    ):
+        yield entry
 def _entry_matches_path(entry: dict, filepath: str) -> bool:
     wanted = _path_match_values(filepath)
     raw_identity = entry.get("identity")
@@ -280,31 +262,37 @@ def iter_cached_inspection_summary_snapshots(
         summary_source = dict(data)
         summary_source.setdefault("cache_status", "snapshot")
         yield filepath, compact_inspection_summary(summary_source)
+def iter_cached_inspection_entry_summary_snapshots(
+    entries: list[dict[str, Any]], should_cancel: Callable[[], bool] | None = None
+):
+    """Yield compact summaries from the exact entries selected for verification."""
+    for selected in entries:
+        if should_cancel is not None and should_cancel():
+            return
+        data = selected["entry"].get("data")
+        if isinstance(data, dict):
+            summary_source = dict(data)
+            summary_source.setdefault("cache_status", "snapshot")
+            yield selected, compact_inspection_summary(summary_source)
+
+
+def list_cached_inspection_entries(
+    should_cancel: Callable[[], bool] | None = None,
+) -> list[dict[str, Any]]:
+    """List one deterministic summary entry per path with stable cache identity."""
+    records = _iter_cache_records(
+        _legacy_cache_path(), _load_legacy_cache, model_cache_dir(), _load_index, _read_entry,
+        should_cancel,
+    )
+    return _select_cache_entries(records, should_cancel)
+
+
 def list_cached_inspection_paths() -> list[str]:
     """Return paths that have cached inspection summaries."""
-    paths = []
-    seen = set()
-    for entry in _iter_cached_entries():
-        raw_identity = entry.get("identity")
-        identity = raw_identity if isinstance(raw_identity, dict) else {}
-        raw_data = entry.get("data")
-        data = raw_data if isinstance(raw_data, dict) else {}
-        candidates = [
-            data.get("filepath"),
-            data.get("resolved_filepath"),
-            identity.get("resolved_filepath"),
-        ]
-        for candidate in candidates:
-            if not candidate:
-                continue
-            path = str(candidate)
-            key = path.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            paths.append(path)
-            break
-    return paths
+    records = _iter_cache_records(
+        _legacy_cache_path(), _load_legacy_cache, model_cache_dir(), _load_index, _read_entry
+    )
+    return _list_cache_paths(records)
 def store_cached_inspection(filepath: str, data: dict, options: dict | None = None):
     key = _cache_key(filepath, options)
     entry_id = _entry_id(key)
@@ -321,6 +309,12 @@ def store_cached_inspection(filepath: str, data: dict, options: dict | None = No
     entry_identity = _identity(filepath)
     entry_identity.update({key: primary_data[key] for key in ("shard_identity", "sidecar_identities") if key in primary_data})
     entry: dict[str, Any] = {
+        "cache_key": key,
+        "cache_options": {
+            "allow_filename_alias_detection": bool(
+                (options or {}).get("allow_filename_alias_detection", False)
+            )
+        },
         "identity": entry_identity,
         "data": primary_data,
     }

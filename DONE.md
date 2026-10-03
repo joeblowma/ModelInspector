@@ -3,6 +3,43 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-10-03 — Cache projection, responsiveness, and CLI utility follow-up
+
+- [x] Explicit `--cachedir` now transiently aligns both the cache root and the
+  model-cache root unless the higher-precedence `--cache` explicitly selects a
+  model-cache directory; persisted cache history remains unchanged by
+  `--cachedir`. VLM normalization retains the language-model KV projection
+  inputs without inventing capabilities.
+- [x] Cache-load selection keeps the first summary per path and carries its
+  stable cache key/options into verification and summary projection; valid
+  safetensors entries are retained rather than dropped during this projection.
+  Historic progress/counts and rescan behavior retain prior successful results
+  until replacement work succeeds.
+- [x] Large filter projections are sliced through a single-shot `QTimer`, with
+  latest-selection wins semantics, so Qt can process events between batches.
+  `ResizeSplash.py` now returns Boolean operation status and has consistent
+  command-line exit statuses. `--dump-keys` forwards inspection options on both
+  ordinary and checkpoint routes and returns nonzero if any requested file
+  fails.
+- [x] The shared autouse cache-environment fixture clears `SMI_CACHE_DIR`,
+  `SMI_MODEL_CACHE_DIR`, and legacy `SMI_CACHE_PATH` in a
+  `pytest.MonkeyPatch.context()` for each test. This prevents `--cachedir`
+  state leaking into later cache tests.
+- [x] Final canonical integration validation: **518 passed, 4 skipped in 76.61
+  seconds** (exit 0): `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen';
+  python -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-qodo-isolated-2026-10-03.log`. The prior
+  512-passed/4-skipped/6-failed run (85.37 s, exit 1) is retained as historical
+  pre-isolation evidence: `R:\Temp\opencode\modelinspector-qodo-followup-2026-10-03.log`.
+- [x] Independent review approved backend/GUI safety. A live 420-model
+  `MainWindow` filter run reached one visible result in 38 ms with a 5.57 ms
+  maximum observed stall. This does not claim the reported five-second case is
+  resolved: exact no-filter-to-all-filter performance remains under independent
+  reader testing, and a 1.34 s synchronous full-view rebuild remains. Packaged
+  420-model manual/render QA remains open in `TODO.md`.
+- [x] A duplicate safetensors follow-up was rejected as unnecessary; the
+  existing truncated-header fix and reader-bound coverage already address it.
+
 ## 2026-10-03 — Reader bounds and archive/shard preflight
 
 - [x] Safetensors header reads now reject short prefix/header reads instead of

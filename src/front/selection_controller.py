@@ -8,6 +8,7 @@ from PyQt6.QtCore import QMimeData, Qt
 from PyQt6.QtWidgets import QApplication, QCheckBox, QMenu
 
 from front.file_operation_controller import FileOperationControllerMixin
+from front.filter_projection import path_identity
 from front.model_card import card_stat_items
 from model_cache import invalidate_cached_inspection
 
@@ -275,7 +276,13 @@ class SelectionControllerMixin(FileOperationControllerMixin):
         self._clear_progress_status(delay_ms=3500)
 
     def _rescan_selected_results(self):
-        paths = self._visible_selected_paths()
+        paths = []
+        seen = set()
+        for path in self._visible_selected_paths():
+            identity = path_identity(path)
+            if identity not in seen:
+                seen.add(identity)
+                paths.append(path)
         if not paths:
             return
         if (

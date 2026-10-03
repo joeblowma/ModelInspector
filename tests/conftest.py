@@ -13,6 +13,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # garbage-collected. Tests still obtain the same instance via
 # ``QApplication.instance()``.
 _QAPP = None
+_CACHE_ENV_KEYS = ("SMI_CACHE_DIR", "SMI_MODEL_CACHE_DIR", "SMI_CACHE_PATH")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cache_environment():
+    """Prevent direct cache-location writes from leaking between tests."""
+    with pytest.MonkeyPatch.context() as cache_env:
+        for name in _CACHE_ENV_KEYS:
+            cache_env.delenv(name, raising=False)
+        yield
 
 
 @pytest.fixture(scope="session", autouse=True)

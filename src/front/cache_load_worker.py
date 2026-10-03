@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from back.cache_verifier import verify_cache_entries
-from front.cache_identity import get_cached_inspection_identity_snapshots
+from front.cache_identity import get_cached_inspection_entry_identity_snapshots
 from model_cache import (
-    iter_cached_inspection_summary_snapshots,
-    list_cached_inspection_paths,
+    iter_cached_inspection_entry_summary_snapshots,
+    list_cached_inspection_entries,
 )
 
 
@@ -26,6 +26,7 @@ class CacheLoadWorker(QThread):
 
     summary_ready = pyqtSignal(dict)
     report_ready = pyqtSignal(object)
+    progress_ready = pyqtSignal(str, int, int)
     all_done = pyqtSignal()
 
     def __init__(self, wanted: str | None) -> None:
@@ -64,32 +65,50 @@ class CacheLoadWorker(QThread):
     def run(self) -> None:
         stale_count = 0
         try:
-            paths = list_cached_inspection_paths()
-            identities = get_cached_inspection_identity_snapshots(paths)
+            self.progress_ready.emit("scan", 0, 0)
+            selected = list_cached_inspection_entries(self._cancelled)
+            identities = get_cached_inspection_entry_identity_snapshots(selected)
+            verification_entries = [
+                identities[entry["cache_key"]] for entry in selected
+            ]
+            self.progress_ready.emit("verify", 0, len(verification_entries))
             report = verify_cache_entries(
-                [identities.get(path, {"filepath": path}) for path in paths]
+                verification_entries,
+                progress_callback=lambda done, total: self.progress_ready.emit(
+                    "verify", done, total
+                ),
+                should_cancel=self._cancelled,
             )
             self.report_ready.emit(report)
             statuses: dict[str, str] = {}
+            selected_by_path = {entry["filepath"]: entry for entry in selected}
             for entry in report.entries:
                 if self._cancelled():
                     break
+                cache_key = entry.cache_key or selected_by_path[entry.path]["cache_key"]
                 if entry.classification == "historic":
                     if self.wanted in (None, "historic"):
-                        statuses[entry.path] = "historic"
+                        statuses[cache_key] = "historic"
                 elif entry.action == "none":
                     if self.wanted in (None, "active"):
-                        statuses[entry.path] = "snapshot"
+                        statuses[cache_key] = "snapshot"
                 else:
                     stale_count += 1
-            for path, summary in iter_cached_inspection_summary_snapshots(
-                list(statuses), self._cancelled
+            entries_to_load = [
+                entry for entry in selected if entry["cache_key"] in statuses
+            ]
+            self.progress_ready.emit("load", 0, len(entries_to_load))
+            for selected_entry, summary in iter_cached_inspection_entry_summary_snapshots(
+                entries_to_load, self._cancelled
             ):
+                cache_key = selected_entry["cache_key"]
                 if self._cancelled() or not self._emit_summary(
                     {
                         **summary,
-                        "filepath": path,
-                        "cache_status": statuses[path],
+                        "filepath": selected_entry["filepath"],
+                        "cache_status": statuses[cache_key],
+                        "_cache_key": cache_key,
+                        "_cache_options": selected_entry.get("cache_options"),
                     }
                 ):
                     break

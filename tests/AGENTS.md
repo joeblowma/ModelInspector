@@ -2,9 +2,20 @@
 
 ## Existing tests:
 - `.\tests\test_ptq_precision.py` — actual PTQ142/PTQ143 header mapping and precision preservation.
-- `.\tests\test_rescan_selected.py` — selected-model invalidation, selection preservation, and busy-operation guards.
+- `.\tests\test_cli_dump_options.py` — `--dump-keys` forwards options through
+  ordinary/checkpoint routes and returns nonzero when any requested dump fails.
+- `.\tests\test_filter_responsiveness.py` — QTimer-sliced large filter
+  projection yields to Qt events and applies only the latest selection.
+- `.\tests\test_resize_splash.py` — ResizeSplash image resize result and
+  subprocess success/failure exit statuses.
+- `.\tests\test_rescan_selected.py` — selected-model invalidation, selection
+  preservation, busy-operation guards, and retention of prior successful
+  results until replacement rescan work succeeds.
 - `.\tests\test_release_workflow.py` — static revision-artifact, release-zip, and tag-release workflow contracts; hosted validation is still required.
-- `.\tests\conftest.py` — shared test helpers, including the session-scoped `_qapp_holder` fixture that holds one `QApplication` reference for the whole session (PyQt6 crashes with 0xC0000409 if the QApplication is garbage-collected); tests obtain the same instance via `QApplication.instance()`.
+- `.\tests\conftest.py` — shared test helpers: the session-scoped `_qapp_holder`
+  retains one `QApplication` (preventing the PyQt6 0xC0000409 garbage-collection
+  crash), and an autouse `pytest.MonkeyPatch.context()` removes `SMI_CACHE_DIR`,
+  `SMI_MODEL_CACHE_DIR`, and legacy `SMI_CACHE_PATH` for each test.
 - `.\tests\test_gui_scan_lifecycle.py` — compact card mode, asynchronous discovery with queued terminal paths, one-file append/drain and cancel/close behavior, terminal projection waiting, Analyze visibility, and exact enter/move/drop relay behavior across all Cards surfaces and the main window; also raw-dump cached/generated prefixing and modelinfo dump content.
 - `.\tests\test_checkpoint_no_prompt.py` — GUI checkpoint metadata-only routing without consent prompts.
 - `.\tests\test_inspection_summary.py`
@@ -43,7 +54,9 @@
 - `.\tests\test_theme_paths.py` — bundled default asset resolution and safe new-theme storage.
 - `.\tests\test_settings_geometry.py`
 - `.\tests\test_settings_close.py` - Settings close skips the full card rebuild and persists the remembered size.
-- `.\tests\test_cache_load.py` - bounded async cache-load projection, Historic visibility/tagging, cancel/close safety, and filter/selection preservation.
+- `.\tests\test_cache_load.py` - bounded async cache-load projection, stable
+  cache-key/options carry-through, Historic visibility/tagging, progress/counts,
+  cancel/close safety, and filter/selection preservation.
 - `.\tests\test_app_paths.py` - output-dir defaults/override and installed-wheel resource resolution.
 - `.\tests\test_startup_arguments.py` - GUI `--settings`/`-s` and optional startup targets; `--help` before Qt.
 - `.\tests\test_packaging.py` - static packaging contract (setuptools backend, flat layout, entry points, packaged assets).
@@ -56,7 +69,9 @@
 - `.\tests\test_file_operations.py` — threaded modal move/dump workflow and feedback.
 - `.\tests\test_file_operation_safety.py` — no-clobber failure retention and cooperative cancel.
 - `.\tests\test_startup_feedback.py` — startup action feedback and unknown summary retention.
-- `.\tests\test_cache_locations.py` — model-cache vs cache-root separation, history precedence, live-redirect busy guard, and flag wiring.
+- `.\tests\test_cache_locations.py` — model-cache vs cache-root separation,
+  `--cachedir` root alignment, `--cache` precedence, history precedence,
+  live-redirect busy guard, and flag wiring.
 - `.\tests\test_explorer_metadata.py` — bounded read-only embedded-metadata Inspect/Save/raw-source semantics, readable-content handling, stored previews, requested/resolved-path recovery, and exact safetensors/GGUF source bytes without tensor reads.
 - `.\tests\test_metadata_ui.py` — live-file header loading without full-data cache scans, tab-triggered reads despite cached descriptors, requested/filepath/resolved existing-path preference despite stale persisted flags, missing-file incomplete fallback, full detail access, metadata/domain/capability badge projection, and Advanced Viewer metadata UI contracts.
 - `.\tests\test_checkpoint_routes.py` — metadata-only checkpoint routing: existing files reach the reader with the policy, while missing files do not invoke it.
@@ -66,18 +81,10 @@
 
 ## Current validation note
 
-- Canonical full suite before the subsequent GGUF fallback fix: **502 passed, 4
-  skipped in 56.03 seconds**, exit 0:
+- Final canonical suite: **518 passed, 4 skipped in 76.61 seconds**, exit 0:
   `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`.
-  Log: `R:\Temp\opencode\modelinspector-qodo-2026-10-03.log`. This run includes
-  the reader-bound, shard, checkpoint, and packaging-contract coverage.
-- Affected follow-up: **16 passed**, exit 0:
-  `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest
-  tests/test_model_readers_bounds.py tests/test_ptq_precision.py`. This covers
-  the OSError, RuntimeError, and unsupported-version native-GGUF failures; the
-  canonical full suite was not rerun per validation cadence.
-- Supplemental post-extension test: **7 passed in 0.73 seconds**, exit 0:
-  `PYTHONPATH=src QT_QPA_PLATFORM=offscreen python -m pytest
-  tests/test_card_advanced_flow.py -q`.
+  Log: `R:\Temp\opencode\modelinspector-qodo-isolated-2026-10-03.log`. The
+  autouse cache-environment isolation supersedes the historical
+  512-passed/4-skipped/6-failed environment-leak run.
 - Header-only model CLI smokes passed in human-readable and JSON modes; retain
   null-domain/empty-capability or Unknown outcomes where metadata lacks evidence.

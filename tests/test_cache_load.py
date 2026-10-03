@@ -13,10 +13,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import front.cache_load_worker as cache_load_worker
 import model_cache
-from PyQt6.QtCore import QThread
+from PyQt6.QtCore import QThread, QTimer
 from PyQt6.QtWidgets import QApplication, QLabel
 from conftest import _summary
 from front.cache_load_worker import CacheLoadOutcome, CacheLoadWorker
+
+
+def _patch_cache_worker(monkeypatch, paths, report):
+    entries = [{"filepath": path, "cache_key": path, "cache_options": None,
+                "entry": {"data": {"filepath": path}}} for path in paths]
+    monkeypatch.setattr(cache_load_worker, "list_cached_inspection_entries", lambda _cancel=None: entries)
+    monkeypatch.setattr(cache_load_worker, "get_cached_inspection_entry_identity_snapshots", lambda selected: {
+        item["cache_key"]: {key: item[key] for key in ("filepath", "cache_key", "cache_options")}
+        for item in selected
+    })
+    monkeypatch.setattr(cache_load_worker, "verify_cache_entries", lambda _entries, **_kwargs: report)
+    monkeypatch.setattr(cache_load_worker, "iter_cached_inspection_entry_summary_snapshots", lambda selected, cancel: (
+        (item, {"filepath": item["filepath"]}) for item in selected if not cancel()
+    ))
 
 
 @pytest.mark.parametrize("allow_aliases", [False, True])
@@ -43,6 +57,55 @@ def test_persisted_summary_load_does_not_depend_on_cache_key_options(
     }
 
 
+def test_cache_entry_identity_roundtrips_options_and_path_alias(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    model = tmp_path / "model.safetensors"
+    alias = tmp_path / "old-name.safetensors"
+    model.write_bytes(b"old")
+    ordered_options = sorted((False, True), key=lambda option: model_cache._entry_id(
+        model_cache._cache_key(str(model), {"allow_filename_alias_detection": option})
+    ))
+    chosen_option, stale_option = ordered_options
+    def store(content, name, option):
+        model.write_bytes(content)
+        model_cache.store_cached_inspection(
+            str(model), {"filepath": str(model), "alias": str(alias), "filename": name},
+            {"allow_filename_alias_detection": option},
+        )
+
+    store(b"old", "stale-entry.safetensors", stale_option)
+    chosen_options = {"allow_filename_alias_detection": chosen_option}
+    store(b"current file has a different size", "chosen-entry.safetensors", chosen_option)
+
+    selected = model_cache.list_cached_inspection_entries()
+    assert len(selected) == 1
+    expected_key = model_cache._cache_key(str(model), chosen_options)
+    assert selected[0]["cache_key"] == expected_key
+    assert selected[0]["cache_options"] == chosen_options
+    assert model_cache.list_cached_inspection_paths() == [str(model)]
+
+    worker = CacheLoadWorker("active")
+    loaded = []
+    reports = []
+    worker.summary_ready.connect(loaded.append)
+    worker.report_ready.connect(reports.append)
+    worker.run()
+
+    assert len(reports[0].entries) == 1
+    assert reports[0].entries[0].action == "none"
+    assert reports[0].entries[0].cache_key == expected_key
+    assert reports[0].entries[0].cache_options == chosen_options
+    assert reports[0].entries[0].path == str(model)
+    assert str(alias) in reports[0].entries[0].path_aliases
+    assert worker.outcome.stale_count == 0
+    assert len(loaded) == 1
+    assert loaded[0]["filename"] == "chosen-entry.safetensors"
+    assert loaded[0]["_cache_key"] == expected_key
+    assert loaded[0]["_cache_options"] == chosen_options
+
+
 def test_cache_load_worker_selects_valid_and_historic_but_not_refresh(
     monkeypatch,
 ) -> None:
@@ -51,27 +114,20 @@ def test_cache_load_worker_selects_valid_and_historic_but_not_refresh(
     historic = "R:/missing.gguf"
     report = SimpleNamespace(
         entries=(
-            SimpleNamespace(path=valid, classification="active", action="none"),
-            SimpleNamespace(path=stale, classification="active", action="refresh"),
-            SimpleNamespace(path=historic, classification="historic", action="archive"),
+            SimpleNamespace(path=valid, classification="active", action="none", cache_key=valid),
+            SimpleNamespace(path=stale, classification="active", action="refresh", cache_key=stale),
+            SimpleNamespace(path=historic, classification="historic", action="archive", cache_key=historic),
         )
     )
-    monkeypatch.setattr(cache_load_worker, "list_cached_inspection_paths", lambda: [valid, stale, historic])
-    monkeypatch.setattr(cache_load_worker, "get_cached_inspection_identity_snapshots", lambda _paths: {})
-    monkeypatch.setattr(cache_load_worker, "verify_cache_entries", lambda _entries: report)
-    monkeypatch.setattr(
-        cache_load_worker,
-        "iter_cached_inspection_summary_snapshots",
-        lambda paths, _cancelled: ((path, {"filepath": path}) for path in paths),
-    )
+    _patch_cache_worker(monkeypatch, [valid, stale, historic], report)
     worker = CacheLoadWorker(None)
     loaded = []
     worker.summary_ready.connect(loaded.append)
     worker.run()
 
     assert loaded == [
-        {"filepath": valid, "cache_status": "snapshot"},
-        {"filepath": historic, "cache_status": "historic"},
+        {"filepath": valid, "cache_status": "snapshot", "_cache_key": valid, "_cache_options": None},
+        {"filepath": historic, "cache_status": "historic", "_cache_key": historic, "_cache_options": None},
     ]
     assert worker.outcome.stale_count == 1
     assert worker.max_outstanding_events == 16
@@ -81,18 +137,11 @@ def test_cache_load_worker_cancels_between_bounded_summary_events(monkeypatch) -
     paths = [f"R:/cache/{index}.safetensors" for index in range(20)]
     report = SimpleNamespace(
         entries=tuple(
-            SimpleNamespace(path=path, classification="active", action="none")
+            SimpleNamespace(path=path, classification="active", action="none", cache_key=path)
             for path in paths
         )
     )
-    monkeypatch.setattr(cache_load_worker, "list_cached_inspection_paths", lambda: paths)
-    monkeypatch.setattr(cache_load_worker, "get_cached_inspection_identity_snapshots", lambda _paths: {})
-    monkeypatch.setattr(cache_load_worker, "verify_cache_entries", lambda _entries: report)
-    monkeypatch.setattr(
-        cache_load_worker,
-        "iter_cached_inspection_summary_snapshots",
-        lambda selected, _cancelled: ((path, {"filepath": path}) for path in selected),
-    )
+    _patch_cache_worker(monkeypatch, paths, report)
     worker = CacheLoadWorker("active")
     received = []
 
@@ -111,18 +160,11 @@ def test_cache_load_worker_limits_unacknowledged_ui_events(monkeypatch) -> None:
     paths = [f"R:/cache/{index}.safetensors" for index in range(20)]
     report = SimpleNamespace(
         entries=tuple(
-            SimpleNamespace(path=path, classification="active", action="none")
+            SimpleNamespace(path=path, classification="active", action="none", cache_key=path)
             for path in paths
         )
     )
-    monkeypatch.setattr(cache_load_worker, "list_cached_inspection_paths", lambda: paths)
-    monkeypatch.setattr(cache_load_worker, "get_cached_inspection_identity_snapshots", lambda _paths: {})
-    monkeypatch.setattr(cache_load_worker, "verify_cache_entries", lambda _entries: report)
-    monkeypatch.setattr(
-        cache_load_worker,
-        "iter_cached_inspection_summary_snapshots",
-        lambda selected, _cancelled: ((path, {"filepath": path}) for path in selected),
-    )
+    _patch_cache_worker(monkeypatch, paths, report)
     worker = CacheLoadWorker("active")
     received = []
     worker.summary_ready.connect(received.append)
@@ -135,11 +177,16 @@ def test_cache_load_worker_limits_unacknowledged_ui_events(monkeypatch) -> None:
         time.sleep(0.01)
     assert len(received) == worker.max_outstanding_events
     assert worker.isRunning()
-    worker.cancel()
+    timer_observations = []
+    QTimer.singleShot(
+        0,
+        lambda: (timer_observations.append(worker.isRunning()), worker.cancel()),
+    )
     while worker.isRunning() and time.monotonic() < deadline:
         app.processEvents()
         time.sleep(0.01)
     assert not worker.isRunning()
+    assert timer_observations == [True]
 
 
 class _SlowCacheLoadWorker(QThread):
@@ -182,6 +229,84 @@ def test_close_cancels_cache_load_worker(monkeypatch, tmp_path: Path) -> None:
     finally:
         worker.cancel()
         worker.wait(1000)
+        window.close()
+
+
+def test_historic_cache_load_reports_phases_and_keeps_gui_timer_responsive(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    active = tmp_path / "active.safetensors"
+    historic = tmp_path / "historic.gguf"
+    active.write_bytes(b"active")
+    historic.write_bytes(b"historic")
+    for model in (active, historic):
+        model_cache.store_cached_inspection(
+            str(model), _summary(str(model), "Arch", "Checkpoint")
+        )
+    historic.unlink()
+
+    from gui import MainWindow
+
+    app = QApplication.instance()
+    assert app is not None
+    original_iterator = cache_load_worker.iter_cached_inspection_entry_summary_snapshots
+
+    def delayed_summaries(entries, should_cancel):
+        for selected, summary in original_iterator(entries, should_cancel):
+            time.sleep(0.02)
+            if should_cancel():
+                return
+            yield selected, summary
+
+    monkeypatch.setattr(
+        cache_load_worker,
+        "iter_cached_inspection_entry_summary_snapshots",
+        delayed_summaries,
+    )
+    window = MainWindow()
+    progress_texts = []
+    progress_states = []
+    window.progress.valueChanged.connect(
+        lambda value: progress_states.append((value, window.progress.maximum()))
+    )
+    set_status = window._set_progress_status
+
+    def capture_status(text):
+        progress_texts.append(text)
+        set_status(text)
+
+    monkeypatch.setattr(window, "_set_progress_status", capture_status)
+    timer_ran_while_loading = []
+    worker = None
+    try:
+        window._load_cache_all()
+        worker = window._cache_load_worker
+        assert worker is not None
+        QTimer.singleShot(0, lambda: timer_ran_while_loading.append(worker.isRunning()))
+        deadline = time.monotonic() + 4
+        while window._cache_load_worker is not None and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.005)
+        app.processEvents()
+
+        assert window._cache_load_worker is None
+        assert timer_ran_while_loading == [True]
+        assert "Verifying cached entries (1/2)" in progress_texts
+        assert "Verifying cached entries (2/2)" in progress_texts
+        assert "Loading cached summaries (1/2)" in progress_texts
+        assert "Loading cached summaries (2/2)" in progress_texts
+        assert progress_texts[-1] == "Loaded 2 cached summaries"
+        assert window.progress.value() == window.progress.maximum()
+        assert progress_states.index((2, 3)) < progress_states.index((3, 3))
+        assert {
+            data["cache_status"] for data in window._results
+    } == {"snapshot", "historic"}
+    finally:
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+            worker.wait(1000)
         window.close()
 
 

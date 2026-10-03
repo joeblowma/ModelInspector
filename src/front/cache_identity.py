@@ -64,3 +64,17 @@ def get_cached_inspection_identity_snapshots(
                 snapshots[filepath] = _identity_snapshot(entry, filepath)
                 break
     return snapshots
+
+
+def get_cached_inspection_entry_identity_snapshots(
+    entries: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Project verification identities from already-selected exact cache entries."""
+    snapshots = {}
+    for selected in entries:
+        cache_key = str(selected["cache_key"])
+        snapshot = _identity_snapshot(selected["entry"], str(selected["filepath"]))
+        snapshot["cache_key"] = cache_key
+        snapshot["cache_options"] = selected.get("cache_options")
+        snapshots[cache_key] = snapshot
+    return snapshots

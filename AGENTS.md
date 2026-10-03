@@ -18,7 +18,14 @@ This is a growing Python desktop/CLI utility for inspecting various language and
   - `modelinfo.py` Model-info dump helpers for Model Inspector
   - `front/` GUI presentation and application layer: `application` bootstraps Qt and applies themes; `window_core`, `window_layout`, and `window_lifecycle` compose `MainWindow`; card-surface drop relaying dispatches exact `QEvent.Type.DragEnter`, `DragMove`, and `Drop` events to the window, accepting URL moves but only queuing work on Drop; `analysis_controller`, `discovery_controller`, `selection_controller`, `startup_cache_controller`, `view_controller`, and `integration_controller` manage UI workflows; `explorer_tab`/`explorer_data` provide header-only inspection exploration; `advanced_viewer` provides live resource projections and delegates construction to `advanced_viewer_layout`; `tensor_root_summary` formats compact tensor-root facts; `settings_data_tab` owns Data-column editing and single-row side-button reordering, with `settings_data_support` holding its durable row state and cleanup helpers; `theme_tab` provides live theme editing, with `theme_editor_support` holding palette labels and Qt color conversion; `smart_column_controller` applies runtime smart-column masks; `data_columns` holds the canonical ordered Data-column labels/default widths and locked-column keys shared by table construction, Settings reset, and width fallback; `cache_load_controller`/`cache_load_worker` project persisted cache summaries off the GUI thread in bounded, cancel/close-safe batches; `startup_arguments` parses GUI startup arguments before Qt starts; `cache_identity` is the read-only bridge projecting persisted cache identity metadata for cache verification and background sync; `file_operation_controller` (`FileOperationControllerMixin`) owns long file operations (move, dump) with modal progress, no-clobber failure retention, and cooperative cancel between files, backed by `file_operation_worker` (`FileOperationWorker` thread plus safe move helpers); `explorer_metadata` performs read-only embedded-metadata actions (Inspect decoded text, Save readable artifact, Extract exact source JSON bytes for locatable safetensors/GGUF metadata; tensor payloads are never read); `help_window` shows `--help` in a window for frozen builds with no stdout; `model_card`, `filter_widgets`, `settings_dialog`, and `scan_projection` provide reusable widgets, dialogs, and scan-event delivery.
   - `back/` Backend inspection and CLI layer: `cli` owns command-line parsing and dispatch; `inspection_pipeline`, `model_classification`, `adapter_detection`, `architecture_keys`, `architecture_metadata`, `architecture_variants`, and `tensor_summary` perform read-only inspection and detection; `companion_discovery` performs bounded resolved-parent JSON/Jinja discovery and normalized architecture facts, while `capability_facts` derives conservative domain/chat evidence and `capability_evidence` projects evidence-backed capabilities (filtering weak evidence) shared by the GUI, reports, and estimator; `reader_registry`, `checkpoint_reader`, `gguf_reader`, and `onnx_reader` provide safe format-reader dispatch. `gguf_reader` owns bounded native GGUF parsing; malformed or unsafe native input must not fall back to an optional library. `shard_discovery` and `sidecar_discovery` discover associated files; `cache_storage` persists cache records; `cache_location` resolves the cache root vs model-cache directory (`--cache`/`--cachedir`) and the most-recently-used history; `estimator`, `estimator_metadata` (labeled KV/runtime metadata projection helper), `theme_loader`, `theme_store`, `settings_store`, and `cache_verifier` provide UI-safe backend services; `reporting` writes reports; `modelinfo_diagnostics` projects header-only `.modelinfo` diagnostics with credential-key redaction; `inspection_summary` supplies compact GUI-facing result state.
-  - `front/metadata_ui.py` owns bounded metadata projection and the asynchronous header-loader/controller handoff used by the Advanced Viewer; keep its payload boundary header-only.
+   - `front/metadata_ui.py` owns bounded metadata projection and the asynchronous header-loader/controller handoff used by the Advanced Viewer; keep its payload boundary header-only.
+   - `front/filter_projection.py` owns QTimer-sliced cards/Data filter projection;
+     replace pending work on a newer selection and never perform a large
+     projection synchronously on the GUI event loop.
+   - `back/cache_entries.py` chooses the first persisted summary per path and
+     retains its stable cache key/options for cache verification and projection.
+   - `assets/ResizeSplash.py` is a standalone image utility: return Boolean
+     operation status and map its command-line paths to process exit status.
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
 - `src/front/model_path_label.py` owns the compact one-line `Model: <path>`
   label, middle-elided tooltip, and file/folder path copy behavior. Keep this
@@ -52,7 +59,7 @@ This is a growing Python desktop/CLI utility for inspecting various language and
 - `py src/inspect_model.py path\to\model.safetensors` inspects one file from the CLI.
 - `py src/inspect_model.py path\to\folder --recursive --json` runs a recursive CLI smoke test with JSON output.
 - `py src/inspect_model.py -s path\to\settings.jsonc path\to\model.safetensors` selects an explicit settings file for the CLI.
-- `--cache PATH` selects the model-cache directory (`SMI_MODEL_CACHE_DIR`) and records it in settings history; `--cachedir PATH` relocates the whole cache root (`SMI_CACHE_DIR`) transiently. Both work for the CLI and GUI.
+- `--cache PATH` selects the model-cache directory (`SMI_MODEL_CACHE_DIR`) and records it in settings history; `--cachedir PATH` relocates the whole cache root (`SMI_CACHE_DIR`) transiently and, absent `--cache`, aligns the model-cache root with it. Both work for the CLI and GUI.
 - `python -m pytest tests` runs the suite; `python -m pytest tests/test_packaging.py -q` checks only the packaging contract.
 - `python -m build --wheel` builds the distributable wheel from `pyproject.toml`.
 - `pip install dist\modelinspector-*.whl` installs the wheel; `modelinspector` and `modelinspector-gui` console scripts are then available.
@@ -75,15 +82,17 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
   no-library-fallback boundaries. Shard/checkpoint tests cover bounded
   shard-number parsing, partial-set warnings, and ZIP central-directory preflight
   before `ZipFile` construction.
+- `tests/conftest.py` autouse-isolates `SMI_CACHE_DIR`, `SMI_MODEL_CACHE_DIR`,
+  and legacy `SMI_CACHE_PATH` with `pytest.MonkeyPatch.context()`; cache-location
+  tests must not rely on environment state from another test.
 
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
-The canonical suite passed **502, with 4 skipped, in 56.03 seconds** (exit 0)
-before the subsequent GGUF fallback fix
-(`R:\Temp\opencode\modelinspector-qodo-2026-10-03.log`). That follow-up's
-affected command, `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen';
-python -m pytest tests/test_model_readers_bounds.py tests/test_ptq_precision.py`,
-passed **16 tests**; the canonical suite was not rerun per validation cadence.
+The current canonical suite passed **518, with 4 skipped, in 76.61 seconds**
+(exit 0): `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m
+pytest tests` (`R:\Temp\opencode\modelinspector-qodo-isolated-2026-10-03.log`).
+The historical 512-passed/4-skipped/6-failed integration run was cache
+environment leakage and is superseded by this isolated rerun.
 The live-file header loader reads directly and retains cached fallback only for
 missing files. Header-only CLI evidence covers the current
 Flux/SDXL/Qwen/Boogu/LongCat/LoRA cases; preserve unknown or null-domain/capability
@@ -105,6 +114,8 @@ reports 211 errors.
 - Canonical validation is `python -m pytest tests` with `PYTHONPATH=src` and `QT_QPA_PLATFORM=offscreen` set (PowerShell: `$env:PYTHONPATH="src"; $env:QT_QPA_PLATFORM="offscreen"; python -m pytest tests`). Always pass the `tests` directory explicitly so pytest does not collect vendored test modules in site-packages.
 - Canonical Data-column labels and widths are defined once in `front/data_columns.py`; reference that module instead of duplicating the width table in docs or tests.
 - Run relevant tests after each coherent change batch and report the exact command, result, and any tool error. Verify real flows and returned evidence rather than inferring success from static wiring.
+- Synthetic responsiveness tests do not replace a packaged/manual run over 420+
+  representative live models when investigating multi-second UI delays.
 - Do not guess dtype widths or precision from unsupported metadata; preserve unknown values and state the evidence boundary.
 
 

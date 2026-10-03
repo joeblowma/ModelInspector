@@ -50,6 +50,7 @@ _TRAINED_CONTEXT_KEYS = (
     "train_context_length",
     "original_max_position_embeddings",
 )
+_VLM_DOMAIN_ALIASES = frozenset({"MLLM", "MMLLLM"})
 @dataclass(frozen=True)
 class ModelFacts:
     """Stable at-a-glance facts suitable for a model card or table row."""
@@ -253,7 +254,9 @@ def facts_from_inspection(inspection: Mapping[str, Any] | None) -> ModelFacts:
 
     lora = "lora" in model_type_text or bool(source.get("adapter_type") or source.get("lora_rank") or components.get("lora"))
     diffusion = bool(components.get("unet") or components.get("vae")) or bool(re.search(r"diffusion|stable.?diffusion|sdxl|flux", combined))
-    domain_value = str(capability_facts.get("domain") or "").upper()
+    domain_value = str(capability_facts.get("domain") or "").strip().upper()
+    if domain_value in _VLM_DOMAIN_ALIASES:
+        domain_value = "VLM"
     if normalized_facts:
         domains = [domain_value] if domain_value in LANGUAGE_DOMAINS else []
         domains.extend(name for name, present in (("Diffusion", diffusion), ("LoRA", lora)) if present)

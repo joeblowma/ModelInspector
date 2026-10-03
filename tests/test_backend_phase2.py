@@ -201,6 +201,33 @@ def test_gguf_metadata_supplies_kv_cache_dimensions() -> None:
     assert projection.kv_cache_bytes == 2 * 32 * 8 * 128 * 4096 * 16 // 8
 
 
+def test_normalized_vlm_domain_uses_transformer_kv_without_inventing_evidence() -> None:
+    inspection = {
+        "total_params": 1_000_000,
+        "adapter_type": "lora",
+        "components": {"unet": True, "vision": True},
+        "architecture_facts": {
+            "layer_count": 2,
+            "hidden_size": 64,
+            "attention_heads": 4,
+            "num_key_value_heads": 2,
+        },
+        "capability_facts": {"domain": "MLLM"},
+    }
+
+    facts = facts_from_inspection(inspection)
+    projection = project_resources(inspection, context_length=8)
+    unknown = facts_from_inspection({"capability_facts": {"domain": "Unknown"}})
+
+    assert facts.domain == "VLM"
+    assert facts.domains == ("VLM", "Diffusion", "LoRA")
+    assert facts.capabilities == ()
+    assert projection.kv_cache_bytes == 2 * 2 * 2 * 16 * 8 * 16 // 8
+    assert unknown.domain is None
+    assert unknown.domains == ()
+    assert unknown.total_params is None
+
+
 def test_fallback_kv_cache_scales_with_selected_precision() -> None:
     inspection = {"total_params": 1_000_000}
     fp16 = project_resources(inspection, kv_cache_bits=16)

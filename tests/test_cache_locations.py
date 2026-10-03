@@ -58,7 +58,7 @@ def test_apply_cache_location_explicit_cache_wins_over_cachedir(tmp_path, monkey
     cachedir = tmp_path / "cachedir-flag"
     apply_cache_location(cache, cachedir, store)
     assert os.environ["SMI_MODEL_CACHE_DIR"] == str(cache)
-    assert os.environ.get("SMI_CACHE_DIR") == ""
+    assert os.environ["SMI_CACHE_DIR"] == str(cachedir)
     assert store.value("cache_dir_history", [])[0] == str(cache)
 
 
@@ -69,6 +69,21 @@ def test_apply_cache_location_cachedir_is_transient(tmp_path, monkeypatch):
     cachedir = tmp_path / "cachedir-flag"
     apply_cache_location(None, cachedir, store)
     assert os.environ["SMI_CACHE_DIR"] == str(cachedir)
+    assert os.environ["SMI_MODEL_CACHE_DIR"] == str(cachedir)
+    assert store.value("cache_dir_history", []) == []
+
+
+def test_cachedir_overrides_existing_model_cache_env_without_history(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_MODEL_CACHE_DIR", str(tmp_path / "inherited-model-cache"))
+    store = _store(tmp_path)
+    cachedir = tmp_path / "cachedir-flag"
+
+    apply_cache_location(None, cachedir, store)
+
+    from app_paths import cache_dir, model_cache_dir
+
+    assert cache_dir() == cachedir
+    assert model_cache_dir() == cachedir
     assert store.value("cache_dir_history", []) == []
 
 
@@ -126,6 +141,21 @@ def test_cli_cache_flags_set_env(tmp_path, monkeypatch):
     assert os.environ["SMI_CACHE_DIR"] == str(tmp_path / "c")
 
 
+def test_cli_cachedir_overrides_inherited_model_cache(tmp_path, monkeypatch):
+    from back.cli import main
+    from app_paths import model_cache_dir
+
+    monkeypatch.setenv("SMI_CACHE_DIR", "")
+    monkeypatch.setenv("SMI_MODEL_CACHE_DIR", str(tmp_path / "inherited-model-cache"))
+    monkeypatch.setenv("SMI_SETTINGS_PATH", "")
+    monkeypatch.setenv("SMI_DATA_DIR", str(tmp_path / "data"))
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    assert main(["--cachedir", str(tmp_path / "root"), str(empty)]) == 1
+    assert model_cache_dir() == tmp_path / "root"
+
+
 def test_explicit_flags_combination_precedence(tmp_path, monkeypatch):
     """Deterministic precedence: --cache > --cachedir > persisted > env > default."""
     store = _store(tmp_path)
@@ -169,6 +199,29 @@ def test_cli_honors_persisted_last_used_cache(tmp_path, monkeypatch):
     empty.mkdir()
     assert main([str(empty)]) == 1
     assert os.environ["SMI_MODEL_CACHE_DIR"] == str(persisted)
+
+
+def test_gui_cachedir_overrides_saved_model_cache_without_recording_root(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from app_paths import model_cache_dir
+    from front.application import _apply_cache_location
+
+    monkeypatch.setenv("SMI_CACHE_DIR", "")
+    monkeypatch.setenv("SMI_MODEL_CACHE_DIR", "")
+    monkeypatch.setenv("SMI_SETTINGS_PATH", "")
+    monkeypatch.setenv("SMI_DATA_DIR", str(tmp_path / "data"))
+    persisted = tmp_path / "saved-model-cache"
+    persisted.mkdir()
+    store = open_settings(tmp_path / "data" / "settings.jsonc", defer_initial_save=True)
+    record_cache_dir(store, persisted)
+    apply_cache_location(None, None, store)
+
+    root = tmp_path / "transient-root"
+    _apply_cache_location(SimpleNamespace(cache=None, cachedir=root))
+
+    assert model_cache_dir() == root
+    assert store.value("cache_dir_history", []) == [str(persisted)]
 
 
 def test_settings_dialog_accept_redirects_live_cache(tmp_path, monkeypatch):

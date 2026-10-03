@@ -89,17 +89,23 @@ def apply_cache_location(
     Precedence (highest first):
 
     1. explicit ``--cache`` (sets ``SMI_MODEL_CACHE_DIR``; also recorded)
-    2. explicit ``--cachedir`` (sets ``SMI_CACHE_DIR``; transient)
+    2. explicit ``--cachedir`` (sets ``SMI_CACHE_DIR`` and, absent
+       ``--cache``, ``SMI_MODEL_CACHE_DIR``; transient)
     3. a pre-existing ``SMI_CACHE_DIR`` environment value
     4. persisted most-recently-used existing history directory
        (sets ``SMI_MODEL_CACHE_DIR``)
     5. the default ``app_data_dir()/cache`` (left to ``app_paths.cache_dir``)
     """
+    if cachedir is not None:
+        os.environ["SMI_CACHE_DIR"] = str(cachedir)
+        if cache is None:
+            # ``model_cache_dir`` otherwise prefers an inherited or earlier
+            # persisted model-cache override and would split this explicit root.
+            os.environ["SMI_MODEL_CACHE_DIR"] = str(cachedir)
     if cache is not None:
         redirect_model_cache(store, cache)
         return
     if cachedir is not None:
-        os.environ["SMI_CACHE_DIR"] = str(cachedir)
         return
     if os.environ.get("SMI_CACHE_DIR"):
         return

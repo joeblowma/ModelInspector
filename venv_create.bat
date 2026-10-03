@@ -65,7 +65,7 @@ echo.
 echo Creating virtual environment '!VENV_NAME!' with python v%USE_PYTHON_VER% at:
 echo !VENV_PATHED!
 uv venv --relocatable --prompt !VENV_NAME! --python %USE_PYTHON_VER% --python-preference only-managed !VENV_NAME!
-IF %ERRORLEVEL% NEQ 0 (goto errorexit)
+IF !ERRORLEVEL! NEQ 0 (goto errorexit)
 echo Done.
 echo.
 
@@ -77,7 +77,7 @@ echo Creating .gitignore in the !VENV_NAME! folder...
     echo # Except this file
     echo !.gitignore
 ) > !VENV_PATHED!\.gitignore
-IF %ERRORLEVEL% NEQ 0 (goto errorexit)
+IF !ERRORLEVEL! NEQ 0 (goto errorexit)
 echo Done.
 echo.
 
@@ -89,7 +89,7 @@ echo Generating venvars.bat...
     echo set VENV_NAME=!VENV_NAME!
     echo set VENV_PATH=!VENV_PATHED!
 ) > venvars.bat
-IF %ERRORLEVEL% NEQ 0 (goto errorexit)
+IF !ERRORLEVEL! NEQ 0 (goto errorexit)
 echo Done.
 echo.
 
@@ -98,7 +98,7 @@ echo ----------------------------
 echo Activate virtual environment
 echo ----------------------------
 call "!VENV_PATHED!\Scripts\activate"
-IF %ERRORLEVEL% NEQ 0 (goto errorexit)
+IF !ERRORLEVEL! NEQ 0 (goto errorexit)
 echo Done.
 echo.
 
@@ -108,7 +108,7 @@ echo Install pip
 echo -----------
 echo Installing pip...
 uv pip install pip
-IF %ERRORLEVEL% NEQ 0 (goto errorexit)
+IF !ERRORLEVEL! NEQ 0 (goto errorexit)
 echo Done.
 echo.
 
@@ -125,7 +125,7 @@ if exist requirements.txt (
     if /I "!INSTALL_REQUIREMENTS!"=="Y" (
         echo Installing requirements.txt modules...
         uv pip install -r requirements.txt
-        IF %ERRORLEVEL% NEQ 0 (goto errorexit)
+        IF !ERRORLEVEL! NEQ 0 (goto errorexit)
         echo Done.
     ) else (
         echo Skipping requirements.txt installation.
@@ -150,7 +150,7 @@ if exist requirements-dev.txt (
     if /I "!INSTALL_REQUIREMENTS!"=="Y" (
         echo Installing requirements-dev.txt modules...
         uv pip install -r requirements-dev.txt
-        IF %ERRORLEVEL% NEQ 0 (goto errorexit)
+        IF !ERRORLEVEL! NEQ 0 (goto errorexit)
         echo Done.
     ) else (
         echo Skipping requirements-dev installation.
@@ -166,7 +166,7 @@ echo.
 :: List installed packages
 echo Listing installed packages...
 pip list
-IF %ERRORLEVEL% NEQ 0 (goto errorexit)
+IF !ERRORLEVEL! NEQ 0 (goto errorexit)
 echo.
 
 echo Setup complete. Your virtual environment is ready.
@@ -180,9 +180,9 @@ goto exit
 echo.
 echo.
 echo.
-echo WARINGING: Unexpected error %ERRORLEVEL% occured, aborting.
+echo WARINGING: Unexpected error !ERRORLEVEL! occured, aborting.
 pause
-exit %ERRORLEVEL%
+exit !ERRORLEVEL!
 
 :exit
 endlocal

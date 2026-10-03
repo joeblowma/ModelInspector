@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 [project.urls]
-repository = "https://github.com/ggml-org/llama.cpp"
+repository = "https://github.com/joeblowma/ModelInspector"
 
 [project.scripts]
 modelinspector-gui = "gui:main"

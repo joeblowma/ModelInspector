@@ -7,6 +7,7 @@ import weakref
 from collections.abc import Callable
 
 from PyQt6.QtCore import QTimer
+from front.layout_batch import cards_layout_batch
 
 
 def path_identity(filepath: str) -> str:
@@ -58,6 +59,11 @@ class FilterProjection:
         self._timer.timeout.connect(self._process_batch)
         self._generation = 0
         self._pending = False
+        self._layout_batch = None
+        self._processing_depth = 0
+        self._release_pending = False
+        self._release_layout_activate = True
+        owner.destroyed.connect(self._on_owner_destroyed)
 
     @property
     def pending(self) -> bool:
@@ -67,10 +73,34 @@ class FilterProjection:
     def index(self) -> int:
         return self._index
 
-    def cancel(self) -> None:
-        self._timer.stop()
+    def cancel(self, *, activate_layout: bool = True) -> None:
+        try:
+            self._timer.stop()
+        except RuntimeError:
+            pass
         self._generation += 1
         self._pending = False
+        self._release_layout_batch(activate=activate_layout)
+
+    def _on_owner_destroyed(self, *_args) -> None:
+        self.cancel(activate_layout=False)
+
+    def _acquire_layout_batch(self, owner) -> None:
+        if self._layout_batch is None:
+            self._layout_batch = cards_layout_batch(owner)
+            self._layout_batch.__enter__()
+
+    def _release_layout_batch(self, *, activate: bool = True) -> None:
+        if self._processing_depth:
+            self._release_pending = True
+            if not activate:
+                self._release_layout_activate = False
+            return
+        lease, self._layout_batch = self._layout_batch, None
+        self._release_pending = False
+        self._release_layout_activate = True
+        if lease is not None:
+            lease.release(activate=activate)
 
     def request(
         self,
@@ -88,6 +118,8 @@ class FilterProjection:
     ) -> None:
         self._timer.stop()
         self._generation += 1
+        self._release_pending = False
+        self._release_layout_activate = True
         self._results = list(results)
         self._active_arch = None if active_arch is None else set(active_arch)
         self._active_tags = None if active_tags is None else set(active_tags)
@@ -107,9 +139,28 @@ class FilterProjection:
             if responsive and len(self._results) >= self._ASYNC_THRESHOLD
             else max(1, len(self._results))
         )
-        self._process_batch()
+        generation = self._generation
+        try:
+            owner = self._owner()
+            if owner is not None:
+                self._acquire_layout_batch(owner)
+            self._process_batch()
+        except Exception:
+            if generation == self._generation:
+                self._pending = False
+                self._release_layout_batch()
+            raise
 
     def _process_batch(self) -> None:
+        self._processing_depth += 1
+        try:
+            self._process_batch_inner()
+        finally:
+            self._processing_depth -= 1
+            if self._processing_depth == 0 and self._release_pending:
+                self._release_layout_batch(activate=self._release_layout_activate)
+
+    def _process_batch_inner(self) -> None:
         if not self._pending:
             return
         owner = self._owner()
@@ -117,32 +168,45 @@ class FilterProjection:
             owner, "_lifecycle_closed", False
         ):
             self._pending = False
+            self._release_layout_batch(activate=False)
             return
 
         generation = self._generation
         end = min(self._index + self._batch_size, len(self._results))
-        for data in self._results[self._index:end]:
-            _project_one(
-                data,
-                self._active_arch,
-                self._active_tags,
-                self._active_formats,
-                self._get_tags,
-                self._get_format,
-                self._apply_visibility,
-                (self._arch_counts, self._tag_counts, self._format_counts),
-            )
-            self._index += 1
+        try:
+            for data in self._results[self._index:end]:
+                _project_one(
+                    data,
+                    self._active_arch,
+                    self._active_tags,
+                    self._active_formats,
+                    self._get_tags,
+                    self._get_format,
+                    self._apply_visibility,
+                    (self._arch_counts, self._tag_counts, self._format_counts),
+                )
+                if generation != self._generation:
+                    return
+                self._index += 1
 
-        if generation != self._generation:
-            return
-        self._report_progress(self._index, len(self._results))
-        if self._index < len(self._results):
-            self._timer.start(0)
-            return
+            if generation != self._generation:
+                return
+            self._report_progress(self._index, len(self._results))
+            if generation != self._generation:
+                return
+            if self._index < len(self._results):
+                self._timer.start(0)
+                return
 
-        self._pending = False
-        self._complete(self._arch_counts, self._tag_counts, self._format_counts)
+            self._pending = False
+            self._complete(self._arch_counts, self._tag_counts, self._format_counts)
+            if generation == self._generation and not self._pending:
+                self._release_layout_batch()
+        except Exception:
+            if generation == self._generation:
+                self._pending = False
+                self._release_layout_batch()
+            raise
 
 
 def apply_filter_projection(
@@ -216,20 +280,21 @@ def apply_filter_projection(
 
     if not responsive or len(results) < FilterProjection._ASYNC_THRESHOLD:
         if projection is not None:
-            projection.cancel()
+            projection.cancel(activate_layout=False)
         counts = ({}, {}, {})
-        for data in results:
-            _project_one(
-                data,
-                owner._active_arch_filter,
-                owner._active_tag_filter,
-                owner._active_format_filter,
-                owner._filter_tags_for_data,
-                owner._format_filter_for_data,
-                apply_visibility,
-                counts,
-            )
-        complete(*counts)
+        with cards_layout_batch(owner):
+            for data in results:
+                _project_one(
+                    data,
+                    owner._active_arch_filter,
+                    owner._active_tag_filter,
+                    owner._active_format_filter,
+                    owner._filter_tags_for_data,
+                    owner._format_filter_for_data,
+                    apply_visibility,
+                    counts,
+                )
+            complete(*counts)
         return
 
     if projection is None:

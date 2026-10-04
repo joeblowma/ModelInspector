@@ -163,6 +163,9 @@ class WindowLifecycleMixin:
 
     def closeEvent(self, event):
         self._lifecycle_closed = True
+        filter_projection = getattr(self, "_filter_projection", None)
+        if filter_projection is not None:
+            filter_projection.cancel(activate_layout=False)
         running_workers = {
             worker
             for worker in (

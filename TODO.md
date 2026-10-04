@@ -32,10 +32,10 @@ the follow-up list below.
 - [ ] Exercise the packaged build manually with 420+ representative real model
   files. Independent review approved the backend/GUI safety boundary; a live
   420-model `MainWindow` filter run reached one visible result in 38 ms with a
-  5.57 ms maximum observed stall. This does not close the reported five-second
-  responsiveness case: the exact no-filter-to-all-filter path remains under
-  independent reader testing, and a 1.34 s synchronous full-view rebuild
-  remains. Synthetic coverage cannot close this live-model/render QA.
+  5.57 ms maximum observed stall. The completed native 1,080-model profile
+  verifies bounded event delivery and layout restoration, not packaged visual
+  or real-new-scan/move QA. Synthetic coverage cannot close this live-model/
+  render QA.
 
 ### Review gates
 
@@ -125,6 +125,11 @@ the follow-up list below.
 
 ### Test and evidence follow-up
 
+- [ ] Profile and reduce native cache-load throughput. The completed 1,080-model
+  production harness kept the GUI responsive but required 31.2–32.4 seconds
+  for cache projection/replayed scan delivery. Per-batch activation cost is not
+  isolated, so do not attribute this time exclusively to widget construction.
+  No memory option or filter optimization is presently justified.
 - [x] Metadata UI live-file header loading now bypasses full-data cache scans;
   missing-file cache fallback and the capability/domain boundary are covered
   by regression tests. Keep the `test_ui_release_gates.py` catalog current.

@@ -30,6 +30,7 @@ from app_paths import legacy_settings_path, settings_path
 from back.settings_store import open_settings
 from back.checkpoint_reader import CHECKPOINT_SAFETY_METADATA
 from background_tasks import AnalysisWorker, DiscoveryWorker
+from front.layout_batch import cards_layout_batch
 from front.model_card import ModelCard
 from front.scan_projection import ScanProjectionBuffer
 # Keep these imports local to the extracted GUI layer.  The model reader is
@@ -148,6 +149,7 @@ class WindowCoreMixin:
             self._project_scan_event,
             self._reconcile_projected_results,
             self._finish_analysis_projection,
+            layout_context_factory=lambda: cards_layout_batch(self),
             parent=self,
         )
         self._build_window_layout()

@@ -3,6 +3,44 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-10-03 — Layout batching and incremental view removal
+
+- [x] `front.layout_batch` provides a nestable, idempotent Cards-layout lease.
+  It records the original enabled state, disables once, restores and activates
+  only an originally enabled layout after the final release, and tolerates a
+  layout destroyed while an asynchronous lease is held.
+- [x] Filter projection holds that lease through both synchronous work and every
+  `QTimer` slice, replaces superseded requests, and releases it on completion,
+  errors, cancellation, window close, or owner destruction. Scan projection
+  takes one bounded lease per drain and acknowledges cache/new-scan payloads
+  only after the lease exits, including invalidated and error paths.
+- [x] `front.view_removal` removes only completed moved paths, retaining
+  unaffected Cards/Data widgets, selections, sorted row maps, queued files,
+  facet counts, and the Raw selection. Empty removal restores the placeholder;
+  explicit full rebuilds remain layout-guarded and bulk-format updates are
+  batched. Raw-combo first-match bookkeeping is ephemeral.
+- [x] Independent review approved the lifecycle boundary. Its focused coverage
+  reported 49 passed, 2 skipped and a separate 45 passed; the final canonical
+  suite reported **527 passed, 4 skipped in 127.66 seconds** (exit 0):
+  `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest
+  tests`. Log: `R:\Temp\opencode\modelinspector-layout-batching-2026-10-03.log`.
+- [x] Native production profiling used Python 3.12.15, normal Qt, a 1200x790
+  window on a 1920x1050 screen, and 1,080 actual cached summaries from a
+  read-only real-model root (no target reads). Cache projection took 31,173 ms
+  (maximum heartbeat gap 325.818 ms); its first bounded drain projected five
+  results with 1,075 pending while the layout lease was active between batches.
+  Replayed existing-summary scan events—not new filesystem inspection—took
+  32,441 ms (maximum gap 318.286 ms). Cards filters completed in 382 ms
+  (Architecture) and 408 ms (Tags), maximum gap 232.088 ms; Data completed in
+  235 ms and 221 ms respectively. All 1,080 Cards, rows, and Raw entries were
+  correct and close restored the layout. A simulated MOVE completion removed
+  one result while retaining widget/table identities, selection, and layout;
+  it performed no actual move. The harness's earlier native event-replay queue
+  initialization issue was fixed before this run. A nonfatal Windows
+  `0x8001010d` child-process fault appeared in optional profiler sampling; it
+  is a tooling caveat, not a production-bug claim. Cache-load throughput remains
+  open in `TODO.md`; activation cost per batch is not isolated.
+
 ## 2026-10-03 — Cache projection, responsiveness, and CLI utility follow-up
 
 - [x] Explicit `--cachedir` now transiently aligns both the cache root and the

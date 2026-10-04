@@ -11,13 +11,13 @@ overwritten.
 
 from __future__ import annotations
 from pathlib import Path
-from typing import cast
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 
 from app_paths import ensure_output_dir
 from front.file_operation_worker import FileOperationWorker
+from front.view_removal import remove_result_paths
 
 
 class FileOperationControllerMixin:
@@ -151,14 +151,7 @@ class FileOperationControllerMixin:
         failed = list(result.get("failed") or [])
         cancelled = bool(result.get("cancelled"))
         if moved:
-            moved_set = set(moved)
-            self._queued_files = [p for p in self._queued_files if p not in moved_set]
-            self._results = [
-                r for r in self._results if r.get("filepath") not in moved_set
-            ]
-            selected_paths = cast(set[str], getattr(self, "_selected_paths"))
-            selected_paths.difference_update(moved_set)
-            self._rebuild_views_from_results()
+            remove_result_paths(self, moved)
             self._update_file_count()
         if cancelled:
             self._set_progress_status(

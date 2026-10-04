@@ -390,8 +390,13 @@ class ViewControllerMixin:
         prev_fp = _combo_data_str(self.raw_combo.currentData())
         self.raw_combo.blockSignals(True)
         self.raw_combo.clear()
+        results_by_path = {}
+        for data in self._results:
+            filepath = data.get("filepath")
+            if filepath and filepath not in results_by_path:
+                results_by_path[filepath] = data
         for fp in self._visible_paths():
-            data = self._result_for_filepath(fp)
+            data = results_by_path.get(fp)
             if not data:
                 continue
             self.raw_combo.addItem(data.get("filename", Path(fp).name), fp)

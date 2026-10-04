@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication, QCheckBox, QMenu
 from front.file_operation_controller import FileOperationControllerMixin
 from front.filter_projection import path_identity
 from front.model_card import card_stat_items
+from front.view_removal import rebuild_views_from_results, remove_result_paths
 from model_cache import invalidate_cached_inspection
 
 
@@ -266,10 +267,7 @@ class SelectionControllerMixin(FileOperationControllerMixin):
         selected = set(self._visible_selected_paths())
         if not selected:
             return
-        self._queued_files = [p for p in self._queued_files if p not in selected]
-        self._results = [r for r in self._results if r.get("filepath") not in selected]
-        self._selected_paths -= selected
-        self._rebuild_views_from_results()
+        remove_result_paths(self, selected)
         self._update_file_count()
         noun = "entry" if len(selected) == 1 else "entries"
         self._set_progress_status(f"Removed {len(selected)} selected {noun}.")
@@ -327,37 +325,7 @@ class SelectionControllerMixin(FileOperationControllerMixin):
         self._clear_progress_status(delay_ms=3500)
 
     def _rebuild_views_from_results(self):
-        current_results = list(self._results)
-        header = self.table.horizontalHeader()
-        assert header is not None
-        sorting_enabled = self.table.isSortingEnabled()
-        sort_column = header.sortIndicatorSection()
-        sort_order = header.sortIndicatorOrder()
-        self.table.setSortingEnabled(False)
-        self._cards.clear()
-        self._path_to_card.clear()
-        self._path_to_simple_card.clear()
-        self._path_to_row.clear()
-        self._clear_cards()
-        self.table.setRowCount(0)
-        self._reset_format_filter_items()
-        self.raw_combo.clear()
-        for data in current_results:
-            self._normalize_result_data(data)
-            self._add_card(data)
-            self._add_table_row(data)
-            self.format_filter_btn.add_item(self._format_filter_for_data(data))
-        self.arch_filter_btn.replace_items(
-            data.get("architecture", "Unknown") for data in current_results
-        )
-        self.tag_filter_btn.replace_items(
-            tag for data in current_results for tag in self._filter_tags_for_data(data)
-        )
-        header.setSortIndicator(sort_column, sort_order)
-        self.table.setSortingEnabled(sorting_enabled)
-        self._apply_arch_filter()
-        self._refresh_raw_combo_filtered()
-        self._sync_selection_visuals()
+        rebuild_views_from_results(self)
 
     def _on_show_full_path_changed(self, state):
         self._show_full_paths = state == Qt.CheckState.Checked.value

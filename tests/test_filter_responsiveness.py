@@ -54,6 +54,11 @@ def test_large_filter_projection_yields_and_keeps_latest_selection(tmp_path, mon
 
         window.arch_filter_btn.set_all_checked(False)
         window.arch_filter_btn._arch_checks["Family 7"].setChecked(True)
+        assert not window.cards_layout.isEnabled()
+        window.arch_filter_btn._arch_checks["Family 7"].setChecked(False)
+        assert not window.cards_layout.isEnabled()
+        window.arch_filter_btn._arch_checks["Family 8"].setChecked(True)
+        assert not window.cards_layout.isEnabled()
 
         deadline = time.monotonic() + 5
         while window._filter_projection.pending and time.monotonic() < deadline:
@@ -61,11 +66,12 @@ def test_large_filter_projection_yields_and_keeps_latest_selection(tmp_path, mon
             time.sleep(0.001)
 
         assert not window._filter_projection.pending
+        assert window.cards_layout.isEnabled()
         assert event_loop_observations
         completed, status = event_loop_observations[0]
         assert 0 < completed < len(window._results)
         assert status.startswith("Updating filters:")
-        assert window.arch_filter_btn.active_filter() == {"Family 7"}
+        assert window.arch_filter_btn.active_filter() == {"Family 8"}
         assert sum(not window.table.isRowHidden(row) for row in range(420)) == 1
         assert sum(not card.isHidden() for card in window._cards) == 1
         assert window.arch_filter_btn._counts["Family 7"] == 1

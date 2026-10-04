@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections import deque
+from contextlib import nullcontext
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Callable
+from typing import Callable, ContextManager
 
 from PyQt6.QtCore import QObject, QTimer
 
@@ -29,6 +30,7 @@ class ScanProjectionBuffer(QObject):
         *,
         max_items: int = 8,
         max_milliseconds: float = 12.0,
+        layout_context_factory: Callable[[], ContextManager[object]] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -37,6 +39,7 @@ class ScanProjectionBuffer(QObject):
         self._completed = completed
         self.max_items = max(1, int(max_items))
         self.max_milliseconds = max(0.1, float(max_milliseconds))
+        self._layout_context_factory = layout_context_factory
         self._events: deque[ProjectionEvent] = deque()
         self._generation = 0
         self._terminal: object | None = None
@@ -76,27 +79,63 @@ class ScanProjectionBuffer(QObject):
     def drain_now(self) -> None:
         """Drain one bounded tick; public for deterministic tests."""
         self._scheduled = False
+        if not self._events and self._terminal is None:
+            return
         started = perf_counter()
         projected = 0
-        while self._events and projected < self.max_items:
-            event = self._events.popleft()
-            if event.generation == self._generation:
-                self._project(event.kind, event.payload)
-            self._acknowledge(event)
-            projected += 1
-            if (perf_counter() - started) * 1000.0 >= self.max_milliseconds:
-                break
+        generation = self._generation
+        acknowledgements: list[ProjectionEvent] = []
+        entered = False
+        try:
+            try:
+                context = (
+                    self._layout_context_factory()
+                    if self._layout_context_factory is not None
+                    else nullcontext()
+                )
+            except Exception:
+                self.invalidate()
+                raise
+            try:
+                with context:
+                    entered = True
+                    while (
+                        self._events
+                        and projected < self.max_items
+                        and generation == self._generation
+                    ):
+                        event = self._events.popleft()
+                        try:
+                            if event.generation == self._generation:
+                                self._project(event.kind, event.payload)
+                        finally:
+                            acknowledgements.append(event)
+                        projected += 1
+                        if generation != self._generation:
+                            break
+                        if (perf_counter() - started) * 1000.0 >= self.max_milliseconds:
+                            break
 
-        if projected:
-            self._reconcile(False)
-        if self._events:
-            self._schedule()
-            return
-        if self._terminal is not None:
-            terminal = self._terminal
-            self._terminal = None
-            self._reconcile(True)
-            self._completed(terminal)
+                    if projected and generation == self._generation:
+                        self._reconcile(False)
+                    if (
+                        generation == self._generation
+                        and not self._events
+                        and self._terminal is not None
+                    ):
+                        terminal = self._terminal
+                        self._terminal = None
+                        self._reconcile(True)
+                        self._completed(terminal)
+            except Exception:
+                if not entered:
+                    self.invalidate()
+                raise
+        finally:
+            for event in acknowledgements:
+                self._acknowledge(event)
+            if self._events or self._terminal is not None:
+                self._schedule()
 
     def _schedule(self) -> None:
         if self._scheduled:
@@ -107,5 +146,9 @@ class ScanProjectionBuffer(QObject):
     @staticmethod
     def _acknowledge(event: ProjectionEvent) -> None:
         if event.acknowledge is not None:
-            event.acknowledge()
+            try:
+                event.acknowledge()
+            except Exception:
+                # A failed acknowledgement must not strand later payloads.
+                pass
 

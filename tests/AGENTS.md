@@ -5,7 +5,15 @@
 - `.\tests\test_cli_dump_options.py` — `--dump-keys` forwards options through
   ordinary/checkpoint routes and returns nonzero when any requested dump fails.
 - `.\tests\test_filter_responsiveness.py` — QTimer-sliced large filter
-  projection yields to Qt events and applies only the latest selection.
+  projection yields to Qt events, applies only the latest selection, and holds
+  the Cards-layout batch through completion.
+- `.\tests\test_layout_batch.py` — nestable/idempotent Cards-layout leases,
+  original enabled-state restoration, error handling, bounded scan-drain
+  acknowledgement after release, and synchronous/asynchronous filter release on
+  cancellation, close, and owner destruction.
+- `.\tests\test_view_removal.py` — incremental moved-result removal preserves
+  retained Cards/Data widgets, selections, sorted row maps, facet counts, queue,
+  and Raw selection; last-result removal restores the Cards placeholder.
 - `.\tests\test_resize_splash.py` — ResizeSplash image resize result and
   subprocess success/failure exit statuses.
 - `.\tests\test_rescan_selected.py` — selected-model invalidation, selection
@@ -81,10 +89,12 @@
 
 ## Current validation note
 
-- Final canonical suite: **518 passed, 4 skipped in 76.61 seconds**, exit 0:
+- Final canonical suite: **527 passed, 4 skipped in 127.66 seconds**, exit 0:
   `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`.
-  Log: `R:\Temp\opencode\modelinspector-qodo-isolated-2026-10-03.log`. The
-  autouse cache-environment isolation supersedes the historical
+  Log: `R:\Temp\opencode\modelinspector-layout-batching-2026-10-03.log`. The
+  completed native 1,080-model layout profile preceded this run; its responsive
+  delivery/layout evidence does not close the separate cache-load-throughput
+  profiling debt. Autouse cache-environment isolation supersedes the historical
   512-passed/4-skipped/6-failed environment-leak run.
 - Header-only model CLI smokes passed in human-readable and JSON modes; retain
   null-domain/empty-capability or Unknown outcomes where metadata lacks evidence.

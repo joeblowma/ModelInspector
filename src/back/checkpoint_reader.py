@@ -96,11 +96,19 @@ def _preflight_zip_directory(filepath: str, file_size: int) -> None:
     """
     with open(filepath, "rb") as stream:
         end_record = zipfile._EndRecData(stream)
-    if not end_record:
-        raise zipfile.BadZipFile("File is not a ZIP file")
-    directory_size = end_record[zipfile._ECD_SIZE]
-    directory_offset, prepended_size = zipfile._handle_prepended_data(end_record)
-    directory_start = directory_offset + prepended_size
+        if not end_record:
+            raise zipfile.BadZipFile("File is not a ZIP file")
+        directory_size = end_record[zipfile._ECD_SIZE]
+        directory_end = end_record[zipfile._ECD_LOCATION]
+        # Upstream CPython 3.12 leaves this at the classic EOCD; patched/newer
+        # readers point at the ZIP64 EOCD itself. Check before subtracting records.
+        if end_record[zipfile._ECD_SIGNATURE] == zipfile.stringEndArchive64:
+            stream.seek(directory_end)
+            if stream.read(4) == zipfile.stringEndArchive:
+                directory_end -= (
+                    zipfile.sizeEndCentDir64 + zipfile.sizeEndCentDir64Locator
+                )
+    directory_start = directory_end - directory_size
     if (
         directory_size < 0
         or directory_size > MAX_ARCHIVE_DIRECTORY_BYTES

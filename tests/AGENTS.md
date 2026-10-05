@@ -47,6 +47,9 @@
 - `.\tests\test_reader_registry.py` — safe reader registration/dispatch,
   checkpoint policy, metadata ZIP bounds, and ZIP/ZIP64 central-directory
   preflight before `ZipFile` construction.
+- `.\tests\test_checkpoint_zip_preflight.py` — nonempty classic/ZIP64 metadata
+  archives with comments and SFX prefixes, legacy Python 3.12 ZIP64 offsets, and
+  negative-position/budget rejection before `ZipFile` construction.
 - `.\tests\test_model_readers_bounds.py` — exact safetensors header reads and
   bounded native GGUF parsing: hostile counts, strings, aggregate header bytes,
   arrays, dimensions, work, truncation, header-only valid reads, and no optional

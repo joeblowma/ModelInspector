@@ -161,11 +161,14 @@ the follow-up list below.
 
 ### CLI, packaging, and developer maintenance
 
-- [ ] Make checkpoint ZIP central-directory preflight Python-minor compatible
-  without constructing `ZipFile` before its bounds check, then verify ZIP64/SFX
-  archives. The unchanged `checkpoint_reader.py` calls private
-  `zipfile._handle_prepended_data`, absent in local Python 3.12.15 (four
-  `test_reader_registry.py` failures); system Python 3.14.8 canonical passes.
+- [x] Checkpoint ZIP central-directory preflight now supports the legacy
+  Python 3.12 and current ZIP64 end-record positions without constructing
+  `ZipFile` before its 2 MiB bounds check; Python 3.12.15 and 3.14.8 full suites
+  each passed 534 tests with 4 skipped. The legacy layout is simulated coverage,
+  not a claim for every installed Python 3.12 version.
+- [ ] Revalidate the bounded private-`zipfile._EndRecData` compatibility boundary
+  on future Python minors and with real SFX/ZIP64 edge archives; Python 3.13 has
+  not been validated.
 - Keep legacy `-cli` executable passthrough optional and deferred; it is
   distinct from the GUI positional startup target in the pre-release checklist.
 - Wheel release metadata and artifact validation are under repair; local,

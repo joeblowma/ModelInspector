@@ -3,6 +3,23 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-10-05 — Checkpoint ZIP preflight compatibility
+
+- [x] `back.checkpoint_reader` retains bounded private-`zipfile._EndRecData`
+  preflight before `ZipFile`, its 2 MiB central-directory cap, and its
+  metadata-only/no-pickle/no-tensor-payload boundary. It now distinguishes the
+  legacy ZIP64 reader position from current reader positions by reading the
+  four-byte end-record signature, avoiding the removed private prepended-data
+  helper. The 3.12 legacy layout was simulated, not verified on every installed
+  3.12 release.
+- [x] Full suites passed on Python 3.12.15: **534 passed, 4 skipped in 150.89 s**
+  (exit 0), `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen';
+  &'.venv\Scripts\python.exe' -m pytest tests --capture=tee-sys`; log:
+  `R:\Temp\opencode\modelinspector-zip-suite-312.log`. Python 3.14.8: **534
+  passed, 4 skipped in 151.82 s** (exit 0), `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests --capture=tee-sys`;
+  log: `R:\Temp\opencode\modelinspector-zip-suite-314.log`.
+
 ## 2026-10-04 — Cards cache-load geometry
 
 - [x] Changed the Cards `QVBoxLayout` in `front.window_layout` (377 lines) from

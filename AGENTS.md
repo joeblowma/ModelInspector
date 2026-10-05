@@ -89,8 +89,11 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 - Reader-bound tests cover exact safetensors header reads and native GGUF
   limits/truncation, including OSError, RuntimeError, unsupported-version, and
   no-library-fallback boundaries. Shard/checkpoint tests cover bounded
-  shard-number parsing, partial-set warnings, and ZIP central-directory preflight
-  before `ZipFile` construction.
+  shard-number parsing, partial-set warnings, and the private
+  `zipfile._EndRecData` ZIP central-directory preflight before `ZipFile`
+  construction. The compatibility boundary retains the 2 MiB directory limit,
+  does not deserialize pickle or read tensor payloads, and supports legacy versus
+  current ZIP64 end-record positions by checking the four-byte signature.
 - Layout-batch tests cover nested/idempotent lease restoration, errors,
   scan acknowledgement after release, synchronous/asynchronous filter release,
   cancellation, close, and owner destruction. Incremental-removal tests must
@@ -106,13 +109,14 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
-The current canonical suite passed **528, with 4 skipped, in 102.77 seconds**
-(exit 0) on system Python 3.14.8: `$env:PYTHONPATH='src';
+The current canonical suites each passed **534, with 4 skipped** (exit 0):
+Python 3.12.15 in **150.89 seconds**, `$env:PYTHONPATH='src';
+$env:QT_QPA_PLATFORM='offscreen'; &'.venv\Scripts\python.exe' -m pytest tests
+--capture=tee-sys` (`R:\Temp\opencode\modelinspector-zip-suite-312.log`); and
+system Python 3.14.8 in **151.82 seconds**, `$env:PYTHONPATH='src';
 $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests --capture=tee-sys`
-(`R:\Temp\opencode\modelinspector-cache-load-canonical-2026-10-04.log`). It
-supersedes the 527/4 layout-batching run. Cache-load geometry is improved, but
-residual initial-load/RSS and Python 3.12 checkpoint-ZIP compatibility debt
-remain in `TODO.md`.
+(`R:\Temp\opencode\modelinspector-zip-suite-314.log`). Cache-load geometry is
+improved, but residual initial-load/RSS debt remains in `TODO.md`.
 The live-file header loader reads directly and retains cached fallback only for
 missing files. Header-only CLI evidence covers the current
 Flux/SDXL/Qwen/Boogu/LongCat/LoRA cases; preserve unknown or null-domain/capability

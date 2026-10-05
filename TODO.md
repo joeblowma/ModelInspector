@@ -53,14 +53,14 @@ the follow-up list below.
 
 ### Release validation
 
-- [x] Current canonical integration run: **528 passed, 4 skipped in 102.77
-  seconds** (exit 0) on system Python 3.14.8. Command:
-  `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest
-  tests --capture=tee-sys`. Log:
-  `R:\Temp\opencode\modelinspector-cache-load-canonical-2026-10-04.log`.
-  The shared autouse fixture isolates `SMI_CACHE_DIR`, `SMI_MODEL_CACHE_DIR`,
-  and legacy `SMI_CACHE_PATH` for every test; this supersedes the prior 527/4
-  canonical run.
+- [x] Coherent full-suite candidate before the later narrow display-path
+  assertion: **542 passed, 4 skipped** (exit 0) on Python 3.12.15/3.13.16/3.14.8
+  in 113.34/112.78/112.67 seconds. Logs:
+  `R:\codexTemp\modelinspector-scan-delivery\suite-312.log`, `suite-313.log`,
+  and `suite-314.log`. The affected compatibility follow-up after that patch
+  passed **38 tests** in 13.73/12.33/13.20 seconds on the same minors; no full
+  suite is claimed after the narrow patch. The shared autouse fixture isolates
+  `SMI_CACHE_DIR`, `SMI_MODEL_CACHE_DIR`, and legacy `SMI_CACHE_PATH`.
 - [x] Historical pre-isolation integration run: **512 passed, 4 skipped, 6
   failed in 85.37 seconds** (exit 1). Its cache-root environment leakage is
   superseded by the current canonical pass. Log:
@@ -127,7 +127,20 @@ the follow-up list below.
 
 ### Test and evidence follow-up
 
-- [ ] Profile residual native cache-load cost and RSS. The 1,080-summary Cards
+- [ ] Profile residual native cache-load cost, RSS, and fresh-scan root causes.
+  Do not claim a historical real-model regression comparison: the current
+  production `DiscoveryWorker` profile covers 1,086 paths with four threads and
+  `cache_full_data_on_analyze=True` (cold/warm analysis 187.18/34.07 s;
+  window-init 0.51/7.86 s; discovery 0.71/0.89 s). The cold completion-counter
+  gap reached 10.98 s alongside a `umt5xxl` GGUF header read of 10.96 s; the
+  slowest header was 29.22 s and header p99 15.46 s. Header descriptors only
+  were read—never tensor payloads. Cold analysis made 2,195 index saves and
+  accumulated 605.8 MB of index writes (final index 548 KB; cache 415.1 MB),
+  with synchronous-lock median/p95 49/199 ms. Warm analysis had 1,086 cache
+  hits, no header reads/stores, and 1,088 index reads; an unused lookup-index
+  read accumulated 7.6 s. Investigate bounded GGUF parsing and index-save
+  consolidation before cosmetic progress-counter work.
+- [ ] Retain the existing cache-load/RSS evidence separately. The 1,080-summary Cards
   geometry correction reduced the usable custom-replay baseline from
   29.77/30.00 s (including 500 ms settle) to 15.71/15.93 s; the earlier ~38 s
   `QApplication.notify` instrumentation result is not a usable baseline. Real
@@ -139,6 +152,10 @@ the follow-up list below.
   read from a 397 MB/2,201-file cache; no SQLite migration or low-RAM design is
   justified by storage I/O alone. Verifier/source-sync were stubbed in that
   native harness, so they remain outside its end-to-end evidence.
+- [ ] If this cache audit recurs, record active/historic/loaded counts before
+  and after sync. The 1,105 records and 1,098 resolved paths imply seven
+  duplicates; the historical 1,080/1,114 counts are not forensically explained.
+  Do not infer that physical model files were created.
 - [x] Metadata UI live-file header loading now bypasses full-data cache scans;
   missing-file cache fallback and the capability/domain boundary are covered
   by regression tests. Keep the `test_ui_release_gates.py` catalog current.
@@ -167,8 +184,8 @@ the follow-up list below.
   each passed 534 tests with 4 skipped. The legacy layout is simulated coverage,
   not a claim for every installed Python 3.12 version.
 - [ ] Revalidate the bounded private-`zipfile._EndRecData` compatibility boundary
-  on future Python minors and with real SFX/ZIP64 edge archives; Python 3.13 has
-  not been validated.
+  on future Python minors and with real SFX/ZIP64 edge archives; Python 3.13.16
+  full-suite compatibility is now validated.
 - Keep legacy `-cli` executable passthrough optional and deferred; it is
   distinct from the GUI positional startup target in the pre-release checklist.
 - Wheel release metadata and artifact validation are under repair; local,
@@ -181,3 +198,13 @@ the follow-up list below.
 - Resolve the remaining baseline strict-pylint `C`/`R`/`W` findings in a scoped
   maintenance follow-up; do not close Gate 5 until an independent final count
   passes the configured threshold.
+- Keep the isolated profiling cache at
+  `C:\Users\Joseph\.local\share\ModelInspector\cache\modelinspector-scan-profile-2026-10-05`
+  (415 MB) separate from the original cache; no original settings, cache, or
+  model-root files were written. Temporary harness artifacts under
+  `R:\codexTemp\modelinspector-scan-delivery` (about 7.5 MB plus source context)
+  may disappear. A warm-removal timing attempt is invalid evidence: the 415 MB
+  cache child grew by 1,595 bytes, producing one cache miss that the guard
+  blocked. Do not claim a speed gain. The synthetic projection timings
+  (9.68/9.95 s and delayed 13.42 s) likewise do not demonstrate a policy
+  regression.

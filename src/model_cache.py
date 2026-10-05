@@ -150,7 +150,6 @@ def get_cached_inspection(filepath: str, options: dict | None = None) -> dict | 
         cache = _load_legacy_cache(legacy_path)
         entry = cache["entries"].get(key)
     else:
-        _ = _load_index()
         entry = _read_entry(entry_id)
     if not entry:
         return None

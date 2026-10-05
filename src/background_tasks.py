@@ -143,10 +143,16 @@ class AnalysisWorker(QThread):
         inspect_options: Optional[dict[str, Any]] = None,
         threads: int = 1,
         checkpoint_safety: Optional[str] = None,
+        *,
+        per_path_options: Optional[dict[str, dict[str, Any]]] = None,
     ):
         super().__init__()
         self.filepaths = filepaths
         self.inspect_options = dict(inspect_options or {})
+        self._per_path_options = {
+            str(path): dict(options)
+            for path, options in (per_path_options or {}).items()
+        }
         if checkpoint_safety is not None:
             self.inspect_options["checkpoint_safety"] = checkpoint_safety
         self.threads = max(1, int(threads or 1))
@@ -235,7 +241,13 @@ class AnalysisWorker(QThread):
                     break
 
     def _inspect_one(self, filepath: str) -> dict[str, Any]:
-        return inspect_file(filepath, options=self.inspect_options)
+        options = dict(self.inspect_options)
+        alias_detection = self._per_path_options.get(filepath, {}).get(
+            "allow_filename_alias_detection"
+        )
+        if isinstance(alias_detection, bool):
+            options["allow_filename_alias_detection"] = alias_detection
+        return inspect_file(filepath, options=options)
 
     def _run_parallel(self) -> None:
         max_workers = min(self.threads, len(self.filepaths))

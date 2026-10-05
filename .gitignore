@@ -234,3 +234,5 @@ assets/splash.png
 .aider*
 /*.raw
 *.bak
+/.venv313
+/.venv314

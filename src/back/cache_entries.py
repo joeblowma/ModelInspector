@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ntpath
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -65,7 +66,7 @@ def _entry_options(cache_key: str, entry: Mapping[str, Any]) -> dict[str, Any] |
 def select_cache_entries(
     records: Iterable[tuple[str, dict]], should_cancel: Callable[[], bool] | None = None
 ) -> list[dict[str, Any]]:
-    """Choose the first summary for each path, retaining its key and options."""
+    """Choose the first summary per canonical path, retaining its key and options."""
     selected = []
     seen = set()
     for cache_key, entry in records:
@@ -76,47 +77,61 @@ def select_cache_entries(
         data = entry.get("data")
         if not isinstance(data, Mapping) or not data:
             continue
-        candidates = (
-            data.get("filepath"),
-            data.get("resolved_filepath"),
-            identity.get("resolved_filepath"),
+        filepath = next(
+            (
+                str(candidate)
+                for candidate in (
+                    data.get("filepath"),
+                    data.get("resolved_filepath"),
+                    identity.get("resolved_filepath"),
+                )
+                if candidate
+            ),
+            None,
         )
-        for candidate in candidates:
-            if not candidate or str(candidate).lower() in seen:
-                continue
-            filepath = str(candidate)
-            seen.add(filepath.lower())
-            selected.append(
-                {
-                    "filepath": filepath,
-                    "cache_key": cache_key,
-                    "cache_options": _entry_options(cache_key, entry),
-                    "entry": entry,
-                }
-            )
-            break
+        if filepath is None:
+            continue
+
+        try:
+            decoded_key = json.loads(cache_key)
+        except (TypeError, ValueError):
+            decoded_key = None
+        key_path = (
+            decoded_key[0]
+            if isinstance(decoded_key, list)
+            and len(decoded_key) == 2
+            and isinstance(decoded_key[0], str)
+            else None
+        )
+        canonical_path = (
+            identity.get("resolved_filepath")
+            or key_path
+            or data.get("resolved_filepath")
+            or filepath
+        )
+        canonical_identity = ntpath.normcase(ntpath.normpath(str(canonical_path)))
+        if canonical_identity in seen:
+            continue
+        seen.add(canonical_identity)
+        selected.append(
+            {
+                "filepath": filepath,
+                "cache_key": cache_key,
+                "cache_options": _entry_options(cache_key, entry),
+                "entry": entry,
+            }
+        )
     return selected
 
 
 def list_cache_paths(records: Iterable[tuple[str, dict]]) -> list[str]:
-    """Preserve the path-facing listing behavior for legacy cache records."""
+    """List normalized display aliases; entry selection retains distinct identities."""
     paths = []
     seen = set()
-    for _, entry in records:
-        identity = entry.get("identity")
-        identity = identity if isinstance(identity, dict) else {}
-        raw_data = entry.get("data")
-        data = raw_data if isinstance(raw_data, dict) else {}
-        for candidate in (
-            data.get("filepath"), data.get("resolved_filepath"),
-            identity.get("resolved_filepath"),
-        ):
-            if not candidate:
-                continue
-            path = str(candidate)
-            if path.lower() in seen:
-                continue
-            seen.add(path.lower())
+    for entry in select_cache_entries(records):
+        path = entry["filepath"]
+        normalized = ntpath.normcase(ntpath.normpath(path))
+        if normalized not in seen:
+            seen.add(normalized)
             paths.append(path)
-            break
     return paths

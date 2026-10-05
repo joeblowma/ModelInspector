@@ -193,7 +193,13 @@ def test_embedded_explorer_switches_order_groups_shards_and_keeps_byte_tooltips(
 def test_card_details_ignore_legacy_preferences_and_metadata_stays_spacious():
     app = _app()
     dialog = AdvancedViewerDialog(
-        {"filepath": "R:/model.safetensors", "total_params": 100, "metadata": {"long": "value\n" * 20}},
+        {
+            "filepath": "R:/model.safetensors",
+            "total_params": 100,
+            "metadata": {"long": "value\n" * 20},
+            "extra": {"base_model": "Example", "dataset": "Example set"},
+            "training_meta": {"epochs": 12, "steps": 500},
+        },
         card_fields={"parameters": False, "file_size": False, "tensors": False},
     )
     dialog.show()
@@ -201,7 +207,8 @@ def test_card_details_ignore_legacy_preferences_and_metadata_stays_spacious():
     assert dialog._card_details_card is not None
     assert dialog._card_details_card.select_cb.isHidden()
     assert dialog._card_details_card.stats_layout.columnCount() == 2
-    assert dialog._card_details_card.stats_layout.rowCount() >= 2
+    assert dialog._card_details_card.stats_layout.rowCount() >= 8
+    assert dialog._card_details_card.maximumHeight() >= dialog._card_details_card.minimumSizeHint().height()
     labels = [
         dialog._card_details_card.stats_layout.itemAt(index).widget().text()
         for index in range(dialog._card_details_card.stats_layout.count())

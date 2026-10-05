@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from typing import Any
 import weakref
+from collections.abc import Mapping
 
 from PyQt6 import sip
 from PyQt6.QtCore import QObject, QTimer
@@ -433,6 +434,14 @@ class IntegrationMixin(CacheLoadControllerMixin):
         if report is None:
             report = self._cache_report()
         paths = [entry.path for entry in report.entries if entry.action == "refresh" and entry.is_active]
+        per_path_options = {
+            entry.path: {"allow_filename_alias_detection": cache_options["allow_filename_alias_detection"]}
+            for entry in report.entries
+            if entry.action == "refresh"
+            and entry.is_active
+            and isinstance(cache_options := getattr(entry, "cache_options", None), Mapping)
+            and isinstance(cache_options.get("allow_filename_alias_detection"), bool)
+        }
         if not paths or getattr(self, "_cache_sync_worker", None) is not None:
             return
         worker = AnalysisWorker(
@@ -442,6 +451,7 @@ class IntegrationMixin(CacheLoadControllerMixin):
                 "checkpoint_safety": CHECKPOINT_SAFETY_METADATA,
             },
             1,
+            **({"per_path_options": per_path_options} if per_path_options else {}),
         )
         self._cache_sync_worker = worker
         worker.result_ready.connect(lambda _data, w=worker: w.acknowledge_event())

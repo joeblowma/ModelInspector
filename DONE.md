@@ -3,6 +3,46 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-10-05 — Cache identity selection and card sizing
+
+- [x] Cache entry selection now uses a shared normalized resolved identity
+  (Windows case/separator safe), retains the first persisted cache key/options,
+  and produces one display filepath. `list_cache_paths` preserves that unique
+  display contract where distinct persisted canonical targets share one display
+  alias; the selector/listing edge remains deliberately narrow (two selected
+  records versus one listed display path), not a migration or broad cache
+  rewrite. No records were deleted or migrated. The original audit retained
+  1,105 persisted rows, 1,098 canonical model paths, and seven option/path
+  aliases; read-only selection reported 1,098 total, 1,097 active, one historic,
+  and zero refresh.
+- [x] Cache sync now refreshes with each selected record's persisted Boolean
+  alias-detection identity rather than the current UI flag. `AnalysisWorker`
+  snapshots keyword-only per-path options, whitelists only that flag, and keeps
+  shared metadata-only checkpoint safety authoritative; arbitrary stored options
+  cannot enable sidecars/full data or weaken checkpoint safety. The compact
+  regression proves a saved `False` refreshes the original cache key and that
+  mixed/legacy options retain the intended fallback.
+- [x] `ModelCard` vertical stats now use a content minimum; normal Cards retain
+  their fixed 168-pixel height. The existing Advanced Viewer test has a populated
+  vertical-stat geometry assertion without adding a test case. The frozen Python
+  3.12 native card correction was user-confirmed; a transient filtered blank gap
+  later ceased reproducing, so no filter code changed.
+- [x] Coherent full suites before that narrow display-path assertion: **542
+  passed, 4 skipped** (exit 0) on Python 3.12.15/3.13.16/3.14.8 in
+  113.34/112.78/112.67 seconds. Logs:
+  `R:\codexTemp\modelinspector-scan-delivery\suite-312.log`, `suite-313.log`,
+  and `suite-314.log`. The subsequent affected list-compatibility command over
+  `test_cache_entry_selection.py`, `test_cache_menu_integration.py`,
+  `test_cache_load.py`, and `test_inspection_summary.py` passed **38** in
+  13.73/12.33/13.20 seconds (`selector-listcompat-312.log`,
+  `selector-listcompat-313-venv.log`, `selector-listcompat-314.log`). No full
+  suite is claimed after the narrow patch.
+- [x] A clean `.venv314` PyInstaller build was user-confirmed (not run by this
+  session). A dirty system Python 3.14 build recursed through installed
+  pandas/SciPy/Torch/SymPy after static GGUF imports; no dependency or
+  recursion-limit workaround was added. This is not a claim that every frozen
+  executable path received automated QA.
+
 ## 2026-10-05 — Checkpoint ZIP preflight compatibility
 
 - [x] `back.checkpoint_reader` retains bounded private-`zipfile._EndRecData`

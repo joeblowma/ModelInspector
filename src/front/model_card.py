@@ -128,8 +128,11 @@ class ModelCard(QFrame):
                 border-color: %(highlight)s;
             }
         """ % self._theme_colors)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setFixedHeight(self.CARD_HEIGHT)
+        if vertical_stats:
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        else:
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            self.setFixedHeight(self.CARD_HEIGHT)
         self.setToolTip("Click to open the Advanced Viewer. Right-click for context actions.")
 
         layout = QVBoxLayout(self)

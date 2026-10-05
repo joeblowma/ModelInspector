@@ -10,7 +10,9 @@ This is a growing Python desktop/CLI utility for inspecting various language and
   - `app_paths.py` owns JSONC settings and legacy INI migration paths; fresh application data/settings/cache and default save/output use `~/.local/share/ModelInspector` via `ensure_output_dir()` (override `SMI_OUTPUT_DIR`), while an existing `.model-inspector` location is retained. `cache_dir()` (`SMI_CACHE_DIR`) holds the inspection cache plus sidecars/raw dumps/directory scans, and `model_cache_dir()` (`SMI_MODEL_CACHE_DIR`, falling back to the root) holds only the primary inspection cache; `resource_base_dir()` resolves checkout, installed-wheel, and PyInstaller (`sys._MEIPASS`) layouts.
   - `gui.py` Thin compatibility/bootstrap wrapper that composes and re-exports `MainWindow`, while delegating application startup to `front.application`.
   - `inspect_model.py` Minimal CLI bootstrap that invokes `back.cli`.
-  - `model_cache.py` Persistent inspection-result cache
+  - `model_cache.py` persistent inspection-result cache; its shared selector
+    normalizes resolved Windows identities, preserves one display filepath, and
+    retains the first persisted cache key/options for verification and refresh.
    - `model_readers.py` owns read-only safetensors headers and dispatch helpers;
      `read_gguf_header()` calls bounded native GGUF parsing in
      `back/gguf_reader.py` directly and authoritatively, with no optional-library
@@ -31,8 +33,12 @@ This is a growing Python desktop/CLI utility for inspecting various language and
      unaffected Cards/Data widgets, selection, sorting maps, facets, and Raw
      selection; reserve `rebuild_views_from_results()` for explicit full
      rebuilds, guarded as one layout/format batch.
-   - `back/cache_entries.py` chooses the first persisted summary per path and
-     retains its stable cache key/options for cache verification and projection.
+    - `back/cache_entries.py` chooses the first persisted summary per path and
+      retains its stable cache key/options for cache verification and projection.
+    - `background_tasks.AnalysisWorker` accepts a keyword-only, snapshotted
+      per-path alias-detection override. Cache sync forwards only the persisted
+      Boolean alias flag; its shared metadata-only checkpoint policy is never
+      overridden by stored cache options.
    - `assets/ResizeSplash.py` is a standalone image utility: return Boolean
      operation status and map its command-line paths to process exit status.
 - `assets/` stores bundled application assets, such as icons and splash screen used by the GUI and PyInstaller build.
@@ -109,14 +115,17 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
 
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
-The current canonical suites each passed **534, with 4 skipped** (exit 0):
-Python 3.12.15 in **150.89 seconds**, `$env:PYTHONPATH='src';
-$env:QT_QPA_PLATFORM='offscreen'; &'.venv\Scripts\python.exe' -m pytest tests
---capture=tee-sys` (`R:\Temp\opencode\modelinspector-zip-suite-312.log`); and
-system Python 3.14.8 in **151.82 seconds**, `$env:PYTHONPATH='src';
-$env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests --capture=tee-sys`
-(`R:\Temp\opencode\modelinspector-zip-suite-314.log`). Cache-load geometry is
-improved, but residual initial-load/RSS debt remains in `TODO.md`.
+The current coherent full-suite candidate passed **542, with 4 skipped** (exit
+0) before the later narrow display-path compatibility assertion: Python 3.12.15
+in **113.34 seconds** (`R:\codexTemp\modelinspector-scan-delivery\suite-312.log`),
+Python 3.13.16 in **112.78 seconds** (`suite-313.log`), and Python 3.14.8 in
+**112.67 seconds** (`suite-314.log`), each with `PYTHONPATH=src` and
+`QT_QPA_PLATFORM=offscreen`. The affected four-module follow-up after that
+assertion passed **38 tests** on 3.12/3.13/3.14 in 13.73/12.33/13.20 seconds
+(`selector-listcompat-312.log`, `selector-listcompat-313-venv.log`, and
+`selector-listcompat-314.log`); no full suite ran after that narrow patch.
+Python 3.13 minor compatibility is now validated. Cache-load initial-load/RSS
+and scan root-cost profiling remain in `TODO.md`.
 The live-file header loader reads directly and retains cached fallback only for
 missing files. Header-only CLI evidence covers the current
 Flux/SDXL/Qwen/Boogu/LongCat/LoRA cases; preserve unknown or null-domain/capability

@@ -174,7 +174,8 @@ class WindowLayoutMixin:
         self.cards_layout.setSpacing(12)
         self.cards_layout.setContentsMargins(8, 8, 8, 8)
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.cards_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        # Let the scroll area size the widget, not the growing content minimum.
+        self.cards_layout.setSizeConstraint(QLayout.SizeConstraint.SetDefaultConstraint)
         self.cards_scroll.setWidget(self.cards_container)
         self._cards_drop_relay = _CardDropRelay(self)
         for drop_target in (

@@ -1,6 +1,9 @@
 # Test harness index
 
 ## Existing tests:
+- Cards geometry regression (`tests/test_cards_layout_geometry.py`) — Cards scroll
+  sizing, resize, filter/restore, final-card visibility, and empty-state restoration
+  with synthetic summaries.
 - `.\tests\test_ptq_precision.py` — actual PTQ142/PTQ143 header mapping and precision preservation.
 - `.\tests\test_cli_dump_options.py` — `--dump-keys` forwards options through
   ordinary/checkpoint routes and returns nonzero when any requested dump fails.

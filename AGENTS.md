@@ -96,20 +96,23 @@ Use standard Python style with 4-space indentation, `snake_case` for functions a
   cancellation, close, and owner destruction. Incremental-removal tests must
   retain unaffected widgets, selection, sorting, facet, queue, and Raw-combo
   state, and must restore the placeholder when the last result is removed.
+- Cards use `QLayout.SizeConstraint.SetDefaultConstraint` so the resizable
+  scroll area, rather than accumulated content minimum size, owns geometry.
+  `test_cards_layout_geometry.py` must retain scroll, resize, filter/restore,
+  bottom-card, and final-placeholder coverage.
 - `tests/conftest.py` autouse-isolates `SMI_CACHE_DIR`, `SMI_MODEL_CACHE_DIR`,
   and legacy `SMI_CACHE_PATH` with `pytest.MonkeyPatch.context()`; cache-location
   tests must not rely on environment state from another test.
 
 Validate changes with targeted CLI smoke checks against representative model files and launch `py src/gui.py` for UI changes. For detection changes, verify both human-readable output and `--json` output. If tests are added, place them under `tests/`, use `pytest`, and name files `test_*.py`.
 
-The current canonical suite passed **527, with 4 skipped, in 127.66 seconds**
-(exit 0): `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m
-pytest tests` (`R:\Temp\opencode\modelinspector-layout-batching-2026-10-03.log`).
-The native 1,080-model layout-profile batch completed before this suite; it
-confirmed bounded delivery/layout restoration but left 31–32-second cache-load
-throughput as profiling debt in `TODO.md`. The historical
-512-passed/4-skipped/6-failed integration run was cache environment leakage and
-is superseded by the isolated canonical runs.
+The current canonical suite passed **528, with 4 skipped, in 102.77 seconds**
+(exit 0) on system Python 3.14.8: `$env:PYTHONPATH='src';
+$env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests --capture=tee-sys`
+(`R:\Temp\opencode\modelinspector-cache-load-canonical-2026-10-04.log`). It
+supersedes the 527/4 layout-batching run. Cache-load geometry is improved, but
+residual initial-load/RSS and Python 3.12 checkpoint-ZIP compatibility debt
+remain in `TODO.md`.
 The live-file header loader reads directly and retains cached fallback only for
 missing files. Header-only CLI evidence covers the current
 Flux/SDXL/Qwen/Boogu/LongCat/LoRA cases; preserve unknown or null-domain/capability

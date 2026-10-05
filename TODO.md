@@ -53,12 +53,14 @@ the follow-up list below.
 
 ### Release validation
 
-- [x] Current canonical integration run: **518 passed, 4 skipped in 76.61
-  seconds** (exit 0). Command: `$env:PYTHONPATH='src';
-  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:
-  `R:\Temp\opencode\modelinspector-qodo-isolated-2026-10-03.log`. The shared
-  autouse fixture isolates `SMI_CACHE_DIR`, `SMI_MODEL_CACHE_DIR`, and legacy
-  `SMI_CACHE_PATH` for every test.
+- [x] Current canonical integration run: **528 passed, 4 skipped in 102.77
+  seconds** (exit 0) on system Python 3.14.8. Command:
+  `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest
+  tests --capture=tee-sys`. Log:
+  `R:\Temp\opencode\modelinspector-cache-load-canonical-2026-10-04.log`.
+  The shared autouse fixture isolates `SMI_CACHE_DIR`, `SMI_MODEL_CACHE_DIR`,
+  and legacy `SMI_CACHE_PATH` for every test; this supersedes the prior 527/4
+  canonical run.
 - [x] Historical pre-isolation integration run: **512 passed, 4 skipped, 6
   failed in 85.37 seconds** (exit 1). Its cache-root environment leakage is
   superseded by the current canonical pass. Log:
@@ -125,11 +127,18 @@ the follow-up list below.
 
 ### Test and evidence follow-up
 
-- [ ] Profile and reduce native cache-load throughput. The completed 1,080-model
-  production harness kept the GUI responsive but required 31.2–32.4 seconds
-  for cache projection/replayed scan delivery. Per-batch activation cost is not
-  isolated, so do not attribute this time exclusively to widget construction.
-  No memory option or filter optimization is presently justified.
+- [ ] Profile residual native cache-load cost and RSS. The 1,080-summary Cards
+  geometry correction reduced the usable custom-replay baseline from
+  29.77/30.00 s (including 500 ms settle) to 15.71/15.93 s; the earlier ~38 s
+  `QApplication.notify` instrumentation result is not a usable baseline. Real
+  `CacheLoadWorker` first/repeat projection was 14.644/15.370 s before settle,
+  with 378.2/364.0 MB RSS growth and 357.9/286.0 ms maximum heartbeat gaps.
+  Do not claim universal responsiveness improvement: the controlled geometry
+  flow (160/168 ms versus 291/313 ms) differs, and real-worker first-run stall
+  is worse. Only 1,080 selected entries plus index (241,037,326 bytes) were
+  read from a 397 MB/2,201-file cache; no SQLite migration or low-RAM design is
+  justified by storage I/O alone. Verifier/source-sync were stubbed in that
+  native harness, so they remain outside its end-to-end evidence.
 - [x] Metadata UI live-file header loading now bypasses full-data cache scans;
   missing-file cache fallback and the capability/domain boundary are covered
   by regression tests. Keep the `test_ui_release_gates.py` catalog current.
@@ -152,10 +161,11 @@ the follow-up list below.
 
 ### CLI, packaging, and developer maintenance
 
-- [ ] Verify the checkpoint ZIP central-directory preflight on every supported
-  Python minor version and representative ZIP64/SFX archives. It currently uses
-  private `zipfile` helpers for compatibility with those layouts; stdlib API
-  changes are the remaining concrete compatibility risk.
+- [ ] Make checkpoint ZIP central-directory preflight Python-minor compatible
+  without constructing `ZipFile` before its bounds check, then verify ZIP64/SFX
+  archives. The unchanged `checkpoint_reader.py` calls private
+  `zipfile._handle_prepended_data`, absent in local Python 3.12.15 (four
+  `test_reader_registry.py` failures); system Python 3.14.8 canonical passes.
 - Keep legacy `-cli` executable passthrough optional and deferred; it is
   distinct from the GUI positional startup target in the pre-release checklist.
 - Wheel release metadata and artifact validation are under repair; local,

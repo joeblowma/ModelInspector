@@ -3,6 +3,39 @@
 This file records implemented foundations and explicit product decisions. A
 completed foundation does not imply that every refinement in `TODO.md` is done.
 
+## 2026-10-04 — Cards cache-load geometry
+
+- [x] Changed the Cards `QVBoxLayout` in `front.window_layout` (377 lines) from
+  `SetMinimumSize` to `SetDefaultConstraint`, so the resizable scroll area owns
+  container geometry rather than its growing content minimum. The 87-line
+  `test_cards_layout_geometry.py` regression covers scroll, resize,
+  filter/restore, bottom-card reachability, selected bulk removal, and
+  empty-placeholder restoration; targeted validation reported **47 passed in 4.85 s**.
+- [x] Read-only 1,080-summary native evidence: custom replay fell from its
+  usable 29.77/30.00 s baseline (including 500 ms settle) to 15.71/15.93 s;
+  Cards-container resizes fell from 1,077 to 215/217. The earlier ~38 s
+  `QApplication.notify` instrumentation result is not the baseline. Real
+  `CacheLoadWorker` first/repeat projection measured 14.644/15.370 s before
+  settle (~49.1/47.1% comparable gain), after reading 1,080 entries plus index
+  (241,037,326 bytes); JSON decode was 0.4–0.56 s and storage preparation under
+  one second. Worker-cap 32 did not help; a 32-item/24-ms projection gained
+  about 8% but introduced ~0.5-second stalls and was rejected.
+- [x] The production-path harness verified progressive 1,080 Cards/rows,
+  cancel/close, filters, selection, Data sorting, resize, last-card scrolling,
+  and final placeholder with isolated temporary state; 1,098 original
+  cache/settings fingerprints were unchanged and no model root was accessed.
+  It used an immutable verifier report, disabled sync, and started no analysis,
+  so verifier/source-sync are not end-to-end evidence. RSS growth remains
+  378.2/364.0 MB; real-worker heartbeat maxima were 357.9/286.0 ms, so the
+  controlled geometry responsiveness result is not universal. Artifacts:
+  `R:\Temp\opencode\modelinspector-cache-load-profile-2026-10-04\`.
+- [x] Canonical system-Python 3.14.8 validation: **528 passed, 4 skipped in
+  102.77 s** (exit 0), `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests --capture=tee-sys`.
+  Log: `R:\Temp\opencode\modelinspector-cache-load-canonical-2026-10-04.log`.
+  The separate local Python 3.12.15 checkpoint-ZIP private-helper compatibility
+  failure remains explicitly open in `TODO.md`.
+
 ## 2026-10-03 — Layout batching and incremental view removal
 
 - [x] `front.layout_batch` provides a nestable, idempotent Cards-layout lease.

@@ -1,0 +1,437 @@
+# pyright: reportAttributeAccessIssue=false, reportUnusedExpression=false
+from __future__ import annotations
+
+import os
+import sys
+import time
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from PyQt6.QtCore import QMimeData, QPoint, QPointF, QUrl, Qt, QThread
+from PyQt6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+from PyQt6.QtWidgets import QApplication
+
+import gui
+from gui import MainWindow, ModelCard
+from front.scan_projection import ProjectionEvent
+
+
+def _summary(path: str) -> dict:
+    return {
+        "filepath": path,
+        "filename": Path(path).name,
+        "format": "SAFETENSORS",
+        "file_size": 10,
+        "file_size_friendly": "10 B",
+        "tensor_count": 1,
+        "total_params": 1,
+        "total_params_friendly": "1",
+        "architecture": "Test",
+        "model_type": "Checkpoint",
+        "adapter_type": None,
+        "quantization": None,
+        "components": {},
+        "named_text_encoders": {},
+        "lora_rank": None,
+        "is_moe": False,
+        "expert_count": None,
+        "expert_used_count": None,
+        "precision_summary": "FP16",
+        "component_precision_summary": "FP16",
+        "component_precisions": {},
+        "precision_display": "FP16",
+        "training_meta": {},
+        "extra": {},
+    }
+
+
+def test_cards_use_one_compact_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    try:
+        for index in range(12):
+            data = _summary(f"R:/synthetic/model-{index}.safetensors")
+            window._results.append(data)
+            window._add_card(data)
+        assert len(window._path_to_card) == 12
+        assert not hasattr(window, "cards_simple_view_cb")
+        assert not hasattr(window, "simple_cards_scroll")
+    finally:
+        window.close()
+
+
+def test_discovery_runs_asynchronously_and_queues_terminal_paths(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    model = tmp_path / "nested" / "model.safetensors"
+    model.parent.mkdir()
+    model.write_bytes(b"")
+    second_model = tmp_path / "second" / "other.gguf"
+    second_model.parent.mkdir()
+    second_model.write_bytes(b"")
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    monkeypatch.setattr(window, "_analyze_all", lambda *args, **kwargs: None)
+    try:
+        window._start_discovery([str(model.parent), str(second_model.parent)])
+        deadline = time.monotonic() + 5
+        while (
+            str(second_model) not in window._queued_files
+            and time.monotonic() < deadline
+        ):
+            app.processEvents()
+        assert str(model) in window._queued_files
+        assert str(second_model) in window._queued_files
+        assert window._discovery_worker is not None
+        assert not window._discovery_worker.isRunning()
+    finally:
+        window.close()
+
+
+def test_card_and_window_drops_wait_for_release(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    model = tmp_path / "dropped.safetensors"
+    model.write_bytes(b"")
+    folder = tmp_path / "dropped-folder"
+    folder.mkdir()
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    added = []
+    discoveries = []
+    monkeypatch.setattr(window, "_add_files", lambda paths: added.append(paths))
+    monkeypatch.setattr(
+        window,
+        "_start_discovery",
+        lambda folders, paths, **kwargs: discoveries.append((folders, paths, kwargs)),
+    )
+
+    def send_drag_events(target, path):
+        added_before = len(added)
+        discoveries_before = len(discoveries)
+        mime_data = QMimeData()
+        mime_data.setUrls([QUrl.fromLocalFile(str(path))])
+        for event in (
+            QDragEnterEvent(
+                QPoint(),
+                Qt.DropAction.CopyAction,
+                mime_data,
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+            QDragMoveEvent(
+                QPoint(),
+                Qt.DropAction.CopyAction,
+                mime_data,
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        ):
+            QApplication.sendEvent(target, event)
+            assert event.isAccepted()
+        assert len(added) == added_before
+        assert len(discoveries) == discoveries_before
+        event = QDropEvent(
+            QPointF(),
+            Qt.DropAction.CopyAction,
+            mime_data,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(target, event)
+        assert event.isAccepted()
+
+    try:
+        window.show()
+        app.processEvents()
+        for target in (
+            window.tabs.widget(0),
+            window.cards_scroll,
+            window.cards_scroll.viewport(),
+            window.cards_container,
+        ):
+            added_before = len(added)
+            send_drag_events(target, model)
+            assert len(added) == added_before + 1
+            assert [Path(path) for path in added[-1]] == [model]
+            assert not discoveries
+        added_before = len(added)
+        send_drag_events(window, folder)
+        assert len(added) == added_before
+        assert len(discoveries) == 1
+        assert [Path(path) for path in discoveries[0][0]] == [folder]
+        assert discoveries[0][1] == []
+    finally:
+        window.close()
+
+
+def test_analysis_terminal_waits_for_final_projection(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+
+    class WorkerDouble:
+        was_cancelled = False
+
+        def __init__(self):
+            self.acknowledged = 0
+
+        def acknowledge_event(self):
+            self.acknowledged += 1
+
+        def isRunning(self):
+            return False
+
+    worker = WorkerDouble()
+    window._worker = worker
+    generation = window._projection.begin()
+    window._scan_generation = generation
+    window._analysis_total_count = 17
+    global_calls = {
+        name: 0
+        for name in (
+            "_apply_arch_filter",
+            "_refresh_raw_combo_filtered",
+            "_sync_selection_visuals",
+            "_refresh_card_layout_geometry",
+        )
+    }
+    for name in global_calls:
+        original = getattr(window, name)
+
+        def counted(*args, _name=name, _original=original, **kwargs):
+            global_calls[_name] += 1
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(window, name, counted)
+    try:
+        for index in range(17):
+            window._projection.enqueue(
+                ProjectionEvent(
+                    generation,
+                    "result",
+                    _summary(f"R:/synthetic/model-{index}.safetensors"),
+                    worker.acknowledge_event,
+                )
+            )
+        window._projection.mark_terminal(generation, worker)
+        deadline = time.monotonic() + 5
+        while window._projection.pending_count and time.monotonic() < deadline:
+            app.processEvents()
+        app.processEvents()
+        assert len(window._results) == 17
+        assert window.table.rowCount() == 17
+        assert worker.acknowledged == 17
+        assert window._projection.pending_count == 0
+        assert global_calls == {name: 1 for name in global_calls}
+    finally:
+        window._worker = None
+        window.close()
+
+
+def test_model_card_skips_redundant_selection_styles(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    card = ModelCard(_summary("R:/synthetic/model.safetensors"))
+    refreshes = []
+    monkeypatch.setattr(card, "_refresh_style", lambda: refreshes.append(True))
+
+    card.set_selected(False)
+    card.set_selected(False)
+    card.set_selected(True)
+    card.set_selected(True)
+    card.set_selected(False)
+
+    assert len(refreshes) == 2
+    assert QApplication.instance() is app
+
+
+def test_close_is_deferred_until_slow_thread_finishes(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+
+    class SlowWorker(QThread):
+        def cancel(self):
+            self.requestInterruption()
+
+        def run(self):
+            self.msleep(400)
+
+    worker = SlowWorker()
+    window._worker = worker
+    window.show()
+    app.processEvents()
+    worker.start()
+    try:
+        started = time.monotonic()
+        assert window.close() is False
+        assert time.monotonic() - started < 0.15
+        assert worker.isRunning()
+        assert window.isVisible()
+        assert window._close_pending
+        assert QApplication.instance() is app
+        assert worker.parent() is None
+        assert window.close() is False
+        assert window._close_waiting_workers == {worker}
+        assert worker.wait(2000)
+        deadline = time.monotonic() + 2
+        while window.isVisible() and time.monotonic() < deadline:
+            app.processEvents()
+        assert not window.isVisible()
+        assert not window._close_pending
+    finally:
+        if worker.isRunning():
+            worker.wait(2000)
+        if window.isVisible():
+            window.close()
+
+
+def test_close_is_deferred_until_cache_sync_finishes(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+
+    class SlowCacheSync(QThread):
+        def cancel(self):
+            self.requestInterruption()
+
+        def run(self):
+            self.msleep(400)
+
+    worker = SlowCacheSync()
+    window._cache_sync_worker = worker
+    window.show()
+    app.processEvents()
+    worker.start()
+    try:
+        started = time.monotonic()
+        assert window.close() is False
+        assert time.monotonic() - started < 0.15
+        assert worker.isRunning()
+        assert window.isVisible()
+        assert window._close_pending
+        assert QApplication.instance() is app
+        assert worker.parent() is None
+        assert window.close() is False
+        assert window._close_waiting_workers == {worker}
+        assert worker.wait(2000)
+        deadline = time.monotonic() + 2
+        while window.isVisible() and time.monotonic() < deadline:
+            app.processEvents()
+        assert not window.isVisible()
+        assert not window._close_pending
+    finally:
+        if worker.isRunning():
+            worker.wait(2000)
+        if window.isVisible():
+            window.close()
+
+
+def test_raw_full_dump_prefixes_cached_and_generated_output(tmp_path, monkeypatch):
+    from front import window_lifecycle
+
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    QApplication.instance() or QApplication([])
+    window = MainWindow()
+    filepath = "R:/synthetic/current-model.safetensors"
+    window._results.append(_summary(filepath))
+    try:
+        window._get_cached_raw_dump = lambda _path: (
+            "legacy data\n  Top key prefixes (depth 2):\n"
+            "    model.layers 2\n  All tensor keys (1):\n    cached tensor keys"
+        )
+        window._load_raw_dump(filepath)
+        cached_text = window.raw_text.toPlainText()
+        assert cached_text.startswith("CURRENT MODEL / OUTPUT\nOutput: Full tensor key dump")
+        assert "File: current-model.safetensors" in cached_text
+        assert window._RAW_DUMP_SEPARATOR in cached_text
+        assert "Top key prefixes" not in cached_text
+        assert cached_text.endswith("cached tensor keys")
+
+        stored = []
+        window._get_cached_raw_dump = lambda _path: None
+        monkeypatch.setattr(
+            window_lifecycle, "generate_modelinfo_dump", lambda _path: "generated tensor keys"
+        )
+        monkeypatch.setattr(
+            window_lifecycle, "store_raw_dump", lambda _path, dump: stored.append(dump)
+        )
+        window._load_raw_dump(filepath)
+        assert stored and stored[0].startswith("CURRENT MODEL / OUTPUT\n")
+        assert window.raw_text.toPlainText().endswith("generated tensor keys")
+    finally:
+        window.close()
+
+
+def test_view_raw_context_menu_honors_auto_load_setting(tmp_path, monkeypatch):
+    from front import window_lifecycle
+
+    monkeypatch.setenv("SMI_SETTINGS_PATH", str(tmp_path / "settings.ini"))
+    monkeypatch.setenv("SMI_CACHE_DIR", str(tmp_path / "cache"))
+    QApplication.instance() or QApplication([])
+    window = MainWindow()
+    filepath = "R:/synthetic/current-model.safetensors"
+    window._results.append(_summary(filepath))
+    window._add_table_row(_summary(filepath))
+    loads = []
+    monkeypatch.setattr(
+        window_lifecycle, "generate_modelinfo_dump", lambda _path, **_kw: "generated tensor keys"
+    )
+    monkeypatch.setattr(
+        window_lifecycle, "store_raw_dump", lambda path, dump: loads.append(path)
+    )
+    try:
+        # Auto-load OFF: context menu and dropdown both show the summary only.
+        window._auto_load_raw_dump = False
+        window._show_raw_for_filepath(filepath)
+        assert window.tabs.currentIndex() == 2
+        assert loads == []
+        assert "Click Load Full Dump" in window.raw_text.toPlainText()
+        window._on_raw_selection_changed(window.raw_combo.findData(filepath))
+        assert loads == []
+
+        # Auto-load ON: context menu now loads the full dump like the dropdown.
+        window._auto_load_raw_dump = True
+        window._show_raw_for_filepath(filepath)
+        assert loads == [filepath]
+        assert window.raw_text.toPlainText().endswith("generated tensor keys")
+
+        # Same selected file again: no duplicate expensive load.
+        window._show_raw_for_filepath(filepath)
+        assert loads == [filepath]
+        window._on_raw_selection_changed(window.raw_combo.findData(filepath))
+        assert loads == [filepath]
+    finally:
+        window.close()
+
+
+def test_modelinfo_dump_omits_top_key_prefixes(monkeypatch):
+    from modelinfo import generate_modelinfo_dump
+    import modelinfo
+
+    tensor_info = {
+        "model.layers.0.weight": {"shape": [2], "dtype": "F16"},
+        "model.layers.1.weight": {"shape": [2], "dtype": "F16"},
+    }
+    monkeypatch.setattr(
+        modelinfo, "_read_header_or_cached", lambda _filepath: ({}, tensor_info, 4)
+    )
+
+    dump = generate_modelinfo_dump("current-model.safetensors")
+
+    assert "Top key prefixes" not in dump
+    assert "All tensor keys (2):" in dump

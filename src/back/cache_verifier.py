@@ -1,0 +1,453 @@
+"""Read-only verification of persisted inspection-cache entries.
+
+The verifier intentionally does not import the cache writer or mutate files.
+It accepts entries in the current ``model_cache`` schema as well as older
+entries with identity fields at the root.  Callers can apply the returned
+action plan after presenting it to the user.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any, Callable, Iterable, Mapping
+
+from .shard_discovery import discover_shard_set
+from .sidecar_discovery import discover_sidecars, sidecar_identity_snapshot
+
+
+TOTAL = "total"
+ACTIVE = "active"
+HISTORIC = "historic"
+
+
+@dataclass(frozen=True)
+class FileStat:
+    path: str
+    size: int | None
+    mtime_ns: int | None
+
+
+@dataclass(frozen=True)
+class CacheEntryVerification:
+    path: str
+    canonical_path: str
+    path_aliases: tuple[str, ...]
+    classification: str
+    action: str
+    candidate: bool
+    reason: str
+    cached_size: int | None = None
+    cached_mtime_ns: int | None = None
+    current_size: int | None = None
+    current_mtime_ns: int | None = None
+    shard_identity_changed: bool = False
+    sidecar_identity_changed: bool = False
+    cache_key: str = ""
+    cache_options: Mapping[str, Any] | None = None
+
+    @property
+    def is_active(self) -> bool:
+        return self.classification == "active"
+
+    @property
+    def is_historic(self) -> bool:
+        return self.classification == "historic"
+
+
+@dataclass(frozen=True)
+class CacheAvailability:
+    """Counts and conditional menu availability for cache actions."""
+
+    total: int
+    active: int
+    historic: int
+    refresh_candidates: int
+    sync_candidates: int
+
+    @property
+    def total_count(self) -> int:
+        return self.total
+
+    @property
+    def active_count(self) -> int:
+        return self.active
+
+    @property
+    def historic_count(self) -> int:
+        return self.historic
+
+    @property
+    def load_cache(self) -> bool:
+        # "Load Cache" loads active (present-on-disk) entries only.
+        return self.active > 0
+
+    @property
+    def load_cache_all(self) -> bool:
+        # "Load Cache All" loads every cached summary, active or historic.
+        return self.total > 0
+
+    @property
+    def load_cache_archived(self) -> bool:
+        return self.historic > 0
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "total": self.total,
+            "active": self.active,
+            "historic": self.historic,
+            "refresh_candidates": self.refresh_candidates,
+            "sync_candidates": self.sync_candidates,
+            "Load Cache": {"available": self.load_cache, "count": self.active},
+            "Load Cache All": {"available": self.load_cache_all, "count": self.total},
+            "Load Cache Archived": {"available": self.load_cache_archived, "count": self.historic},
+        }
+
+
+@dataclass(frozen=True)
+class CacheVerificationReport:
+    entries: tuple[CacheEntryVerification, ...] = ()
+    availability: CacheAvailability = field(default_factory=lambda: CacheAvailability(0, 0, 0, 0, 0))
+
+    @property
+    def action_plan(self) -> tuple[CacheEntryVerification, ...]:
+        return tuple(entry for entry in self.entries if entry.candidate)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "entries": [entry.__dict__.copy() for entry in self.entries],
+            "availability": self.availability.as_dict(),
+            "action_plan": [entry.__dict__.copy() for entry in self.action_plan],
+        }
+
+
+StatProvider = Callable[[str], FileStat | None]
+
+
+def _text_path(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    try:
+        return str(value)
+    except Exception:
+        return None
+
+
+def _aliases(entry: Mapping[str, Any], requested: str | None) -> tuple[str, ...]:
+    paths: list[str] = []
+    if requested:
+        paths.append(requested)
+    identity_raw = entry.get("identity")
+    data_raw = entry.get("data")
+    identity: Mapping[str, Any] = identity_raw if isinstance(identity_raw, Mapping) else {}
+    data: Mapping[str, Any] = data_raw if isinstance(data_raw, Mapping) else {}
+    for source in (entry, identity, data):
+        for key in ("filepath", "resolved_filepath", "path", "original_path", "alias"):
+            path = _text_path(source.get(key))
+            if path and path.lower() not in {item.lower() for item in paths}:
+                paths.append(path)
+    return tuple(paths)
+
+
+def _cached_stat(entry: Mapping[str, Any]) -> tuple[int | None, int | None]:
+    sources = [entry]
+    for key in ("identity", "data"):
+        if isinstance(entry.get(key), Mapping):
+            sources.append(entry[key])
+    size: int | None = None
+    mtime: int | None = None
+    for source in sources:
+        if size is None:
+            raw = source.get("file_size", source.get("size"))
+            try:
+                size = int(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                pass
+        if mtime is None:
+            raw = source.get("mtime_ns", source.get("modified_ns"))
+            if raw is None and source.get("mtime") is not None:
+                raw = float(source["mtime"]) * 1_000_000_000
+            try:
+                mtime = int(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                pass
+    return size, mtime
+
+
+def _default_stat(path: str) -> FileStat | None:
+    try:
+        stat = Path(path).stat()
+    except (OSError, ValueError):
+        return None
+    return FileStat(path, int(stat.st_size), int(stat.st_mtime_ns))
+
+
+def _provider_from_mapping(filesystem: Mapping[str, Any] | None) -> StatProvider:
+    if filesystem is None:
+        return _default_stat
+
+    def provider(path: str) -> FileStat | None:
+        wanted = path.lower()
+        for key, raw in filesystem.items():
+            if str(key).lower() != wanted:
+                continue
+            if isinstance(raw, FileStat):
+                return raw
+            if isinstance(raw, Mapping):
+                size = raw.get("size", raw.get("file_size", raw.get("st_size")))
+                mtime = raw.get("mtime_ns", raw.get("modified_ns", raw.get("st_mtime_ns")))
+                if mtime is None and raw.get("mtime") is not None:
+                    mtime = float(raw["mtime"]) * 1_000_000_000
+                try:
+                    return FileStat(path, int(size) if size is not None else None, int(mtime) if mtime is not None else None)
+                except (TypeError, ValueError):
+                    return None
+            return None
+        return None
+
+    return provider
+
+
+def _companion_value(entry: Mapping[str, Any], key: str) -> Any:
+    for source in (entry, entry.get("data")):
+        if isinstance(source, Mapping) and key in source:
+            return source[key]
+    return None
+
+
+def _member_changed(member: Mapping[str, Any], provider: StatProvider) -> bool:
+    path = _text_path(member.get("path") or member.get("filepath"))
+    if not path:
+        return True
+    current = provider(path)
+    expected_exists = member.get("exists")
+    if current is None:
+        return expected_exists is not False
+    if expected_exists is False:
+        return True
+    expected_size = member.get("file_size", member.get("size"))
+    expected_mtime = member.get("mtime_ns", member.get("modified_ns"))
+    try:
+        size_changed = expected_size is not None and current.size is not None and int(expected_size) != current.size
+    except (TypeError, ValueError, OverflowError):
+        size_changed = True
+    try:
+        mtime_changed = expected_mtime is not None and current.mtime_ns is not None and int(expected_mtime) != current.mtime_ns
+    except (TypeError, ValueError, OverflowError):
+        mtime_changed = True
+    return size_changed or mtime_changed
+
+
+def _shard_identity_changed(
+    entry: Mapping[str, Any], primary_path: str, provider: StatProvider, use_discovery: bool
+) -> bool:
+    expected = _companion_value(entry, "shard_identity")
+    if not isinstance(expected, Mapping):
+        return False
+    members = expected.get("members")
+    if not isinstance(members, list):
+        return True
+    if use_discovery:
+        current_set = discover_shard_set(primary_path)
+        if current_set is not None:
+            return current_set.identity() != dict(expected)
+    return any(isinstance(member, Mapping) and _member_changed(member, provider) for member in members)
+
+
+def _sidecar_identity_changed(
+    entry: Mapping[str, Any], primary_path: str, provider: StatProvider, use_discovery: bool
+) -> bool:
+    expected = _companion_value(entry, "sidecar_identities")
+    if not isinstance(expected, list):
+        return False
+    if use_discovery:
+        shard_set = discover_shard_set(primary_path)
+        sidecar_base = shard_set.primary_path if shard_set else primary_path
+        current_records = discover_sidecars(sidecar_base)
+        if current_records:
+            return expected != sidecar_identity_snapshot(current_records)
+    if expected:
+        return any(isinstance(item, Mapping) and _member_changed(item, provider) for item in expected)
+    return False
+
+
+def _companion_identity_changes(
+    entry: Mapping[str, Any], primary_path: str, provider: StatProvider, use_discovery: bool
+) -> tuple[bool, bool]:
+    return (
+        _shard_identity_changed(entry, primary_path, provider, use_discovery),
+        _sidecar_identity_changed(entry, primary_path, provider, use_discovery),
+    )
+
+
+def _verify_cache_entry_details(
+    entry: Mapping[str, Any],
+    *,
+    path: str | None = None,
+    filesystem: Mapping[str, Any] | None = None,
+    stat_provider: StatProvider | None = None,
+) -> CacheEntryVerification:
+    """Verify one entry using size/mtime only; no model bytes are read."""
+    if not isinstance(entry, Mapping):
+        entry = {}
+    aliases = _aliases(entry, path)
+    display_path = path or (aliases[0] if aliases else "")
+    provider = stat_provider or _provider_from_mapping(filesystem)
+    current: FileStat | None = None
+    for alias in aliases:
+        current = provider(alias)
+        if current is not None:
+            break
+    cached_size, cached_mtime = _cached_stat(entry)
+    if current is None:
+        return CacheEntryVerification(
+            display_path,
+            aliases[0] if aliases else display_path,
+            aliases,
+            "historic",
+            "archive",
+            True,
+            "model file is missing; archive candidate",
+            cached_size,
+            cached_mtime,
+        )
+    missing_identity = cached_size is None or cached_mtime is None
+    changed_size = cached_size is not None and current.size is not None and cached_size != current.size
+    changed_mtime = cached_mtime is not None and current.mtime_ns is not None and cached_mtime != current.mtime_ns
+    if missing_identity:
+        return CacheEntryVerification(
+            display_path,
+            current.path,
+            aliases,
+            "active",
+            "refresh",
+            True,
+            "legacy entry lacks size or mtime; refresh/sync candidate",
+            cached_size,
+            cached_mtime,
+            current.size,
+            current.mtime_ns,
+        )
+    if changed_size or changed_mtime:
+        reason = "file size changed" if changed_size else "file mtime changed"
+        if changed_size and changed_mtime:
+            reason = "file size and mtime changed"
+        return CacheEntryVerification(
+            display_path,
+            current.path,
+            aliases,
+            "active",
+            "refresh",
+            True,
+            reason + "; refresh/sync candidate",
+            cached_size,
+            cached_mtime,
+            current.size,
+            current.mtime_ns,
+        )
+    shard_changed, sidecar_changed = _companion_identity_changes(
+        entry, current.path, provider, filesystem is None and stat_provider is None
+    )
+    if shard_changed or sidecar_changed:
+        changed_parts = []
+        if shard_changed:
+            changed_parts.append("shard identity changed")
+        if sidecar_changed:
+            changed_parts.append("sidecar identity changed")
+        return CacheEntryVerification(
+            display_path,
+            current.path,
+            aliases,
+            "active",
+            "refresh",
+            True,
+            "; ".join(changed_parts) + "; refresh/sync candidate",
+            cached_size,
+            cached_mtime,
+            current.size,
+            current.mtime_ns,
+            shard_changed,
+            sidecar_changed,
+        )
+    return CacheEntryVerification(
+        display_path,
+        current.path,
+        aliases,
+        "active",
+        "none",
+        False,
+        "file exists and size/mtime are unchanged",
+        cached_size,
+        cached_mtime,
+        current.size,
+        current.mtime_ns,
+    )
+
+
+def verify_cache_entry(
+    entry: Mapping[str, Any],
+    *,
+    path: str | None = None,
+    filesystem: Mapping[str, Any] | None = None,
+    stat_provider: StatProvider | None = None,
+) -> CacheEntryVerification:
+    """Verify an entry while preserving its stable key and option identity."""
+    verification = _verify_cache_entry_details(
+        entry, path=path, filesystem=filesystem, stat_provider=stat_provider
+    )
+    options = entry.get("cache_options") if isinstance(entry, Mapping) else None
+    return replace(
+        verification,
+        cache_key=str(entry.get("cache_key") or "") if isinstance(entry, Mapping) else "",
+        cache_options=dict(options) if isinstance(options, Mapping) else None,
+    )
+
+
+def verify_cache_entries(
+    entries: Iterable[Mapping[str, Any]],
+    *,
+    filesystem: Mapping[str, Any] | None = None,
+    stat_provider: StatProvider | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> CacheVerificationReport:
+    """Verify a batch and return counts plus a non-mutating action plan."""
+    entries = tuple(entries or ())
+    verified_items = []
+    for completed, entry in enumerate(entries, 1):
+        if should_cancel is not None and should_cancel():
+            break
+        verified_items.append(
+            verify_cache_entry(entry, filesystem=filesystem, stat_provider=stat_provider)
+        )
+        if progress_callback is not None:
+            progress_callback(completed, len(entries))
+    verified = tuple(verified_items)
+    active = sum(item.classification == "active" for item in verified)
+    historic = sum(item.classification == "historic" for item in verified)
+    refresh = sum(item.action == "refresh" for item in verified)
+    sync = sum(item.action == "refresh" and "sync" in item.reason for item in verified)
+    return CacheVerificationReport(verified, CacheAvailability(len(verified), active, historic, refresh, sync))
+
+
+def summarize_cache_verification(report: CacheVerificationReport) -> dict[str, Any]:
+    """Return menu-ready conditional counts without exposing implementation types."""
+    return report.availability.as_dict()
+
+
+verify_cache = verify_cache_entries
+
+
+__all__ = [
+    "FileStat",
+    "TOTAL",
+    "ACTIVE",
+    "HISTORIC",
+    "CacheEntryVerification",
+    "CacheAvailability",
+    "CacheVerificationReport",
+    "verify_cache_entry",
+    "verify_cache_entries",
+    "verify_cache",
+    "summarize_cache_verification",
+]

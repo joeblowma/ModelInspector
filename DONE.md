@@ -1,0 +1,808 @@
+# DONE: Completed Work
+
+This file records implemented foundations and explicit product decisions. A
+completed foundation does not imply that every refinement in `TODO.md` is done.
+
+## 2026-10-05 — Cache identity selection and card sizing
+
+- [x] Cache entry selection now uses a shared normalized resolved identity
+  (Windows case/separator safe), retains the first persisted cache key/options,
+  and produces one display filepath. `list_cache_paths` preserves that unique
+  display contract where distinct persisted canonical targets share one display
+  alias; the selector/listing edge remains deliberately narrow (two selected
+  records versus one listed display path), not a migration or broad cache
+  rewrite. No records were deleted or migrated. The original audit retained
+  1,105 persisted rows, 1,098 canonical model paths, and seven option/path
+  aliases; read-only selection reported 1,098 total, 1,097 active, one historic,
+  and zero refresh.
+- [x] Cache sync now refreshes with each selected record's persisted Boolean
+  alias-detection identity rather than the current UI flag. `AnalysisWorker`
+  snapshots keyword-only per-path options, whitelists only that flag, and keeps
+  shared metadata-only checkpoint safety authoritative; arbitrary stored options
+  cannot enable sidecars/full data or weaken checkpoint safety. The compact
+  regression proves a saved `False` refreshes the original cache key and that
+  mixed/legacy options retain the intended fallback.
+- [x] `ModelCard` vertical stats now use a content minimum; normal Cards retain
+  their fixed 168-pixel height. The existing Advanced Viewer test has a populated
+  vertical-stat geometry assertion without adding a test case. The frozen Python
+  3.12 native card correction was user-confirmed; a transient filtered blank gap
+  later ceased reproducing, so no filter code changed.
+- [x] Coherent full suites before that narrow display-path assertion: **542
+  passed, 4 skipped** (exit 0) on Python 3.12.15/3.13.16/3.14.8 in
+  113.34/112.78/112.67 seconds. Logs:
+  `R:\codexTemp\modelinspector-scan-delivery\suite-312.log`, `suite-313.log`,
+  and `suite-314.log`. The subsequent affected list-compatibility command over
+  `test_cache_entry_selection.py`, `test_cache_menu_integration.py`,
+  `test_cache_load.py`, and `test_inspection_summary.py` passed **38** in
+  13.73/12.33/13.20 seconds (`selector-listcompat-312.log`,
+  `selector-listcompat-313-venv.log`, `selector-listcompat-314.log`). No full
+  suite is claimed after the narrow patch.
+- [x] A clean `.venv314` PyInstaller build was user-confirmed (not run by this
+  session). A dirty system Python 3.14 build recursed through installed
+  pandas/SciPy/Torch/SymPy after static GGUF imports; no dependency or
+  recursion-limit workaround was added. This is not a claim that every frozen
+  executable path received automated QA.
+
+## 2026-10-05 — Checkpoint ZIP preflight compatibility
+
+- [x] `back.checkpoint_reader` retains bounded private-`zipfile._EndRecData`
+  preflight before `ZipFile`, its 2 MiB central-directory cap, and its
+  metadata-only/no-pickle/no-tensor-payload boundary. It now distinguishes the
+  legacy ZIP64 reader position from current reader positions by reading the
+  four-byte end-record signature, avoiding the removed private prepended-data
+  helper. The 3.12 legacy layout was simulated, not verified on every installed
+  3.12 release.
+- [x] Full suites passed on Python 3.12.15: **534 passed, 4 skipped in 150.89 s**
+  (exit 0), `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen';
+  &'.venv\Scripts\python.exe' -m pytest tests --capture=tee-sys`; log:
+  `R:\Temp\opencode\modelinspector-zip-suite-312.log`. Python 3.14.8: **534
+  passed, 4 skipped in 151.82 s** (exit 0), `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests --capture=tee-sys`;
+  log: `R:\Temp\opencode\modelinspector-zip-suite-314.log`.
+
+## 2026-10-04 — Cards cache-load geometry
+
+- [x] Changed the Cards `QVBoxLayout` in `front.window_layout` (377 lines) from
+  `SetMinimumSize` to `SetDefaultConstraint`, so the resizable scroll area owns
+  container geometry rather than its growing content minimum. The 87-line
+  `test_cards_layout_geometry.py` regression covers scroll, resize,
+  filter/restore, bottom-card reachability, selected bulk removal, and
+  empty-placeholder restoration; targeted validation reported **47 passed in 4.85 s**.
+- [x] Read-only 1,080-summary native evidence: custom replay fell from its
+  usable 29.77/30.00 s baseline (including 500 ms settle) to 15.71/15.93 s;
+  Cards-container resizes fell from 1,077 to 215/217. The earlier ~38 s
+  `QApplication.notify` instrumentation result is not the baseline. Real
+  `CacheLoadWorker` first/repeat projection measured 14.644/15.370 s before
+  settle (~49.1/47.1% comparable gain), after reading 1,080 entries plus index
+  (241,037,326 bytes); JSON decode was 0.4–0.56 s and storage preparation under
+  one second. Worker-cap 32 did not help; a 32-item/24-ms projection gained
+  about 8% but introduced ~0.5-second stalls and was rejected.
+- [x] The production-path harness verified progressive 1,080 Cards/rows,
+  cancel/close, filters, selection, Data sorting, resize, last-card scrolling,
+  and final placeholder with isolated temporary state; 1,098 original
+  cache/settings fingerprints were unchanged and no model root was accessed.
+  It used an immutable verifier report, disabled sync, and started no analysis,
+  so verifier/source-sync are not end-to-end evidence. RSS growth remains
+  378.2/364.0 MB; real-worker heartbeat maxima were 357.9/286.0 ms, so the
+  controlled geometry responsiveness result is not universal. Artifacts:
+  `R:\Temp\opencode\modelinspector-cache-load-profile-2026-10-04\`.
+- [x] Canonical system-Python 3.14.8 validation: **528 passed, 4 skipped in
+  102.77 s** (exit 0), `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests --capture=tee-sys`.
+  Log: `R:\Temp\opencode\modelinspector-cache-load-canonical-2026-10-04.log`.
+  The separate local Python 3.12.15 checkpoint-ZIP private-helper compatibility
+  failure remains explicitly open in `TODO.md`.
+
+## 2026-10-03 — Layout batching and incremental view removal
+
+- [x] `front.layout_batch` provides a nestable, idempotent Cards-layout lease.
+  It records the original enabled state, disables once, restores and activates
+  only an originally enabled layout after the final release, and tolerates a
+  layout destroyed while an asynchronous lease is held.
+- [x] Filter projection holds that lease through both synchronous work and every
+  `QTimer` slice, replaces superseded requests, and releases it on completion,
+  errors, cancellation, window close, or owner destruction. Scan projection
+  takes one bounded lease per drain and acknowledges cache/new-scan payloads
+  only after the lease exits, including invalidated and error paths.
+- [x] `front.view_removal` removes only completed moved paths, retaining
+  unaffected Cards/Data widgets, selections, sorted row maps, queued files,
+  facet counts, and the Raw selection. Empty removal restores the placeholder;
+  explicit full rebuilds remain layout-guarded and bulk-format updates are
+  batched. Raw-combo first-match bookkeeping is ephemeral.
+- [x] Independent review approved the lifecycle boundary. Its focused coverage
+  reported 49 passed, 2 skipped and a separate 45 passed; the final canonical
+  suite reported **527 passed, 4 skipped in 127.66 seconds** (exit 0):
+  `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest
+  tests`. Log: `R:\Temp\opencode\modelinspector-layout-batching-2026-10-03.log`.
+- [x] Native production profiling used Python 3.12.15, normal Qt, a 1200x790
+  window on a 1920x1050 screen, and 1,080 actual cached summaries from a
+  read-only real-model root (no target reads). Cache projection took 31,173 ms
+  (maximum heartbeat gap 325.818 ms); its first bounded drain projected five
+  results with 1,075 pending while the layout lease was active between batches.
+  Replayed existing-summary scan events—not new filesystem inspection—took
+  32,441 ms (maximum gap 318.286 ms). Cards filters completed in 382 ms
+  (Architecture) and 408 ms (Tags), maximum gap 232.088 ms; Data completed in
+  235 ms and 221 ms respectively. All 1,080 Cards, rows, and Raw entries were
+  correct and close restored the layout. A simulated MOVE completion removed
+  one result while retaining widget/table identities, selection, and layout;
+  it performed no actual move. The harness's earlier native event-replay queue
+  initialization issue was fixed before this run. A nonfatal Windows
+  `0x8001010d` child-process fault appeared in optional profiler sampling; it
+  is a tooling caveat, not a production-bug claim. Cache-load throughput remains
+  open in `TODO.md`; activation cost per batch is not isolated.
+
+## 2026-10-03 — Cache projection, responsiveness, and CLI utility follow-up
+
+- [x] Explicit `--cachedir` now transiently aligns both the cache root and the
+  model-cache root unless the higher-precedence `--cache` explicitly selects a
+  model-cache directory; persisted cache history remains unchanged by
+  `--cachedir`. VLM normalization retains the language-model KV projection
+  inputs without inventing capabilities.
+- [x] Cache-load selection keeps the first summary per path and carries its
+  stable cache key/options into verification and summary projection; valid
+  safetensors entries are retained rather than dropped during this projection.
+  Historic progress/counts and rescan behavior retain prior successful results
+  until replacement work succeeds.
+- [x] Large filter projections are sliced through a single-shot `QTimer`, with
+  latest-selection wins semantics, so Qt can process events between batches.
+  `ResizeSplash.py` now returns Boolean operation status and has consistent
+  command-line exit statuses. `--dump-keys` forwards inspection options on both
+  ordinary and checkpoint routes and returns nonzero if any requested file
+  fails.
+- [x] The shared autouse cache-environment fixture clears `SMI_CACHE_DIR`,
+  `SMI_MODEL_CACHE_DIR`, and legacy `SMI_CACHE_PATH` in a
+  `pytest.MonkeyPatch.context()` for each test. This prevents `--cachedir`
+  state leaking into later cache tests.
+- [x] Final canonical integration validation: **518 passed, 4 skipped in 76.61
+  seconds** (exit 0): `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen';
+  python -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-qodo-isolated-2026-10-03.log`. The prior
+  512-passed/4-skipped/6-failed run (85.37 s, exit 1) is retained as historical
+  pre-isolation evidence: `R:\Temp\opencode\modelinspector-qodo-followup-2026-10-03.log`.
+- [x] Independent review approved backend/GUI safety. A live 420-model
+  `MainWindow` filter run reached one visible result in 38 ms with a 5.57 ms
+  maximum observed stall. This does not claim the reported five-second case is
+  resolved: exact no-filter-to-all-filter performance remains under independent
+  reader testing, and a 1.34 s synchronous full-view rebuild remains. Packaged
+  420-model manual/render QA remains open in `TODO.md`.
+- [x] A duplicate safetensors follow-up was rejected as unnecessary; the
+  existing truncated-header fix and reader-bound coverage already address it.
+
+## 2026-10-03 — Reader bounds and archive/shard preflight
+
+- [x] Safetensors header reads now reject short prefix/header reads instead of
+  accepting truncated data. Native GGUF parsing was extracted to
+  `back.gguf_reader`, with fixed caps for header bytes, strings, metadata and
+  tensor counts, arrays, tensor dimensions, and parse work; malformed or unsafe
+  native input never falls back to an optional GGUF library. `read_gguf_header`
+  calls the bounded native reader directly and authoritatively for every result
+  or error; the private library helper remains unused for compatibility only.
+- [x] Shard discovery rejects impractically large or unconvertible numeric
+  filename tokens and preserves partial filename-set indices while surfacing the
+  missing-index warning through the inspection pipeline.
+- [x] Checkpoint metadata ZIP inspection preflights up to 2 MiB of end records
+  and its central directory before constructing `ZipFile`, including ZIP64 and
+  SFX-compatible layouts. The private-`zipfile` helper compatibility risk is
+  retained as an explicit follow-up in `TODO.md`.
+- [x] Canonical integration validation before the subsequent GGUF fallback fix:
+  **502 passed, 4 skipped in 56.03 seconds** (exit 0):
+  `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest
+  tests`. Log: `R:\Temp\opencode\modelinspector-qodo-2026-10-03.log`.
+- [x] Affected validation after that follow-up fix: **16 passed** (exit 0):
+  `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python -m pytest
+  tests/test_model_readers_bounds.py tests/test_ptq_precision.py`. This includes
+  OSError, RuntimeError, and unsupported-version GGUF failure coverage. The
+  canonical full suite was not rerun after this focused follow-up, per
+  validation cadence.
+- [x] CLI wiring smoke: `py src/inspect_model.py --help` exited 0 and displayed
+  the parser help without starting Qt.
+
+## 2026-10-01 — Metadata, scan flow, filtering, and release wiring
+
+- [x] Scan append preserves the selected list one file at a time; additions
+  arriving while busy drain after completion, while cancellation or close does
+  not drain them. Analyze hides when automatic analysis is active or no work is
+  pending, and card drops relay through the existing scan path.
+- [x] Modelinfo is the default dump artifact, and the associated controls have
+  explicit tooltips. The Raw Metadata tab requests a live, header-only read
+  when activated even if cached descriptors exist; compact previews remain
+  bounded, while existing detail access exposes every raw key and full long
+  value. Missing files retain cached fallback and explicitly show
+  `Metadata (Incomplete data)`.
+- [x] Historic cached records remain visible and tagged in Cards/Data; cache
+  filtering, visible facet counts, and preserved filter choices respect the
+  other active filters. Filter popups choose upward placement when needed and
+  expose above/below scroll indicators.
+- [x] Removed the duplicate `sshs_meta` architecture-variant append. The build
+  and release workflows use a native PowerShell seven-character SHA instead of
+  three third-party SHA-action uses; this was committed as `b5254b4` by the
+  integration lead.
+- [x] Worker-reported focused regressions passed: 63 combined metadata/Advanced
+  checks after correcting the two stale contracts, and 21 architecture-variant
+  checks after removing the duplicate append.
+- [x] Header-only CLI model evidence passed in human-readable and JSON modes
+  (all commands exit 0) for Flux1 Compact, Flux1 Schnell, Flux1 autoencoder/VAE,
+  Flux2 key-only headers, SDXL Turbo, QwenImage2.1 Backbone, Boogu Image,
+  LongCat Image, and Klein/Krea LoRA rank-32 inputs. Schnell no longer collides
+  with `flux2024`; Flux2 remains an unknown variant rather than unsupported;
+  Boogu and LongCat project null domain and no capabilities without false LLM
+  classification. Filename-only Klein/Base/Turbo/Edit distinctions are not
+  claimed where metadata did not evidence them.
+- [x] Final canonical validation: **484 passed, 4 skipped in 105.54 seconds**
+  (exit 0): `$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'; python
+  -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-final-canonical-20261001.log`.
+- [x] Follow-up regressions: card-surface relay distinguishes exact drag event
+  types, so accepted DragMove events never load files before Drop; Drop reaches
+  all four Cards surfaces and the main window. Advanced Viewer header reloads
+  retain controller-local provenance rather than trusting persisted
+  `header_metadata_path`/completeness flags, selecting an existing requested,
+  filepath, then resolved model path.
+- [x] Full-suite validation before the supplemental existing-test extension:
+  **487 passed, 4 skipped in 135.80 seconds** (exit 0): `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-regression-2026-10-01.log`.
+- [x] The subsequent `test_persisted_cache_headers_are_reloaded_live_after_restart`
+  extension adds no test count. It covers three models through actual
+  `_clear_all`, `_load_cache_all`/`_load_cache_status`, `CacheLoadWorker`, and
+  summary projection before two-window live-header/detail verification.
+  Targeted validation after that extension: **7 passed in 0.73 seconds** (exit
+  0): `PYTHONPATH=src QT_QPA_PLATFORM=offscreen python -m pytest
+  tests/test_card_advanced_flow.py -q`.
+- [x] A user reported that locally built binaries/wheels and the Windows
+  executable work on GitHub Python 3.12 and local Python 3.15a2. This is
+  user-reported package evidence, not independent packaged visual QA.
+- [ ] Packaged visual QA, hosted/tagged native-SHA workflow validation, the
+  existing strict-pylint blocker, the unbaselined mypy gate, and full Graphify
+  refresh remain open in `TODO.md`.
+
+## 2026-09-21 — b8c0645 follow-up fixes
+
+- [x] Uniform Cards scroll sizing now leaves only viewport whitespace for fixed
+  card sets.
+- [x] New files are always analyzed; the obsolete `auto_analyze_on_add` option
+  and button were removed.
+- [x] Unchanged Settings closes without reapplying work, while changed Data
+  settings refresh only the affected slices and report progress.
+- [x] Raw `.raw` metadata is unframed; readable-content extensions are handled,
+  optional extra JSON remains governed by the existing option, and bounded
+  previews are stored and reused by Inspect without replacing the model list.
+- [x] Advanced Inspect preserves the model list, and QwenImage2.1/VAE plus LTX
+  video-VAE architecture coverage was added.
+
+### Explorer metadata cache/source recovery
+
+- [x] Metadata and embedded-content previews retain their row payload in Qt
+  user data, so sorting, filtering, and rerendering cannot display another
+  row's value.
+- [x] Readable Save and exact Extract resolve an existing requested model path
+  before resolved or legacy cached paths. Cached preview/stub entries therefore
+  recover locatable safetensors/GGUF header values after drag/drop without a
+  cache purge, reanalysis, list mutation, or tensor-payload read; unavailable
+  source files still refuse truncated-preview export.
+- [x] Advanced Viewer keeps a live inspection authoritative and adds cached
+  details only when that live result is a metadata-free compact summary.
+- [x] Independent canonical validation: **470 passed, 4 skipped in 52.11
+  seconds**, exit 0. Focused Explorer/metadata/Advanced coverage: **55 passed**.
+
+### Final validation and boundary fixes
+
+- [x] The earlier canonical run at `2026-09-21T10:57:10.5414636-06:00` passed
+  **466 tests, with 4 skipped, in 172.61 seconds** (exit 0):
+  `$env:PYTHONPATH='src';
+  $env:QT_QPA_PLATFORM='offscreen'; python -m pytest tests`. Log:
+  `R:\Temp\opencode\modelinspector-metadata-full-20260921.log`.
+- [x] Focused metadata coverage passed 12 tests. The real-header Qwen smokes
+  passed in human-readable and JSON modes: the generic Qwen Image2.1 false
+  positive is eliminated by the diffusion guard; unsupported diffusion projects
+  a null domain and empty capabilities, without claiming image-domain or
+  inference support. Qwen35 prompt enhancers remain LLM with thinking/tools.
+- [x] The header-loader root cause was the live-file cache fallback scanning
+  `data/*.json` after an exact-key miss (measured full call 5.732s versus a
+  4-second deadline). Live files now read their header directly; missing-file
+  cache fallback remains, with regression coverage proving live loads do not
+  scan the full-data cache.
+- [x] Historical pre-fix runs recorded 462 passed/4 skipped/1 failed at the
+  header-loader path and a separate 463 passed/4 skipped run; those are no
+  longer current blockers.
+- [ ] Packaged visual QA, the existing strict pylint blocker, hosted
+  build/tagged-release validation, and the full Graphify refresh remain open
+  in `TODO.md`.
+- [ ] Mypy is not a configured clean gate: the first UI pass had 187 errors
+  without a baseline, and the targeted metadata pass had four import-resolution
+  errors (`back.capability_evidence`, `model_cache`, `model_readers`,
+  `.explorer_data`).
+
+## 2026-09-20 — Review gates and final regression pass
+
+### Completed implementation and review fixes
+
+- [x] Gate 1: Advanced Viewer exposes full non-tensor values while retaining
+  bounded compact tensor presentation.
+- [x] Gate 2: supported loaded-model Inspect paths remain read-only and bypass
+  destructive file addition or unnecessary reanalysis.
+- [x] Explorer metadata recovers a locatable source path and presents full
+  long/deep safetensors and GGUF arrays in the detail pane from headers only,
+  while retaining the bounded compact table.
+- [x] Gate 3: the single `Model: <path>` label uses middle elision and supports
+  copying the file or folder path.
+- [x] Gate 4: Open theme presentation uses theme rules rather than hardcoded ID
+  colors.
+- [x] The implementations were independently reviewed; the pylint `E` issue
+  and all three post-baseline `C` findings were corrected.
+
+### Validation and unresolved gate
+
+- [x] Integrated suite: 448 passed, 4 skipped, compared with the 442 passed,
+  4 skipped baseline. Targeted regressions in the existing Explorer, card,
+  Advanced Viewer, and live-theme test files passed.
+- [x] Pyright reached 0 errors after the initial 38-error result; `actionlint`
+  passes.
+- [ ] Gate 5 — **BLOCKED**, not a pass: strict pylint's independent final log
+  records 486 findings (`C237`, `R158`, `W91`, `E0`) at 9.58, below the
+  pre-existing strict 10 threshold. The baseline was 494 (`C241`, `R158`,
+  `W94`, `E1`); remaining findings are pre-existing `C`/`R`/`W` debt. No
+  rejected behavior is claimed or accepted by this lint status.
+- [x] Gates 1-4 have headless evidence only; this does not claim manual
+  real-world visual or behavioral QA.
+
+## 2026-09-18 — Near-release bug bash
+
+### Completed fixes and focused coverage
+
+- [x] Advanced metadata actions provide bounded UI Inspect plus full-source
+  Save/Extract where supported, with filename/full-path labels and an Advanced
+  card tooltip; Inspect preserves the model list in replace mode.
+- [x] Theme changes refresh existing cards and style `QToolButton` controls;
+  Settings visibility controls are right-aligned.
+- [x] Rescan Selected evicts the selected model, full, sidecar, and raw-cache
+  artifacts while guarding active cache loads and other running operations.
+- [x] Actual PTQ142/PTQ143 mappings are corrected, with real-example,
+  header-only CLI smoke coverage for human-readable and JSON output.
+- [x] Focused regression contracts cover PTQ precision, selected-model rescan,
+  and release workflow/artifact wiring.
+
+### Local validation
+
+- [x] Full suite: 441 passed, 4 skipped before the final packaging/typed-attr
+  corrections; affected final tests: 25 passed after those corrections.
+- [x] Rebuilt wheel and sdist, isolated roundtrip, clean installed-wheel CLI/
+  GUI help/assets/tiny-model/modelinfo smokes, source bounded GUI smoke, and
+  source/wheel/sdist version `1.0.0` agreement all passed.
+- [x] Actual PTQ header-only CLI smokes passed in human-readable and JSON modes.
+- [ ] Hosted GitHub artifact/release validation and packaged visual/render QA
+  remain pending; `actionlint` was unavailable locally.
+
+## 2026-09-15 — Integration review and release hardening
+
+Integration review of the release-readiness diff with targeted defect fixes,
+plus the packaging/reporting milestone and a full-suite/type baseline.
+
+### Cache location separation and safety
+
+- [x] `--cache` selects the model cache only (`SMI_MODEL_CACHE_DIR`:
+  `index.json`, `entries/`, `data/`), while `--cachedir` relocates the cache
+  root (`SMI_CACHE_DIR`: the inspection cache plus sidecars, raw dumps, and
+  directory scans). `app_paths.model_cache_dir()` falls back to the root, so
+  an existing cache is never orphaned by a model-cache override.
+- [x] The Settings cache-location control remembers a most-recently-used
+  history and refuses to switch live while a scan/cache worker is running: it
+  keeps the dialog open with a "Cache busy" warning instead of silently
+  dropping the selection.
+- [x] Clear Cache removes both the model cache and the cache root.
+
+### Evidence-aware labels and conservative facts
+
+- [x] Vision-language models classify as `VLM` and other-modality language
+  models as `MLM`. Legacy `MLLM`/`MMLLLM`/`MMLM` aliases migrate evidence-aware
+  (audio-multimodal facts map to `MLM`, not `VLM`), and a vision+audio model
+  keeps its vision component instead of degrading to a checkpoint/backbone.
+- [x] The estimator no longer fabricates `Tool Use`/`Thinking` capabilities
+  from raw substring metadata; only evidence-backed capability facts surface.
+- [x] GGUF block-rate quantization (Q4_K=4.5, Q5_K=5.5, ...) and complete
+  inspected tensor byte counts drive the weight estimate, with mixed-quant and
+  inspected-storage assumptions labelled.
+
+### Explorer metadata and sort invariants
+
+- [x] Explorer embedded metadata is bounded and read-only. Inspect shows the
+  decoded text (real template newlines), Save writes a readable text/JSON
+  artifact, and Extract writes exact source JSON bytes only for locatable
+  safetensors/GGUF metadata; tensor payloads are never read. Raw extraction is
+  unavailable for other formats or when the source file is missing.
+- [x] Batch table inserts no longer re-sync card order per row; sort state is
+  restored once per batch, and full-path toggles preserve the active sort.
+
+### Reporting/packaging milestone
+
+- [x] `modelinfo_diagnostics` projects header-only diagnostics into text and
+  JSON `.modelinfo` output, with credential-key redaction that does not
+  over-redact tokenizer metadata (`tokenizer.*`, `*_token_id`, `num_tokens`).
+- [x] `reporting` forwards an already-inspected result and header into
+  modelinfo writers, avoiding a duplicate header read on the dump path.
+- [x] `pyproject.toml` declares Python 3.12-3.14 classifiers and the
+  `assets`/`assets.themes` packages; `.github/workflows/build.yml` builds a
+  universal wheel across a 3x3 OS/Python matrix plus the Windows executable.
+
+### Validation (2026-09-15)
+
+- [x] Full isolated pytest: 417 passed, 4 skipped (`PYTHONPATH=src`,
+  `QT_QPA_PLATFORM=offscreen`, isolated SMI data/cache paths).
+- [x] Pyright on `src`: 38 errors, 0 warnings — the existing dynamic-layout
+  (`advanced_viewer*`) and optional-member (`filter_widgets`) baseline; no new
+  cache-location diagnostics.
+- [x] Headless offscreen source-GUI startup smoke (process alive ~5s; only the
+  local PyQt font-directory warning on stderr); not visual QA.
+- [x] Module ceiling audit: no source or test module exceeds 500 lines.
+
+### Remote CI validation
+
+- [x] Remote build run `35007857714` at
+  `e3c5f2e23c50bed6dff51a37d722c437b9a403cb` completed successfully: all nine
+  wheel jobs (Windows, macOS, and Ubuntu on Python 3.12-3.14) and the Windows
+  PyInstaller job passed. This supersedes the initial `35006721326` Linux EGL
+  and frozen-help-smoke failures.
+- [x] The frozen `--help` smoke verifies that the onefile child process starts
+  and remains alive before CI deliberately terminates only that launched process
+  tree. It proves bounded process lifetime, not visual or render correctness.
+
+## 2026-09-14 — Release-readiness bugbash
+
+User-facing bug fixes and pre-release packaging from the day's bugbash. This
+milestone records what was fixed and validated that day; it is not a guarantee
+that the whole project is release-complete.
+
+### GUI and Data fixes
+
+- [x] Data-row context-menu `View Raw` respects the auto-load Raw setting and no
+  longer double-loads a different model: it routes through the RAW dropdown and
+  suppresses the refresh's own load.
+- [x] Cache loading reads persisted summaries directly instead of recomputing an
+  option-derived key, fixing an `allow_filename_alias_detection` cache-key
+  mismatch that could miss valid persisted summaries.
+- [x] Async cache load delivers bounded batches with backpressure, is
+  cancel/close safe, and preserves existing filters and selection for both
+  historic and refresh entries.
+- [x] Settings close no longer rebuilds every loaded card, removing the
+  multi-second freeze; only the changed projections are refreshed.
+- [x] The Data selection column is always the first, visible column with no
+  hide/reorder controls, and only its checkbox cells are centered. Canonical
+  labels and default widths now live in `front/data_columns.py`; hidden columns
+  retain their last valid width across smart masks and reloads.
+- [x] Quantization keeps real metadata labels and only infers `f32`/`f16`/`bf16`
+  for a uniform standard float dtype; mixed or unknown dtypes fall back to `-`.
+
+### Pre-release packaging and startup
+
+- [x] Settings is resizable and remembers its size, clamped to the current
+  screen; the default remains 900x640.
+- [x] Save/output dialogs default to `~/.local/share/ModelInspector` via
+  `ensure_output_dir()` (`SMI_OUTPUT_DIR` override). The legacy
+  `.model-inspector` settings/cache stay in place to avoid a destructive
+  migration, and `--settings`/`-s` selects an explicit settings file for the CLI
+  and GUI. Modelinfo dumps intentionally remain beside the source model.
+- [x] The GUI accepts optional file/folder startup targets, queued safely after
+  the window is shown; `--help` exits before Qt starts.
+- [x] Setuptools flat-layout wheel with `modelinspector`/`modelinspector-gui`
+  entry points and packaged assets that `app_paths` resolves in an installed
+  layout; `pyproject.toml` declares the setuptools build backend.
+- [x] `.github/workflows/build.yml` builds the wheel and a PyInstaller executable
+  on Windows, installs the wheel into a clean venv, validates CLI/GUI help,
+  assets, and a tiny safetensors inspection, and validates executable startup
+  with timeouts so Qt cannot hang CI.
+
+### Validation (2026-09-14)
+
+- [x] Full local pytest: 378 passed, 4 skipped.
+- [x] Wheel built locally and clean-installed: `--help`, imports, packaged
+  assets, and a tiny safetensors CLI inspection all passed.
+- [x] Windows PyInstaller 6.22.2 build passed; the windowed executable's
+  `--help` exited 0 and a bare offscreen startup stayed alive about 10 seconds.
+- [x] Manual visual QA of the packaged window was not performed (headless
+  offscreen startup only).
+- [ ] GitHub Actions was not run remotely (nothing pushed).
+- [x] Pyright on all 21 changed production modules: 0 errors, 0 warnings.
+- [x] Typing-targeted rerun (`test_startup_arguments.py`,
+  `test_file_operations.py`): 21 passed, 1 skipped.
+
+The 4 skips are the unavailable symlink fixtures on the temp drive.
+
+## 2026-09-13 — Completed sidequests
+
+### Inspection and metadata enrichment
+
+Implemented and integrated; validation is complete:
+
+- [x] Architecture coverage: SeedVR2, SANA Video, RCAN, Anima, and Krea 2 key
+  signatures; explicit Mage Flow / Ideogram 4 trainer metadata; narrower Krea
+  merge-recipe false positives; conservative ZImage handling.
+- [x] GGUF same-parent bounded companion fallback for `config.json`,
+  `tokenizer_config.json`, and `processor_config.json`, plus
+  `chat_template.jinja` and `chat_template.json` only — ambiguous arbitrarily
+  named templates are ignored.
+- [x] Think/Tool structural evidence split into strong vs weak; the shared
+  `capability_evidence` projection filters weak evidence out of the GUI,
+  reports, and the estimator.
+- [x] Conservative processor-backed VLM and explicit audio/omni MMLM detection
+  with no mmproj filename guessing; GGUF reliable alias KV with labelled
+  vision/MLA/asymmetric heuristics and the `estimator_metadata` helper.
+
+Validation summary — Initial full run: 311 passed, 4 skipped, 4 failed. All
+four failures were corrected; affected-module rerun: 34 passed. Full suite was
+not rerun after those fixes:
+
+- [x] Original full suite: 319 tests — 311 passed, 4 skipped, 4 failed. All four
+  failures were stale assertions, since fixed: the current 900x640
+  settings-dialog default, 30-row overflow fixtures, and the generated spec
+  accepting the bundled directory; plus one new cache-sync-close regression
+  test.
+- [x] Final affected-module rerun: 34 passed. Earlier changed GUI/file-operation
+  group: 45 passed.
+- [x] Header-only real CLI smoke passed for SeedVR2 and EXAONE files, both
+  human-readable and `--json` output.
+- [x] Headless actual `py src/gui.py` startup smoke passed (no human visual
+  inspection).
+- [x] Lifecycle module `pyright` reports 0 errors.
+- [x] The 4 skips are symlink fixtures unavailable on the temp drive.
+
+### GUI startup, feedback, and file operations
+
+- [x] Native splash painted from the existing asset before `MainWindow`
+  construction; startup cache report computed once (not fully async); unknown
+  summary caption/value hidden while retaining zero/False; all six selected
+  actions give feedback; threaded modal move/dump with no-clobber failures
+  retained and cooperative cancel between files. Copy Files remains clipboard
+  file URLs — no actual disk copy.
+
+## 2026-09-07 — Cache, Settings, Themes, and Smart Columns
+
+### Cache actions and verification
+
+- [x] Move `Load Cache`, `Load Cache All`, and `Load Cache Archived` from
+  Settings to the main-window Open menu. Actions are shown only for a matching
+  cache population and enabled only when the current model view is empty.
+- [x] Define cache actions exactly: `Load Cache` loads active summaries only;
+  `Load Cache All` loads active and Historic summaries; `Load Cache Archived`
+  loads Historic summaries only. Loading Historic summaries never reads or
+  inspects unavailable model files.
+- [x] Refresh Total / Active / Historic cache counts immediately after Clear
+  Cache, and provide an explicit `Verify Cached File Paths` control that is
+  disabled when the cache is empty.
+- [x] Surface verification progress and its concise outcome. Verification
+  derives current classifications from filesystem identity (including shard and
+  sidecar identity): missing entries are Historic and retained for viewing;
+  changed or legacy active entries are scheduled for background refresh without
+  inspecting missing Historic entries.
+- [x] Product decision: Historic classification remains dynamically derived
+  from verified filesystem identity. No separately persisted archive index is
+  needed because it risks staleness; cached summaries remain preserved and
+  viewable without their source files.
+
+### Settings and themes
+
+- [x] Remove the obsolete `Load default libraries on startup` setting and its
+  dead startup-cache sorting path now that cache loading has explicit actions.
+- [x] Place the compact current-theme dropdown in the General tab's
+  bottom-right cell at roughly one third of the column width.
+- [x] Export bundled themes to the user theme directory, enumerate user themes,
+  and document the editable theme schema in `settings.jsonc`.
+- [x] Show a user-facing error for a malformed requested external theme while
+  retaining the validated default fallback.
+- [x] Add a dedicated Theme tab with live editing and `Save`, `Save As`, and
+  `Reset to Defaults` actions.
+- [x] Load the read-only neutral default from the replaceable bundled
+  `default.jsonc` asset. The New Theme action creates uniquely numbered,
+  writable themes from that asset rather than from the selected theme.
+- [x] Apply editable theme roles live, including muted status text, cached
+  inline styles, and a distinct inactive-tab hover color with old-theme
+  fallback. Friendly Theme-editor labels identify accent use by buttons,
+  badges, inactive tabs, and headers.
+- [x] Require explicit confirmation before Theme `Reset to Defaults`, then
+  clear the user theme directory and re-extract bundled themes.
+- [x] Complete the tooltip/content audit across existing controls, not only
+  Explorer and settings additions.
+
+### Data-table smart column groups
+
+- [x] Add pinned `LLM`, `Diffusion`, and `Adapter` controls to the right of
+  Select All and Show Full Path in the Data toolbar.
+- [x] Keep groups runtime-only and initially off; automatically enable a group
+  when loaded results genuinely use its family columns, while preserving a
+  manual toggle for the rest of the session. Clear All resets only groups that
+  were auto-enabled.
+- [x] Define smart-column precedence: a user's manual group choice overrides
+  later automatic enabling for that session, while persisted Settings > Data
+  per-column visibility is the baseline and always wins. A checked group shows
+  only baseline-visible columns; an unchecked group masks every column it owns.
+
+## 2026-09-04 — File Readers, Model Formats, Sharding, and Sidecars
+
+**Completed:** Added bounded metadata-only ONNX inspection; explicit metadata-safe
+checkpoint handling that never deserializes pickle payloads; and a shared reader
+registry abstraction. GGUF and safetensors shard sets retain aggregate and
+original-order data, shard IDs, and byte sizes. Explorer and Advanced Viewer
+support ordering, shard grouping, and size tooltips. Six sidecar roles are
+discovered as separate records with compact primary identities and runtime paths.
+
+### Additional model formats
+
+- [x] Add bounded metadata-only `.onnx` inspection.
+- [x] Add `.ckpt`, `.pt`, and `.pth` dispatch behind an explicit metadata-safety
+  model; never deserialize pickle payloads.
+- [x] Keep optional third-party reader libraries behind the shared reader
+  abstraction when they improve safety or coverage.
+
+### Sharded models and original ordering
+
+- [x] Support sharded `.gguf` and `.safetensors` sets such as
+  `*00001-of-00004*`.
+- [x] Preserve original tensor/layer/block order in addition to the current sorted
+  presentation.
+- [x] Record the shard index for every tensor or block (`shard_id = 0` for
+  non-sharded models).
+- [x] In Explorer and Advanced Viewer, allow sorted versus original-order display
+  and visually group original-order rows by shard.
+- [x] Calculate tensor or block byte size for raw output and tooltips in Advanced
+  Viewer.
+
+### Sidecar discovery and association
+
+- [x] Detect `mmproj`, `dflash`, `dspark`, `eagle`, `draft`, and MTP sidecars beside
+  the primary model.
+- [x] Store full sidecar inspection records separately while keeping enough
+  identity metadata on the primary model to detect changes quickly.
+- [x] Tag the primary model with discovered sidecar roles and include associated
+  paths in copied runtime configurations.
+
+## Discovery, Filtering, Progress, and Concurrency
+
+- [x] Add separate file-format and architecture/type filters.
+- [x] Sort filter values consistently and align Cards/Raw ordering with the
+  Data table.
+- [x] Report files, bytes, directory progress, cancellation, and partial
+  results during scans.
+- [x] Add bounded parallel analysis for independent files with per-file error
+  reporting and configurable thread count.
+
+## Cache Foundations and Integrity
+
+- [x] Persist inspection summaries, raw/model data, directory scans, canonical
+  identity, size, modification time, and format in an app-local cache.
+- [x] Retain missing-file summaries rather than pruning them.
+- [x] Add `Load Cache`, `Load Cache All`, and `Load Cache Archived` controls with
+  conditional availability.
+- [x] Display Total, Active, and Historic counts beside cache controls.
+- [x] Classify missing files as Historic without inspecting them and keep their
+  cached summaries viewable.
+- [x] Detect changed or legacy active entries and queue background refresh while
+  leaving unchanged active entries on the cached fast path.
+- [x] Repair the cache identity handoff so unchanged active entries do not
+  spuriously schedule analysis.
+- [x] Retain an explicit confirmed Clear Cache action.
+
+## Settings and Themes
+
+- [x] Replace primary INI persistence with readable, commented
+  `settings.jsonc` defaults.
+- [x] Migrate legacy INI settings on first JSONC launch.
+- [x] Use atomic settings replacement and back up malformed settings before
+  falling back to defaults.
+- [x] Externalize bundled Catppuccin, Cursor, GitHub, and Gruvbox theme data
+  under `assets/themes/`.
+- [x] Validate themes and keep a safe built-in fallback when loading fails.
+- [x] Apply persisted themes at startup and apply settings changes immediately.
+
+## Data Table Customization
+
+- [x] Add settings for Data-column visibility, stable-key ordering, and width.
+- [x] Add checkbox rows and drag handles for column reordering.
+- [x] Persist table header moves and resized widths across settings reloads.
+- [x] Fix the native drag/drop ownership crash by keeping durable column state
+  outside Qt-owned cell widgets, deferring post-drop reconciliation, and
+  rebuilding controls safely after each move.
+- [x] Add deleted-widget and repeated queued-reorder regression coverage.
+- [x] Preserve metadata-backed quantization labels in the Data viewer; otherwise
+  show meaningful dtype/precision or a clear unknown fallback without labeling
+  uniform unquantized files as quantized.
+
+## Explorer and Raw Dump
+
+- [x] Keep Explorer and Raw as coexisting views, with searchable metadata and
+  tensor descriptors, a bounded header-only tensor-root summary, lazy
+  host-request loading, and window-bounded scrolling filter controls.
+- [x] Detect header-derived VAE, LoRA, text-encoder, and template candidates
+  and expose explicit host-handled inspect/export/extract requests without
+  loading tensor payloads.
+
+## Advanced Viewer
+
+- [x] Add a topmost modal Advanced Viewer dialog for the selected model.
+- [x] Add architecture/layer/context/RoPE/MTP/expert fact extraction with safe
+  handling for missing metadata.
+- [x] Add domain tags and Tool Use, Thinking, and Vision capability badges.
+- [x] Add interactive weight/context/KV-cache VRAM and RAM estimation.
+- [x] Add plain-text configuration generation and clipboard copy support.
+- [x] Fix Advanced Viewer Cards bottom spacing, long-card width/wrapping, and
+  minimum short-card sizing, with focused geometry regression coverage. The
+  accepted Advanced Viewer is the settled presentation direction.
+- [x] Populate the accepted viewer with conservative facts, tensor descriptors,
+  shard/order information, companion discovery, and evidence-conservative
+  capability/domain badges.
+
+## 2026-09-03 — Integrated Card and Advanced Viewer Pass
+
+- [x] Consolidate the main Cards tab into one compact, viewport-bounded,
+  top-aligned card mode; clicking a card body opens that exact model in
+  Advanced Viewer.
+- [x] Keep card checkboxes as the only card-selection control and add an exact
+  model Advanced Viewer action to the Data-row context menu.
+- [x] Remove the ambiguous standalone Advanced Viewer button and route openings
+  through deterministic filepath-based helpers.
+- [x] Re-layout Advanced Viewer into peer Overview, Card Details, Metadata,
+  Tensors, and Embedded Content tabs while retaining Explorer's read-only
+  request signals and detailed-card field preferences.
+- [x] Scale conservative KV-cache fallback projections by the selected KV-cache
+  bit precision from their 16-bit baseline, with estimator and dialog coverage.
+- [x] Verify the integrated pass with focused UI/backend coverage, clean
+  Pyright, and the full 94-test pytest suite.
+
+## Developer tooling
+
+- [x] Repair `.graphifyignore` ordering so frontend and backend source files are
+  eligible for graph extraction. A full graph rebuild remains unverified and is
+  deferred in `TODO.md`.
+
+## 2026-08-24 — Immediate UI Glitches and Performance
+
+- [x] Fix bottom-item Data-column reordering so the moved row remains visible,
+  while retaining the earlier deleted-widget crash fix.
+- [x] Remove the persistent blank row from the bottom of the Data-column
+  settings scroller.
+- [x] Improve Settings close performance for large loaded libraries by moving
+  expensive work out of the dialog close path.
+- [x] Load bundled themes correctly in packaged executables through extracted
+  application assets.
+- [x] Keep the Settings default at 900x640 with screen clamping; this fixed-size
+  behavior was later superseded by the resizable, remembered-size work recorded
+  in the 2026-09-14 milestone.
+- [x] Keep the Advanced Viewer above its main window without forcing it above
+  unrelated applications.
+- [x] Propagate multimodal model classification as MLLM, including vision-tower
+  detection, to cards and lists.
+- [x] Give the Advanced Viewer ownership of Explorer search while keeping Raw
+  as a single-purpose main tab.
+- [x] Show Advanced Viewer’s current output information at the top of Raw for
+  convenient copying.
+- [x] Remove the unnecessary “top key prefixes” from the Raw view.
+
+## Project Structure and Architecture
+
+- [x] Move executable sources under `src/` and keep `src/gui.py` and
+  `src/inspect_model.py` as thin compatibility/bootstrap wrappers.
+- [x] Split GUI workflows into focused `src/front/` widgets/controllers and
+  inspection logic into focused `src/back/` modules.
+- [x] Keep bundled icons, splash assets, and themes under `assets/` and resolve
+  them in development and packaged execution.
+- [x] Update build/spec entry points for the current source layout.
+- [x] Establish a hard 500-line source-module ceiling and verify the current
+  `src/front` and `src/back` modules against it.
+- [x] Add regression coverage for scan lifecycle, projection, inspection
+  summaries, background tasks, integrated behavior, settings, themes, cache,
+  Explorer, and Advanced Viewer components.
+
+## Readers, Inspection, and Reporting
+
+- [x] Add a shared extension reader abstraction for `.safetensors` and `.gguf`.
+- [x] Implement read-only GGUF metadata, tensor descriptors, dtype summaries,
+  architecture hints, and size reporting.
+- [x] Inspect safetensors headers without loading tensor payloads.
+- [x] Research pickle-backed checkpoint risks and require explicit opt-in for
+  any future unsafe deserialization. Actual additional-format support remains
+  in `TODO.md`.
+- [x] Add stable, pretty-printed JSON `.modelinfo` output to CLI and GUI flows.
+- [x] Preserve both user-provided and resolved file paths and keep default dump
+  output beside the user-provided path.
+- [x] Give FLUX LoRA header detection precedence over broad Qwen Edit heuristics
+  for standard rank-64 adapters with 19 dual and 38 single blocks plus generic
+  `add_k_proj`/`add_q_proj` markers; add header-only regression coverage without
+  loading model payloads.

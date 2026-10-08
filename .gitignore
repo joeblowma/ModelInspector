@@ -182,9 +182,9 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore
 #  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#  and can be added to the global gitignore or merged into this file. However, if you prefer,
 #  you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 
@@ -206,6 +206,33 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Custom
-venv_activate.bat
-.claude
+# Files autobuilt by batch files
+venvars.bat
+version.txt
+ModelInspector.spec
+assets/splash.bmp
+assets/icon.ico
+
+# LLM
+.claude/
+.codex/
+.kilo/
+.opencode/
+.pi/
+graphify-out/
+.codegraph/
+.serena/
+
+# Extras
+.vscode
+.model-inspector/
+src/.model-inspector
+test/
+/_mockups
+assets/splash.png
+/generated-goals
+.aider*
+/*.raw
+*.bak
+/.venv313
+/.venv314

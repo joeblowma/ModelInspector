@@ -1,166 +1,214 @@
-# Safetensors Model Inspector
+# ModelInspector
 
-Inspect `.safetensors` models from a desktop GUI and CLI.
+<img src="./assets/ss/icontag.png" width="100" alt="icon_image">
 
-<img width="2537" height="1283" alt="image" src="https://github.com/user-attachments/assets/27ce9f06-4c5f-4b32-aee9-bda85ff576b0" />
+ModelInspector is a Windows-friendly desktop and CLI utility for inspecting
+language and diffusion model files without loading tensor payloads.
 
-## What It Does
+Inspect `.safetensors`, `.gguf`, `onnx` and index various other model files.
 
-- Detects architecture families and variants (Flux, SDXL/SD3, Wan, Hunyuan, Qwen, HiDream, LTX, Z-Image, Chroma, and more)
-- Detects adapter type (`LoRA`, `LyCORIS`, `LoHa`, `LoKr`, `DoRA`, `GLoRA`)
-- Extracts training metadata when present (steps, epochs, images, resolution, software, and related fields)
-- Supports file or folder workflows (including recursive folder scanning)
-- Supports `.modelinfo` key dumps for debugging and sharing
+Based on the original [Safetensors Model Inspector](https://github.com/MNeMoNiCuZ/SafetensorsModelInspector).
+See the [project repository](https://github.com/joeblowma/ModelInspector) and
+[LICENSE](./LICENSE).
 
-## Repository Layout
+## Requirements
 
-- `gui.py`: GUI only
-- `inspect_model.py`: model parsing, detection logic, data extraction, CLI
-- `requirements.txt`: dependencies
-- `venv_create.bat`: virtual environment bootstrap helper
-- `venv_activate.bat`: activate helper
+- Python **3.12 or newer** for source and wheel installs.
+- The Windows release is a packaged `ModelInspector.exe` and does not require
+  a separate Python installation.
 
-## Setup
+## Install
 
-1. Create the virtual environment:
+### Windows release
 
-```bat
-venv_create.bat
-```
+Download the versioned Windows zip from the project's
+[GitHub Releases](https://github.com/joeblowma/ModelInspector/releases) page,
+extract it, and run `ModelInspector.exe`.
 
-2. Activate:
+### Wheel
 
-```bat
-venv_activate.bat
-```
-
-3. Run GUI:
+Install the wheel in a Python 3.12+ environment:
 
 ```bat
-py gui.py
+py -3.12 -m pip install modelinspector-<version>-py3-none-any.whl
+modelinspector --help
+modelinspector-gui --help
 ```
 
-4. Run CLI help:
+`modelinspector` and `modelinspector-gui` are console scripts. Use those names
+after installation; they are not `python -m` module names.
+
+### Source checkout
 
 ```bat
-py inspect_model.py --help
+git clone https://github.com/joeblowma/ModelInspector.git
+cd ModelInspector
+py -m pip install -r requirements.txt
+py src/gui.py
+py src/inspect_model.py --help
 ```
 
-## CLI Usage
+`py src/gui.py` starts the GUI. `py src/inspect_model.py` starts the CLI.
+Both accept the source-checkout layout without an editable install.
 
-### Inspect one or more files
+## Supported formats
+
+The normal reader set is:
+
+- `.safetensors`, including `.safetensors.index.json` shard indexes;
+- `.gguf`;
+- `.onnx`.
+
+Inspection is header/metadata-only: tensor names, shapes, types, and bounded
+metadata may be read, but tensor payload bytes are never read. Sharded model
+sets and associated metadata are handled through the same bounded path.
+
+PyTorch-style `.ckpt`, `.pt`, and `.pth` files are opt-in only:
 
 ```bat
-py inspect_model.py path\to\model1.safetensors path\to\model2.safetensors
+modelinspector path\to\file.ckpt --checkpoint-safety metadata
 ```
 
-### Inspect folders
+This mode reads only safe ZIP metadata/version entries and never
+pickle-deserializes a checkpoint. The default `--checkpoint-safety reject`
+policy ignores these files.
+
+## CLI
+
+Inspect files or folders; add `--recursive` for subfolders:
 
 ```bat
-py inspect_model.py path\to\folder
-py inspect_model.py path\to\folder --recursive
+modelinspector path\to\model.safetensors
+modelinspector path\to\folder --recursive --json
+py src/inspect_model.py path\to\folder --recursive --threads 4 --json
 ```
 
-### JSON output
+Current CLI help is available with `modelinspector --help` or
+`py src/inspect_model.py --help`. The positional target and options are:
+
+```text
+targets [targets ...]
+-h, --help
+-s, --settings PATH
+--cachedir PATH
+--cache PATH
+-r, --recursive
+--allow-filename-alias-detection
+--checkpoint-safety {reject,metadata}
+--json
+--dump-keys
+--write-modelinfo
+--write-modelinfo-json
+--resolve-output-path
+--threads THREADS
+```
+
+`--write-modelinfo` and `--write-modelinfo-json` write beside the inspected
+model by default. `--resolve-output-path` selects the resolved target path
+instead. `--cache PATH` selects the primary model-cache directory and records
+its history; `--cachedir PATH` relocates all application caches for the run.
+
+The GUI accepts an optional file or folder target and the same `-s`/
+`--settings`, `--cache`, and `--cachedir` startup options:
+
+```text
+py src/gui.py [FILE_OR_FOLDER ...]
+py src/gui.py -s PATH
+py src/gui.py --cache PATH
+py src/gui.py --cachedir PATH
+```
+
+## GUI
+
+The main window has three views:
+
+- **Cards** — compact model cards; click a card to open that model in the
+  Advanced Viewer.
+- **Data** — sortable, copyable table with configurable column visibility,
+  order, and widths.
+- **Raw** — per-model raw output; full key dumps are explicitly generated and
+  cached rather than read from tensor payloads.
+
+The Advanced Viewer provides **Overview**, **Card Details**, **Metadata**,
+**Tensors**, and **Embedded Content** pages. Embedded metadata actions are
+bounded and read-only: Inspect reuses a stored bounded preview when possible,
+Save writes a readable artifact, and exact source JSON extraction is limited
+to locatable safetensors/GGUF metadata.
+
+Settings currently provide:
+
+- General analysis, filename-alias, JSON modelinfo, raw-loading, descriptor
+  caching, add-mode, default-tab, theme, and remembered-window-size controls;
+- Data-column visibility/order/width controls, with the selection column
+  locked first and always visible;
+- a live Theme editor with Save, Save As, and reset actions;
+- model-cache location/history, cache verification, and Clear Cache actions.
+
+The release Settings default is 900x640 and is clamped to the current screen.
+Cache loading distinguishes active, all, and historic (missing-source)
+summaries without re-inspecting historic files.
+
+Fresh settings, application data, and cache paths use
+`Path.home()/.local/share/ModelInspector`; an existing legacy
+`.model-inspector` location is retained. Save/move output dialogs use the same
+default through `app_paths.ensure_output_dir()` and create it when needed.
+Override paths with `SMI_DATA_DIR`, `SMI_CACHE_DIR`, `SMI_MODEL_CACHE_DIR`,
+`SMI_SETTINGS_PATH`, or `SMI_OUTPUT_DIR`.
+
+### Gratuitous GUI images
+
+**Main**
+<table>
+  <tr>
+    <td><img src="./assets/ss/main1_cards.png" width="200" alt="Image r0.1"></td>
+    <td><img src="./assets/ss/main2_data.png" width="200" alt="Image r0.2"></td>
+    <td><img src="./assets/ss/main3_raw.png" width="200" alt="Image r0.3"></td>
+  </tr>
+</table>
+
+**Settings**
+
+<table>
+  <tr>
+    <td><img src="./assets/ss/set1_gen.png" width="200" alt="Image r1.1"></td>
+    <td><img src="./assets/ss/set2_data.png" width="200" alt="Image r1.2"></td>
+    <td><img src="./assets/ss/set3_themedk.png" width="200" alt="Image r1.3"></td>
+    <td><img src="./assets/ss/set3_themelt.png" width="200" alt="Image r1.4"></td>
+  </tr>
+</table>
+
+**Advanced View**
+
+<table>
+  <tr>
+    <td><img src="./assets/ss/adv1_overview.png" width="200" alt="Image r2.1"></td>
+    <td><img src="./assets/ss/adv2_card.png" width="200" alt="Image r2.2"></td>
+    <td><img src="./assets/ss/adv3_meta.png" width="200" alt="Image r2.3"></td>
+    <td><img src="./assets/ss/adv4_tensor.png" width="200" alt="Image r2.4"></td>
+    <td><img src="./assets/ss/adv5_embed.png" width="200" alt="Image r2.5"></td>
+  </tr>
+</table>
+
+## Build and test
+
+From a checkout:
 
 ```bat
-py inspect_model.py path\to\folder --recursive --json
+py -3.12 -m pip install -r requirements-dev.txt
+py -3.12 -m build --wheel
 ```
 
-### Write `.modelinfo` files
+For the canonical headless test run in PowerShell:
 
-```bat
-py inspect_model.py path\to\folder --recursive --write-modelinfo
+```powershell
+$env:PYTHONPATH = "src"
+$env:QT_QPA_PLATFORM = "offscreen"
+python -m pytest tests
 ```
 
-### Dump key/debug report text to console
+`win_clean.bat` removes generated build artifacts. Packaging contracts can be
+checked with `python -m pytest tests/test_packaging.py -q`.
 
-```bat
-py inspect_model.py path\to\folder --recursive --dump-keys
-```
-
-### Optional alias fallback (filename tokens)
-
-```bat
-py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
-```
-
-## GUI Walkthrough
-
-### Top Area (Input + Controls)
-
-- Drag and drop files or folders into the drop zone
-- Use `Browse...` or `Browse Folder...`
-- `Analyze` processes queued inputs
-- `Settings` controls visibility and behavior
-- `Minimize` / `Restore` collapses or expands the top area for more workspace
- 
-<img width="2547" height="373" alt="image" src="https://github.com/user-attachments/assets/419e5d42-e3f2-469e-8850-633720ac7782" />
-
-
-### Tab: Simple Cards
-
-- Lightweight model cards
-- Supports card selection, multi-select, and context menu actions
-
-<img width="1323" height="369" alt="image" src="https://github.com/user-attachments/assets/09cae186-42b5-4c57-be21-611ff8a11396" />
-
-### Tab: Detailed Cards
-
-- Full card details with configured metadata visibility
-- Supports card selection, multi-select, and context menu actions
-
-<img width="1708" height="1076" alt="image" src="https://github.com/user-attachments/assets/a146a5a7-3a9f-422f-8eee-64efb36af715" />
-
-- Supports specific LoRA formats like LoHa, LoKr, GLoRa
-- Some fail sometimes (lycoris)
-
-<img width="2526" height="953" alt="image" src="https://github.com/user-attachments/assets/1ef32b95-868a-4407-8569-8207d68eac3a" />
-
-
-
-### Tab: Data
-
-- Sortable/resizable table
-- Multi-select cells and copy via `Ctrl+C`
-- Right-click actions (`View Raw`, `Copy Selected Entries`)
-- Column visibility can be configured in settings
-
-<img width="2385" height="257" alt="image" src="https://github.com/user-attachments/assets/1dcd1a23-ca36-433e-8e77-9252cfcc0208" />
-
-
-
-### Tab: Raw
-
-- Per-model raw `.modelinfo` text view
-- `View Raw` context action jumps here for the selected model
-- `Ctrl+C` copies the selected text, or the full raw content when no selection exists
-
-<img width="2442" height="726" alt="image" src="https://github.com/user-attachments/assets/4c2f9d4d-1476-4348-b872-06c282a80007" />
-
-
-## Notes
-
-- Folder drag/drop and folder browse both support recursive discovery of `.safetensors`.
-- Filtering in the UI affects visibility and copy behavior (hidden rows are excluded from table copy).
-- `.modelinfo` output is generated by shared backend logic in `inspect_model.py`.
-- Filename alias detection is opt-in in Settings and can map filename tokens to fallback labels.
-- `Pony7` is treated as distinct from `PDXL`. The alias tokens `pony7`, `ponyv7`, and `pony v7` map to `Pony7`.
-
-## Settings (Current)
-
-### General
-
-- `Filename Alias Detection`: optional filename-token fallback for special labels
-- `Auto-minimize top section on Analyze`
-- `Auto-analyze when files are added`
-- `File add behavior`:
-  - `Replace current input list`
-  - `Append to current input list`
-- `Default tab`: `Simple Cards`, `Detailed Cards`, `Data`, or `Raw`
-
-### Visibility Groups
-
-- `Simple Cards`: choose which data fields are shown
-- `Detailed Cards`: choose which data fields are shown
-- `Data Columns`: choose visible columns in the Data tab
+<p align="center">
+  <img width="130" src="./assets/ss/badge.png">
+</p>

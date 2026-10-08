@@ -1,0 +1,27 @@
+{
+  // Warm, high-contrast Gruvbox dark palette.
+  "id": "gruvbox",
+  "name": "Gruvbox",
+  "description": "Warm, high-contrast Gruvbox dark palette.",
+  "colors": {
+    "background": "#282828",
+    "surface": "#3c3836",
+    "surface_alt": "#504945",
+    "text": "#ebdbb2",
+    "muted": "#a89984",
+    "accent": "#83a598",
+    "accent_text": "#1d2021",
+    "border": "#665c54",
+    "success": "#b8bb26",
+    "warning": "#fabd2f",
+    "error": "#fb4934",
+    "highlight": "#83a598",
+    "highlight_selected": "#b8bb26",
+    "stat_label": "#a89984",
+    "accent_adapter": "#cba6f7",
+    "accent_moe": "#fab387",
+    "accent_component": "#94e2d5",
+    "accent_display": "#ebdbb2",
+    "tab_inactive_hover": "#5b5149"
+  },
+}

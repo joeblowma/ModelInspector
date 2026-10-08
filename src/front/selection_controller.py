@@ -1,0 +1,379 @@
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportCallIssue=false
+# pyright: reportGeneralTypeIssues=false, reportOperatorIssue=false
+# pylint: disable=no-member
+"""Selection synchronization between the model table and UI state."""
+from pathlib import Path
+
+from PyQt6.QtCore import QMimeData, Qt
+from PyQt6.QtWidgets import QApplication, QCheckBox, QMenu
+
+from front.file_operation_controller import FileOperationControllerMixin
+from front.filter_projection import path_identity
+from front.model_card import card_stat_items
+from front.view_removal import rebuild_views_from_results, remove_result_paths
+from model_cache import invalidate_cached_inspection
+
+
+def _clipboard():
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+    return clipboard
+
+
+class SelectionControllerMixin(FileOperationControllerMixin):
+    """Selection behavior; state is initialized by ``WindowCoreMixin``."""
+
+    _selected_paths: set[str]
+
+    def _on_card_checkbox_toggled(self, filepath: str, checked: bool):
+        if self._syncing_selection or not filepath:
+            return
+        if checked:
+            self._selected_paths.add(filepath)
+        else:
+            self._selected_paths.discard(filepath)
+        self._sync_selection_visuals()
+
+    def _on_card_drag_over(self, filepath: str):
+        if not filepath:
+            return
+        # Drag-over selection should only add to selection.
+        if filepath not in self._selected_paths:
+            self._selected_paths.add(filepath)
+            self._sync_selection_visuals()
+
+    def _find_result_by_path(self, filepath: str):
+        for d in self._results:
+            if d.get("filepath") == filepath:
+                return d
+        return None
+
+    def _build_card_info_text(self, data: dict, simple_view: bool) -> str:
+        lines = []
+        lines.append(f"File: {data.get('filename', '')}")
+        lines.append(f"Path: {data.get('filepath', '')}")
+        lines.append(f"Architecture: {data.get('architecture', '')}")
+        lines.append(f"Model Type: {data.get('model_type', '')}")
+        if data.get("adapter_type"):
+            lines.append(f"Adapter: {data.get('adapter_type')}")
+
+        components = data.get("components", {})
+        comp_labels = {
+            "unet": "UNet",
+            "transformer": "Transformer",
+            "vae": "VAE",
+            "text_encoder": "Text Encoder",
+            "text_encoder_2": "Text Encoder 2",
+        }
+        comp_on = [lbl for k, lbl in comp_labels.items() if components.get(k)]
+        if comp_on:
+            lines.append("Tags: " + ", ".join(comp_on))
+
+        lines.extend(
+            f"{label}: {value}" for label, value in card_stat_items(data, simple_view)
+        )
+
+        return "\n".join(lines)
+
+    def _copy_selected_cards_info(self, simple_view: bool):
+        paths = self._visible_selected_paths()
+        if not paths:
+            return
+        blocks = []
+        for fp in paths:
+            d = self._find_result_by_path(fp)
+            if not d:
+                continue
+            blocks.append(self._build_card_info_text(d, simple_view))
+        if blocks:
+            _clipboard().setText(("\n\n" + ("-" * 50) + "\n\n").join(blocks))
+
+    def _on_card_context_menu(self, filepath: str, simple_view: bool, global_pos):
+        data = self._find_result_by_path(filepath)
+        if not data:
+            return
+        menu = QMenu(self)
+        advanced_viewer = menu.addAction("Advanced Viewer")
+        view_raw = menu.addAction("View Raw")
+        copy_info = menu.addAction("Copy Info")
+        copy_selected = None
+        visible = set(self._visible_paths())
+        selected_visible = [p for p in self._selected_paths if p in visible]
+        if filepath in self._selected_paths and len(selected_visible) > 1:
+            copy_selected = menu.addAction(
+                f"Copy Info from selected files [{len(selected_visible)}]"
+            )
+        chosen = menu.exec(global_pos)
+        if chosen == advanced_viewer:
+            self._show_advanced_viewer_for_path(filepath)
+        elif chosen == view_raw:
+            self._show_raw_for_filepath(filepath)
+        elif chosen == copy_info:
+            _clipboard().setText(self._build_card_info_text(data, simple_view))
+        elif copy_selected is not None and chosen == copy_selected:
+            self._copy_selected_cards_info(simple_view)
+
+    def _on_table_checkbox_toggled(self, filepath: str, checked: bool):
+        if self._syncing_selection or not filepath:
+            return
+        if checked:
+            self._selected_paths.add(filepath)
+        else:
+            self._selected_paths.discard(filepath)
+        self._sync_selection_visuals()
+
+    def _on_table_cell_clicked(self, row: int, _col: int):
+        if self._syncing_selection:
+            return
+        if row < 0 or row >= self.table.rowCount():
+            return
+        item = self.table.item(row, 1)
+        if not item:
+            return
+        filepath = item.data(Qt.ItemDataRole.UserRole)
+        if not filepath:
+            return
+        mods = QApplication.keyboardModifiers()
+        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+
+        visible = self._visible_paths()
+        if filepath not in visible:
+            return
+        idx = visible.index(filepath)
+        if (
+            shift
+            and self._last_selected_row >= 0
+            and self._last_selected_row < len(visible)
+        ):
+            lo = min(self._last_selected_row, idx)
+            hi = max(self._last_selected_row, idx)
+            for fp in visible[lo : hi + 1]:
+                self._selected_paths.add(fp)
+        elif ctrl:
+            if filepath in self._selected_paths:
+                self._selected_paths.remove(filepath)
+            else:
+                self._selected_paths.add(filepath)
+            self._last_selected_row = idx
+        else:
+            # Single-click behaves like ctrl-click toggle.
+            if filepath in self._selected_paths:
+                self._selected_paths.remove(filepath)
+            else:
+                self._selected_paths.add(filepath)
+            self._last_selected_row = idx
+        self._sync_selection_visuals()
+
+    def _on_table_item_selection_changed(self):
+        # Keep this lightweight: item selection is mainly for Ctrl+C cells.
+        pass
+
+    def _open_table_row_in_advanced_viewer(self, row: int) -> None:
+        """Open the exact model represented by a Data row."""
+        item = self.table.item(row, 1)
+        filepath = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if filepath:
+            self._show_advanced_viewer_for_path(str(filepath))
+
+    def _on_table_context_menu(self, pos):
+        item = self.table.itemAt(pos)
+        if not item:
+            return
+        row = item.row()
+        fp_item = self.table.item(row, 1)
+        filepath = fp_item.data(Qt.ItemDataRole.UserRole) if fp_item else None
+
+        menu = QMenu(self)
+        advanced_viewer = menu.addAction("Advanced Viewer")
+        view_raw = menu.addAction("View Raw")
+        copy_folder_path = menu.addAction("Copy Folder Path")
+        copy_sel = menu.addAction("Copy Selected Entries")
+        viewport = self.table.viewport()
+        assert viewport is not None
+        chosen = menu.exec(viewport.mapToGlobal(pos))
+        if chosen == advanced_viewer and filepath:
+            self._open_table_row_in_advanced_viewer(row)
+        elif chosen == view_raw and filepath:
+            self._show_raw_for_filepath(filepath)
+        elif chosen == copy_folder_path and filepath:
+            _clipboard().setText(str(Path(filepath).parent))
+        elif chosen == copy_sel:
+            self._copy_selected_table_cells()
+
+    def _sync_selection_visuals(self):
+        self._syncing_selection = True
+        try:
+            for fp, card in self._path_to_card.items():
+                card.set_selected(fp in self._selected_paths)
+            for fp, row in self._path_to_row.items():
+                row = self._row_for_filepath(fp)
+                if row is None:
+                    continue
+                if 0 <= row < self.table.rowCount():
+                    cb = self.table.cellWidget(row, 0)
+                    if isinstance(cb, QCheckBox):
+                        cb.blockSignals(True)
+                        cb.setChecked(fp in self._selected_paths)
+                        cb.blockSignals(False)
+        finally:
+            self._syncing_selection = False
+        self._update_selection_ui_state()
+
+    def _update_selection_ui_state(self):
+        visible = set(self._visible_paths())
+        visible_selected_count = len(self._selected_paths & visible)
+        total_selected_count = len(self._selected_paths)
+        if total_selected_count == visible_selected_count:
+            count_text = f"{visible_selected_count} selected"
+        else:
+            hidden_count = total_selected_count - visible_selected_count
+            count_text = f"{visible_selected_count} selected ({hidden_count} hidden)"
+        self.selected_count_label.setText(count_text)
+        self.table_selected_count_label.setText(count_text)
+        enabled = visible_selected_count > 0
+        self.selected_action_btn.setEnabled(enabled)
+        self.selected_action_menu_btn.setEnabled(True)
+
+        if visible:
+            all_selected = visible.issubset(self._selected_paths)
+        else:
+            all_selected = False
+
+        self.cards_select_all_cb.blockSignals(True)
+        self.cards_select_all_cb.setChecked(all_selected)
+        self.cards_select_all_cb.blockSignals(False)
+
+        self.table_select_all_cb.blockSignals(True)
+        self.table_select_all_cb.setChecked(all_selected)
+        self.table_select_all_cb.blockSignals(False)
+
+    def _copy_selected_files_to_clipboard(self):
+        selected = self._visible_selected_paths()
+        if not selected:
+            return
+        mime = QMimeData()
+        from PyQt6.QtCore import QUrl
+
+        urls = [QUrl.fromLocalFile(p) for p in selected]
+        mime.setUrls(urls)
+        _clipboard().setMimeData(mime)
+        self._set_progress_status(
+            f"Copied {len(selected)} file(s) to clipboard as file URLs."
+        )
+        self._clear_progress_status(delay_ms=3500)
+
+    def _remove_selected_results(self):
+        selected = set(self._visible_selected_paths())
+        if not selected:
+            return
+        remove_result_paths(self, selected)
+        self._update_file_count()
+        noun = "entry" if len(selected) == 1 else "entries"
+        self._set_progress_status(f"Removed {len(selected)} selected {noun}.")
+        self._clear_progress_status(delay_ms=3500)
+
+    def _rescan_selected_results(self):
+        paths = []
+        seen = set()
+        for path in self._visible_selected_paths():
+            identity = path_identity(path)
+            if identity not in seen:
+                seen.add(identity)
+                paths.append(path)
+        if not paths:
+            return
+        if (
+            (self._worker and self._worker.isRunning())
+            or (self._discovery_worker and self._discovery_worker.isRunning())
+            or (
+                getattr(self, "_cache_load_worker", None)
+                and self._cache_load_worker.isRunning()
+            )
+            or self._file_operation_running()
+        ):
+            self._set_progress_status("Cannot rescan while another operation is running.")
+            self._clear_progress_status(delay_ms=4000)
+            return
+        options = {
+            "allow_filename_alias_detection": self._allow_filename_alias_detection
+        }
+        for path in paths:
+            invalidate_cached_inspection(path, options)
+        self._start_analysis(paths, clear_existing=False, replace_existing=True)
+
+    def _copy_selected_names(self):
+        selected = self._visible_selected_paths()
+        if not selected:
+            return
+        text = "\n".join(Path(p).name for p in selected)
+        _clipboard().setText(text)
+        self._set_progress_status(
+            f"Copied {len(selected)} file name(s) to clipboard."
+        )
+        self._clear_progress_status(delay_ms=3500)
+
+    def _copy_selected_paths(self):
+        selected = self._visible_selected_paths()
+        if not selected:
+            return
+        text = "\n".join(selected)
+        _clipboard().setText(text)
+        self._set_progress_status(
+            f"Copied {len(selected)} file path(s) to clipboard."
+        )
+        self._clear_progress_status(delay_ms=3500)
+
+    def _rebuild_views_from_results(self):
+        rebuild_views_from_results(self)
+
+    def _on_show_full_path_changed(self, state):
+        self._show_full_paths = state == Qt.CheckState.Checked.value
+        header = self.table.horizontalHeader()
+        assert header is not None
+        sorting_enabled = self.table.isSortingEnabled()
+        sort_column = header.sortIndicatorSection()
+        sort_order = header.sortIndicatorOrder()
+        self.table.setSortingEnabled(False)
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 1)
+            if not item:
+                continue
+            fp = item.data(Qt.ItemDataRole.UserRole) or ""
+            item.setText(fp if self._show_full_paths and fp else Path(fp).name if fp else item.text())
+        header.setSortIndicator(sort_column, sort_order)
+        self.table.setSortingEnabled(sorting_enabled)
+        self._sync_order_from_table()
+
+    def _copy_selected_table_cells(self):
+        indexes = [
+            i
+            for i in self.table.selectedIndexes()
+            if not self.table.isRowHidden(i.row())
+        ]
+        if not indexes:
+            return
+        indexes.sort(key=lambda x: (x.row(), x.column()))
+
+        by_row = {}
+        for i in indexes:
+            by_row.setdefault(i.row(), []).append(i.column())
+
+        lines = []
+        for row in sorted(by_row.keys()):
+            cols = sorted(set(by_row[row]))
+            vals = []
+            for c in cols:
+                if c == 0:
+                    cb = self.table.cellWidget(row, c)
+                    vals.append(
+                        "1" if isinstance(cb, QCheckBox) and cb.isChecked() else "0"
+                    )
+                else:
+                    it = self.table.item(row, c)
+                    vals.append(it.text() if it else "")
+            lines.append("\t".join(vals))
+        _clipboard().setText("\n".join(lines))
+
+
+SelectionMixin = SelectionControllerMixin

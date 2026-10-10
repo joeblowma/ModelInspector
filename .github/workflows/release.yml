@@ -1,55 +1,120 @@
 name: release
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build and publish.
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  source:
+    name: Resolve release source
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release-source.outputs.tag }}
+      sha: ${{ steps.release-source.outputs.sha }}
+    steps:
+      - name: Checkout selected tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+
+      - name: Record selected tag and source sha
+        id: release-source
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        shell: bash
+        run: |
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: source
     uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.source.outputs.sha }}
 
   publish:
     name: Publish GitHub release
-    needs: build
+    needs: [source, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout tagged source
+      - name: Checkout selected source
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.source.outputs.sha }}
 
-      - name: Get short sha
-        id: short-sha
-        shell: pwsh
-        run: Add-Content -Path $env:GITHUB_OUTPUT -Value "sha=$($env:GITHUB_SHA.Substring(0, 7))"
+      - name: Confirm selected tag still targets source
+        env:
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+          BUILD_SHA: ${{ needs.build.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$SOURCE_SHA" = "$BUILD_SHA"
+          tag_sha="$(git ls-remote origin "refs/tags/$RELEASE_TAG^{}" | awk 'NR == 1 { print $1 }')"
+          if [ -z "$tag_sha" ]; then
+            tag_sha="$(git ls-remote origin "refs/tags/$RELEASE_TAG" | awk 'NR == 1 { print $1 }')"
+          fi
+          test "$tag_sha" = "$SOURCE_SHA"
 
       - name: Download canonical universal wheel
         uses: actions/download-artifact@v7
         with:
-          name: modelinspector-wheel-ubuntu-latest-3.12-${{ steps.short-sha.outputs.sha }}
+          name: modelinspector-wheel-ubuntu-latest-3.12-${{ needs.source.outputs.sha }}
           path: release-artifacts/wheels
 
       - name: Download Windows executable
         uses: actions/download-artifact@v7
         with:
-          name: modelinspector-windows-${{ steps.short-sha.outputs.sha }}
+          name: modelinspector-windows-${{ needs.source.outputs.sha }}
           path: release-artifacts/windows
 
       - name: Validate version and prepare release assets
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
         run: >-
           python .github/scripts/prepare_release.py --tag "$RELEASE_TAG"
           --version-file _setVersionHere.txt --wheel-dir release-artifacts/wheels
           --windows-dir release-artifacts/windows --output-dir release-dist
 
-      - name: Create release and upload assets
+      - name: Reconfirm selected tag still targets source
+        env:
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_sha="$(git ls-remote origin "refs/tags/$RELEASE_TAG^{}" | awk 'NR == 1 { print $1 }')"
+          if [ -z "$tag_sha" ]; then
+            tag_sha="$(git ls-remote origin "refs/tags/$RELEASE_TAG" | awk 'NR == 1 { print $1 }')"
+          fi
+          test "$tag_sha" = "$SOURCE_SHA"
+
+      - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" --verify-tag --generate-notes release-dist/*
+          RELEASE_TAG: ${{ needs.source.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            if ! gh release create "$RELEASE_TAG" --verify-tag --generate-notes; then
+              gh release view "$RELEASE_TAG" >/dev/null 2>&1
+            fi
+          fi
+          gh release upload "$RELEASE_TAG" release-dist/* --clobber

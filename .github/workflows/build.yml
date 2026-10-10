@@ -7,13 +7,42 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      ref:
+        description: Exact source ref to build when called by the release workflow.
+        required: false
+        type: string
+        default: ""
+    outputs:
+      source_sha:
+        description: Resolved source commit used by every build job.
+        value: ${{ jobs.source.outputs.sha }}
 
 permissions:
   contents: read
 
 jobs:
+  source:
+    name: Resolve source revision
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source-sha.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Get source sha
+        id: source-sha
+        shell: pwsh
+        run: |
+          $sha = (git rev-parse HEAD).Trim()
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "sha=$sha"
+
   wheel:
     name: ${{ matrix.os }} Python ${{ matrix.python-version }} wheel
+    needs: source
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -24,11 +53,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Get short sha
-        id: short-sha
-        shell: pwsh
-        run: Add-Content -Path $env:GITHUB_OUTPUT -Value "sha=$($env:GITHUB_SHA.Substring(0, 7))"
+        with:
+          ref: ${{ needs.source.outputs.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -110,22 +136,20 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: modelinspector-wheel-${{ matrix.os }}-${{ matrix.python-version }}-${{ steps.short-sha.outputs.sha }}
+          name: modelinspector-wheel-${{ matrix.os }}-${{ matrix.python-version }}-${{ needs.source.outputs.sha }}
           path: dist/
           if-no-files-found: error
 
   pyinstaller:
     name: Windows executable
+    needs: source
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Get short sha
-        id: short-sha
-        shell: pwsh
-        run: Add-Content -Path $env:GITHUB_OUTPUT -Value "sha=$($env:GITHUB_SHA.Substring(0, 7))"
+        with:
+          ref: ${{ needs.source.outputs.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -213,7 +237,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: modelinspector-windows-${{ steps.short-sha.outputs.sha }}
+          name: modelinspector-windows-${{ needs.source.outputs.sha }}
           path: |
             dist/ModelInspector.exe
           if-no-files-found: error
